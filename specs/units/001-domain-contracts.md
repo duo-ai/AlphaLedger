@@ -8,7 +8,7 @@ branch: feature/001-domain-contracts
 reviewer: code-reviewer
 preferred_runtime: codex
 depends_on: []
-paths: src/alphaledger/domain/**
+paths: src/alphaledger/domain/**, tests/domain/**
 claimed_at: 2026-08-28T16:48:52Z
 ---
 

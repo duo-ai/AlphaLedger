@@ -2,13 +2,13 @@
 id: UNIT-010
 title: Assert the paper endpoint and make live impossible
 lane: execution
-state: claimed
-owner: pablo/codex
-branch: feature/010-paper-endpoint-assertion
+state: available
+owner: -
+branch: -
 reviewer: execution-safety-reviewer
 preferred_runtime: codex
 depends_on: [UNIT-001]
-paths: src/alphaledger/broker/**
+paths: src/alphaledger/broker/**, tests/execution/**
 claimed_at: 2026-08-28T17:52:20Z
 ---
 

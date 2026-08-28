@@ -8,7 +8,7 @@ branch: -
 reviewer: backtest-auditor
 preferred_runtime: claude
 depends_on: [UNIT-001, UNIT-021]
-paths: src/alphaledger/evidence/price_volume.py
+paths: src/alphaledger/evidence/price_volume.py, tests/research/test_price_volume.py
 ---
 
 ## Problem
