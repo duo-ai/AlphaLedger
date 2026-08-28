@@ -113,7 +113,19 @@ COMMIT_TELLS: tuple[tuple[re.Pattern[str], str], ...] = (
 )
 
 
-def _current_branch() -> str:
+def _command_directory(command: str) -> str | None:
+    """The directory a command cds into before doing its work, if any.
+
+    Work happens in worktrees, so a command that cds into one and commits must
+    be judged against that worktree's branch, not the primary clone's.
+    """
+    match = re.search(r"(?:^|[;&]|&&)\s*cd\s+(\"[^\"]+\"|'[^']+'|[^\s;&|]+)", command)
+    if not match:
+        return None
+    return match.group(1).strip("\"'")
+
+
+def _current_branch(directory: str | None = None) -> str:
     import subprocess
 
     try:
@@ -123,8 +135,9 @@ def _current_branch() -> str:
             text=True,
             timeout=3,
             check=False,
+            cwd=directory,
         )
-    except OSError, subprocess.SubprocessError:
+    except OSError, subprocess.SubprocessError, ValueError:
         return ""
     return result.stdout.strip() if result.returncode == 0 else ""
 
@@ -132,6 +145,7 @@ def _current_branch() -> str:
 def _git_violation(command: str) -> str | None:
     if not re.search(r"\bgit\b", command):
         return None
+    where = _command_directory(command)
 
     if re.search(r"\bgit\s+commit(?=\s|$)", command, re.I):
         messages = [_message_text(m) for m in COMMIT_MESSAGE_ARGUMENT.findall(command)]
@@ -149,7 +163,7 @@ def _git_violation(command: str) -> str | None:
                 f"a commit subject outside conventional commits: {messages[0]!r}. "
                 f"Use 'type(scope): subject' with one of: {allowed}"
             )
-        branch_now = _current_branch()
+        branch_now = _current_branch(where)
         if branch_now == "main":
             return (
                 "a direct commit to main; main takes only --no-ff merges from release/ or hotfix/"
@@ -176,7 +190,7 @@ def _git_violation(command: str) -> str | None:
         if re.search(r"(?:--force(?!-with-lease)|\s-f\b)", push):
             return "a force push; use --force-with-lease on your own branch only"
 
-    branch = _current_branch()
+    branch = _current_branch(where)
     catching_up = bool(
         branch
         and re.search(
@@ -191,7 +205,7 @@ def _git_violation(command: str) -> str | None:
         and not re.search(r"--(?:abort|continue|quit)\b", command)
         and "--no-ff" not in command
         and "--squash" not in command
-        and _current_branch() in GIT_FLOW_BASE_BRANCHES
+        and _current_branch(where) in GIT_FLOW_BASE_BRANCHES
     ):
         return "a fast-forward merge into a shared branch; git flow requires --no-ff"
 
@@ -255,7 +269,7 @@ def _self_test() -> int:
     # reports a different result on develop than on a feature branch.
     global _current_branch
     real_current_branch = _current_branch
-    _current_branch = lambda: "feature/self-test"  # noqa: E731
+    _current_branch = lambda *_: "feature/self-test"  # noqa: E731
 
     cases = (
         ({"tool_name": "Read", "tool_input": {"file_path": "/repo/.env"}}, True),
@@ -441,7 +455,7 @@ def _self_test() -> int:
         ("feature/x", "git commit -m 'feat(x): on a feature branch'", False),
     )
     for branch, command, expected_block in branch_cases:
-        _current_branch = lambda b=branch: b  # noqa: E731
+        _current_branch = lambda *_, b=branch: b  # noqa: E731
         payload = {"tool_name": "Bash", "tool_input": {"command": command}}
         if bool(violation(payload)) is not expected_block:
             print(f"guard self-test failed: branch case {branch} {command!r}", file=sys.stderr)
@@ -449,7 +463,7 @@ def _self_test() -> int:
             return 1
     # back to the neutral stub, not the real lookup: the general cases below
     # must not depend on which branch happens to be checked out
-    _current_branch = lambda: "feature/self-test"  # noqa: E731
+    _current_branch = lambda *_: "feature/self-test"  # noqa: E731
 
     failures = [
         index
