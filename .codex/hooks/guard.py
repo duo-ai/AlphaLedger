@@ -167,8 +167,18 @@ def _git_violation(command: str) -> str | None:
         if re.search(r"(?:--force(?!-with-lease)|\s-f\b)", push):
             return "a force push; use --force-with-lease on your own branch only"
 
+    branch = _current_branch()
+    catching_up = bool(
+        branch
+        and re.search(
+            rf"\bgit\s+(?:merge|pull)\b[^\n;&|]*\b(?:origin/)?{re.escape(branch)}\b",
+            command,
+        )
+        and "--ff-only" in command
+    )
     if (
         re.search(r"\bgit\s+merge(?=\s|$)", command, re.I)
+        and not catching_up
         and not re.search(r"--(?:abort|continue|quit)\b", command)
         and "--no-ff" not in command
         and "--squash" not in command
@@ -457,6 +467,13 @@ def _self_test() -> int:
         (
             {"tool_name": "Bash", "tool_input": {"command": "git push -f origin develop"}},
             True,
+        ),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git merge --no-ff feature/x -m 'Merge x'"},
+            },
+            False,
         ),
     )
     failures = [
