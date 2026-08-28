@@ -187,9 +187,30 @@ hooks are tracked and have been verified to fire inside a worktree.
 
 ### Finishing
 
-Move the unit to `in_review`, request the reviewer named in its frontmatter,
-address the findings, then merge into `develop` with `--no-ff` and set the unit
-to `merged`. Reviewers report; they do not edit files.
+Move the unit to `in_review`, then dispatch the reviewer its frontmatter names:
+
+```bash
+scripts/review.sh UNIT-011
+python3 scripts/coord.py review UNIT-011 --by execution-safety-reviewer --verdict clear
+```
+
+Review is mandatory and enforced, not encouraged. `coord.py state <unit>
+merged` refuses a unit with no recorded review, and refuses one whose last
+verdict was not `clear`. Re-claiming a unit clears its verdict, because a
+verdict from the previous round no longer describes what is on the branch.
+
+Codex-dispatched work is reviewed by the Codex specialist of the same name, so
+a review does not mix model families. Claude-owned work is reviewed by the
+Claude specialist, which only the orchestrating session can spawn;
+`scripts/review.sh` says so rather than pretending otherwise.
+
+Reviewers report; they do not edit files. Address the findings, record a new
+review, then merge into `develop` with `--no-ff` and set the unit to `merged`.
+
+This is not ceremony. On UNIT-010 the reviews caught a bare string shredded
+into characters across every audit field, NaN admitted into forecast values,
+a test asserting on a double incapable of the failure it named, and a defect
+introduced by the first round's own fix.
 
 ## Code Review Rules
 
