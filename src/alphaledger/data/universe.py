@@ -54,6 +54,7 @@ __all__ = [
     "OUTSIDE_CAP",
     "STATIC_FALLBACK_SYMBOLS",
     "UNRESOLVED_CORPORATE_ACTION",
+    "AmbiguousObservationError",
     "Exclusion",
     "FrozenUniverse",
     "LeakedObservationError",
@@ -86,6 +87,17 @@ STATIC_FALLBACK_SYMBOLS: tuple[str, ...] = (
 # fmt: on
 
 
+class AmbiguousObservationError(ValueError):
+    """Two observations of one symbol share a timestamp and disagree.
+
+    Raised rather than resolved. Availability derived as a published time plus
+    a fixed lag gives every observation sharing a source time an identical
+    `first_seen_time`, so ties are ordinary rather than exceptional, and
+    picking a winner would make membership depend on the order a source
+    happened to return its rows.
+    """
+
+
 class LeakedObservationError(ValueError):
     """A source returned an observation that was not knowable at `as_of`.
 
@@ -106,6 +118,7 @@ class SymbolObservation:
     """One symbol's screening facts, as they were known at `first_seen_time`."""
 
     symbol: str
+    feed: str
     first_seen_time: datetime
     active: bool
     tradable: bool
@@ -118,6 +131,11 @@ class SymbolObservation:
     def __post_init__(self) -> None:
         if not self.symbol.strip():
             raise ValueError("symbol must name the instrument; it is never defaulted")
+        if not self.feed.strip():
+            raise ValueError(
+                "feed must identify the source; design section 4 requires it on every "
+                "record so a change of feed cannot pass unnoticed"
+            )
         object.__setattr__(
             self, "first_seen_time", require_utc(self.first_seen_time, "first_seen_time")
         )
@@ -155,10 +173,17 @@ DEFAULT_FLOORS = UniverseFloors()
 
 @dataclass(frozen=True, slots=True)
 class Exclusion:
-    """Why one symbol is not in the set. Kept so a no-trade day is auditable."""
+    """Why one symbol is not in the set. Kept so a no-trade day is auditable.
+
+    Every failed condition is recorded, not only the first. An unresolved
+    corporate action is the one screen that can invalidate the numeric screens'
+    own inputs, because an unadjusted close is what a pending split leaves
+    behind, so a record showing only `below_price_floor` would read as routine
+    exactly when the number is the untrustworthy part.
+    """
 
     symbol: str
-    reason: str
+    reasons: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +192,7 @@ class FrozenUniverse:
 
     as_of: datetime
     symbols: tuple[str, ...]
+    feeds: tuple[str, ...]
     floors: UniverseFloors
     used_static_fallback: bool
     fallback_list_hash: str | None
@@ -214,25 +240,27 @@ def build(
     qualified: list[SymbolObservation] = []
     exclusions: list[Exclusion] = []
     for observation in latest:
-        reason = _rejection(observation, floors, fallback)
-        if reason is None:
-            qualified.append(observation)
+        reasons = _rejections(observation, floors, fallback)
+        if reasons:
+            exclusions.append(Exclusion(symbol=observation.symbol, reasons=reasons))
         else:
-            exclusions.append(Exclusion(symbol=observation.symbol, reason=reason))
+            qualified.append(observation)
 
     ranked = sorted(qualified, key=lambda item: (-item.median_dollar_volume, item.symbol))
     kept, cut = ranked[: floors.max_symbols], ranked[floors.max_symbols :]
-    exclusions.extend(Exclusion(symbol=item.symbol, reason=OUTSIDE_CAP) for item in cut)
+    exclusions.extend(Exclusion(symbol=item.symbol, reasons=(OUTSIDE_CAP,)) for item in cut)
 
     symbols = tuple(item.symbol for item in kept)
+    feeds = tuple(sorted({item.feed for item in kept}))
     fallback_hash = static_fallback_hash() if fallback else None
     return FrozenUniverse(
         as_of=cutoff,
         symbols=symbols,
+        feeds=feeds,
         floors=floors,
         used_static_fallback=fallback,
         fallback_list_hash=fallback_hash,
-        universe_hash=_universe_hash(cutoff, symbols, floors, fallback, fallback_hash),
+        universe_hash=_universe_hash(cutoff, symbols, feeds, floors, fallback, fallback_hash),
         exclusions=tuple(sorted(exclusions, key=lambda item: item.symbol)),
     )
 
@@ -256,53 +284,73 @@ def _latest_per_symbol(
                 "universe was decided"
             )
         held = newest.get(observation.symbol)
-        if held is None or observation.first_seen_time >= held.first_seen_time:
+        if held is None or observation.first_seen_time > held.first_seen_time:
             newest[observation.symbol] = observation
+        elif observation.first_seen_time == held.first_seen_time and observation != held:
+            raise AmbiguousObservationError(
+                f"{observation.symbol}: two observations share first_seen_time "
+                f"{observation.first_seen_time.isoformat()} and disagree, so which "
+                "one describes the symbol at as_of is decided by the order the "
+                "source returned them. The source must distinguish them"
+            )
     return tuple(newest[symbol] for symbol in sorted(newest))
 
 
-def _rejection(
+def _rejections(
     observation: SymbolObservation, floors: UniverseFloors, fallback: bool
-) -> str | None:
-    """The first condition this symbol fails, or None if it clears them all."""
+) -> tuple[str, ...]:
+    """Every condition this symbol fails, empty if it clears them all.
+
+    Identity conditions come first, then optionability, then the numeric
+    floors, because that is the order in which a reader should read them: a
+    symbol whose identity is unresolved has numbers that may not mean what they
+    say.
+    """
+    reasons: list[str] = []
     if not observation.active:
-        return INACTIVE
+        reasons.append(INACTIVE)
     if not observation.tradable:
-        return NOT_TRADABLE
+        reasons.append(NOT_TRADABLE)
+    if observation.unresolved_corporate_action:
+        reasons.append(UNRESOLVED_CORPORATE_ACTION)
     if fallback:
         # The list stands in for optionability evidence only.
         if observation.symbol not in STATIC_FALLBACK_SYMBOLS:
-            return OPTIONS_NOT_ENABLED
+            reasons.append(OPTIONS_NOT_ENABLED)
     else:
         if not observation.options_enabled:
-            return OPTIONS_NOT_ENABLED
+            reasons.append(OPTIONS_NOT_ENABLED)
         if not observation.near_money_quotes_7_to_21_dte:
-            return NO_QUOTED_EXPIRATION
+            reasons.append(NO_QUOTED_EXPIRATION)
     if observation.prior_close < floors.min_prior_close:
-        return BELOW_PRICE_FLOOR
+        reasons.append(BELOW_PRICE_FLOOR)
     if observation.median_dollar_volume < floors.min_median_dollar_volume:
-        return BELOW_DOLLAR_VOLUME_FLOOR
-    if observation.unresolved_corporate_action:
-        return UNRESOLVED_CORPORATE_ACTION
-    return None
+        reasons.append(BELOW_DOLLAR_VOLUME_FLOOR)
+    return tuple(reasons)
 
 
 def _universe_hash(
     as_of: datetime,
     symbols: tuple[str, ...],
+    feeds: tuple[str, ...],
     floors: UniverseFloors,
     fallback: bool,
     fallback_hash: str | None,
 ) -> str:
-    """Content address the inputs that decide membership.
+    """Content address the decided set, not the evidence behind it.
 
-    Exclusions are audit detail rather than part of the frozen set, so they are
-    not addressed here; two runs that reach the same members for different
-    stated reasons are still the same universe.
+    The address covers the instant, the ranked members, the feeds they came
+    from, the floors, and the fallback disclosure. It deliberately does not
+    cover the underlying observations, so two different bodies of evidence that
+    rank to the same members under the same floors share an address. That is
+    what AC-5 asks for, set identity, and it is a narrower guarantee than
+    provenance; a run that needs provenance should address its inputs
+    separately. Exclusions are audit detail and are not addressed either.
     """
     body = {
         "as_of": as_of.isoformat(),
         "symbols": list(symbols),
+        "feeds": list(feeds),
         "min_prior_close": str(floors.min_prior_close),
         "min_median_dollar_volume": str(floors.min_median_dollar_volume),
         "max_symbols": floors.max_symbols,

@@ -23,6 +23,7 @@ from alphaledger.data.universe import (
     OUTSIDE_CAP,
     STATIC_FALLBACK_SYMBOLS,
     UNRESOLVED_CORPORATE_ACTION,
+    AmbiguousObservationError,
     LeakedObservationError,
     ObservationSource,
     SymbolObservation,
@@ -41,6 +42,7 @@ def moment(**offset: float) -> datetime:
 def observed(
     symbol: str,
     *,
+    feed: str = "sip_daily",
     first_seen_time: datetime | None = None,
     active: bool = True,
     tradable: bool = True,
@@ -52,6 +54,7 @@ def observed(
 ) -> SymbolObservation:
     return SymbolObservation(
         symbol=symbol,
+        feed=feed,
         first_seen_time=first_seen_time or moment(hours=-1),
         active=active,
         tradable=tradable,
@@ -69,8 +72,8 @@ def source(*observations: SymbolObservation, optionability: bool = True) -> Obse
     )
 
 
-def reason_for(universe: object, symbol: str) -> str:
-    exclusions = {item.symbol: item.reason for item in universe.exclusions}  # type: ignore[attr-defined]
+def reasons_for(universe: object, symbol: str) -> tuple[str, ...]:
+    exclusions = {item.symbol: item.reasons for item in universe.exclusions}  # type: ignore[attr-defined]
     return exclusions[symbol]
 
 
@@ -89,7 +92,7 @@ def test_a_fixture_produces_the_expected_set_and_the_same_hash_when_rebuilt() ->
 
     assert first.symbols == ("AAPL", "MSFT")
     assert first.universe_hash == second.universe_hash
-    assert reason_for(first, "PENNY") == BELOW_PRICE_FLOOR
+    assert reasons_for(first, "PENNY") == (BELOW_PRICE_FLOOR,)
 
 
 def test_the_cap_keeps_the_highest_median_dollar_volume_and_drops_the_rest() -> None:
@@ -107,7 +110,7 @@ def test_the_cap_keeps_the_highest_median_dollar_volume_and_drops_the_rest() -> 
     assert universe.symbols[0] == "SYM040"
     assert universe.symbols[-1] == "SYM011"
     assert "SYM010" not in universe.symbols
-    assert reason_for(universe, "SYM010") == OUTSIDE_CAP
+    assert reasons_for(universe, "SYM010") == (OUTSIDE_CAP,)
 
 
 def test_a_tie_on_dollar_volume_is_broken_by_symbol_so_the_set_is_reproducible() -> None:
@@ -195,7 +198,7 @@ def test_a_symbol_whose_liquidity_only_appears_after_as_of_is_excluded() -> None
     universe = build(PRIOR_CLOSE, feed)
 
     assert universe.symbols == ("REAL",)
-    assert reason_for(universe, "LATE") == BELOW_DOLLAR_VOLUME_FLOOR
+    assert reasons_for(universe, "LATE") == (BELOW_DOLLAR_VOLUME_FLOOR,)
 
 
 def test_a_symbol_first_optionable_after_as_of_is_absent_from_the_set_at_as_of() -> None:
@@ -207,7 +210,7 @@ def test_a_symbol_first_optionable_after_as_of_is_absent_from_the_set_at_as_of()
     universe = build(PRIOR_CLOSE, feed)
 
     assert universe.symbols == ()
-    assert reason_for(universe, "SOON") == OPTIONS_NOT_ENABLED
+    assert reasons_for(universe, "SOON") == (OPTIONS_NOT_ENABLED,)
 
 
 def test_a_source_that_returns_an_observation_stamped_after_as_of_is_rejected() -> None:
@@ -236,7 +239,7 @@ def test_an_unresolved_corporate_action_excludes_the_symbol_and_records_the_reas
     )
 
     assert universe.symbols == ("CLEAN",)
-    assert reason_for(universe, "SPLIT") == UNRESOLVED_CORPORATE_ACTION
+    assert reasons_for(universe, "SPLIT") == (UNRESOLVED_CORPORATE_ACTION,)
 
 
 def test_a_symbol_without_a_quoted_near_money_expiration_is_excluded() -> None:
@@ -245,7 +248,7 @@ def test_a_symbol_without_a_quoted_near_money_expiration_is_excluded() -> None:
     )
 
     assert universe.symbols == ("DEEP",)
-    assert reason_for(universe, "THIN") == NO_QUOTED_EXPIRATION
+    assert reasons_for(universe, "THIN") == (NO_QUOTED_EXPIRATION,)
 
 
 def test_a_naive_as_of_is_rejected() -> None:
@@ -257,6 +260,7 @@ def test_a_float_price_is_rejected_because_a_close_is_money() -> None:
     with pytest.raises(TypeError, match="float"):
         SymbolObservation(
             symbol="AAPL",
+            feed="sip_daily",
             first_seen_time=moment(hours=-1),
             active=True,
             tradable=True,
@@ -266,6 +270,72 @@ def test_a_float_price_is_rejected_because_a_close_is_money() -> None:
             near_money_quotes_7_to_21_dte=True,
             unresolved_corporate_action=False,
         )
+
+
+def test_two_observations_at_one_timestamp_that_disagree_are_ambiguous_not_ordered() -> None:
+    """Ties are the normal case, not an edge case.
+
+    A feed whose availability is derived as source_time plus a fixed lag gives
+    every observation sharing a source_time a byte-identical first_seen_time.
+    Picking a winner by arrival order would make membership depend on the order
+    rows came back, so this stops instead.
+    """
+    low = observed("TIE", prior_close="4.00")
+    high = observed("TIE", prior_close="400.00")
+
+    for arrival in ((low, high), (high, low)):
+        with pytest.raises(AmbiguousObservationError) as raised:
+            build(PRIOR_CLOSE, source(*arrival))
+        assert "TIE" in str(raised.value)
+        assert low.first_seen_time.isoformat() in str(raised.value)
+
+
+def test_two_identical_observations_at_one_timestamp_are_not_ambiguous() -> None:
+    """Only disagreement is ambiguous. The same fact twice is still one fact."""
+    universe = build(PRIOR_CLOSE, source(observed("SAME"), observed("SAME")))
+
+    assert universe.symbols == ("SAME",)
+
+
+def test_an_observation_stamped_exactly_at_as_of_is_knowable_at_as_of() -> None:
+    """AC-1 turns on this boundary, so it is pinned rather than assumed."""
+    universe = build(PRIOR_CLOSE, source(observed("EDGE", first_seen_time=PRIOR_CLOSE)))
+
+    assert universe.symbols == ("EDGE",)
+
+
+def test_every_failed_condition_is_recorded_not_only_the_first() -> None:
+    """An unresolved corporate action is the one screen that can invalidate the
+    others' inputs: an unadjusted close is exactly what a pending split leaves
+    behind. Recording only the price floor would read as routine."""
+    universe = build(
+        PRIOR_CLOSE,
+        source(observed("MERGE", prior_close="2.00", unresolved_corporate_action=True)),
+    )
+
+    reasons = reasons_for(universe, "MERGE")
+
+    assert UNRESOLVED_CORPORATE_ACTION in reasons
+    assert BELOW_PRICE_FLOOR in reasons
+    assert reasons.index(UNRESOLVED_CORPORATE_ACTION) < reasons.index(BELOW_PRICE_FLOOR)
+
+
+def test_the_feed_is_recorded_and_two_feeds_never_share_a_universe_hash() -> None:
+    """Design section 4: store the feed on every record. A universe built from
+    consolidated volumes is not the same universe as one built from one venue,
+    even when the numbers happen to match."""
+    consolidated = build(PRIOR_CLOSE, source(observed("AAPL", feed="sip_daily")))
+    single_venue = build(PRIOR_CLOSE, source(observed("AAPL", feed="iex_daily")))
+
+    assert consolidated.symbols == single_venue.symbols == ("AAPL",)
+    assert consolidated.feeds == ("sip_daily",)
+    assert single_venue.feeds == ("iex_daily",)
+    assert consolidated.universe_hash != single_venue.universe_hash
+
+
+def test_a_record_without_a_feed_is_rejected_rather_than_defaulted() -> None:
+    with pytest.raises(ValueError, match="feed"):
+        observed("AAPL", feed="")
 
 
 # --- static fallback ----------------------------------------------------
@@ -285,7 +355,7 @@ def test_the_static_fallback_stands_in_for_optionability_and_says_so() -> None:
     assert universe.symbols == (inside,)
     assert universe.used_static_fallback is True
     assert universe.fallback_list_hash == static_fallback_hash()
-    assert reason_for(universe, "NOTLISTED") == OPTIONS_NOT_ENABLED
+    assert reasons_for(universe, "NOTLISTED") == (OPTIONS_NOT_ENABLED,)
 
 
 def test_the_fallback_does_not_rescue_a_symbol_that_fails_a_price_or_volume_floor() -> None:
@@ -295,7 +365,7 @@ def test_the_fallback_does_not_rescue_a_symbol_that_fails_a_price_or_volume_floo
     universe = build(PRIOR_CLOSE, feed)
 
     assert universe.symbols == ()
-    assert reason_for(universe, inside) == BELOW_PRICE_FLOOR
+    assert reasons_for(universe, inside) == (BELOW_PRICE_FLOOR,)
 
 
 def test_a_build_with_reconstructable_optionability_never_sets_the_fallback_flag() -> None:
@@ -327,6 +397,7 @@ seen = datetime(2026, 8, 27, 19, 0, tzinfo=UTC)
 rows = tuple(
     SymbolObservation(
         symbol=symbol,
+        feed="sip_daily",
         first_seen_time=seen,
         active=True,
         tradable=True,
@@ -382,7 +453,7 @@ def test_a_date_on_which_nothing_clears_the_floors_returns_an_empty_universe() -
     assert universe.symbols == ()
     assert universe.floors == floors
     assert universe.universe_hash
-    assert {item.reason for item in universe.exclusions} == {BELOW_PRICE_FLOOR}
+    assert {item.reasons for item in universe.exclusions} == {(BELOW_PRICE_FLOOR,)}
 
 
 def test_an_empty_source_returns_an_empty_universe_rather_than_an_error() -> None:
