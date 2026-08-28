@@ -4,7 +4,8 @@ Last updated: 2026-08-28
 
 ## Current phase
 
-The development harness and the first vertical unit are done. The Python
+Released as v0.1.0. The development harness and the first vertical unit are
+done, and `main` now holds them. The Python
 project exists on 3.14 with a committed lockfile, and the frozen domain
 contracts are merged, which unblocks both lanes. No broker, data, or research
 code exists yet.
@@ -29,13 +30,21 @@ environment.
   sketched; the conflict and its resolution are recorded in the UNIT-001
   intake.
 - Quality gate passes end to end on 3.14: `uv sync --frozen`, `ruff check`,
-  `ruff format --check`, `mypy src` under strict, and 16 tests.
+  `ruff format --check`, `mypy src` under strict, and 32 tests. The gate now
+  runs inside `verify_harness.sh` too, so the script cannot be green while
+  the repository gate is red.
 - `scripts/coord.py`: claiming across runtimes. Self-test passes with 11 cases.
   The dependency gate was exercised on the real files in both directions:
   refused while UNIT-001 was unmerged, allowed once it merged.
-- `scripts/verify_harness.sh`: 25 checks, all passing, including both guards
+- `scripts/verify_harness.sh`: 33 checks, all passing, including both guards
   firing inside a worktree.
 - `.claude/hooks/guard.py` and `.codex/hooks/guard.py`: 23 and 25 cases.
+- `scripts/dispatch.sh`: one-line Codex dispatch for a unit. Codex is the
+  standing default runtime for implementation work; see the parallel work
+  protocol in `AGENTS.md`.
+- UNIT-001 was reviewed by `code-reviewer` after the fact. Two high findings,
+  a bare string shredded into characters across every audit field and NaN or
+  Infinity admitted into float fields, are fixed with regression tests.
 - Eight skills across both runtimes, each with `origin` and, on the Codex side,
   an `agents/openai.yaml` binding. `tdd-workflow` and `verification-loop` were
   ported from ECC and adapted; the six lifecycle skills stay manual-only.
@@ -54,19 +63,21 @@ environment.
 
 ## Known gaps
 
-- UNIT-001 merged without the `code-reviewer` specialist having run. The
-  protocol requires that review; it is outstanding, not waived.
-- `main` is thirteen commits behind `develop` and holds none of the harness.
-  It needs a `release/` branch when the first version is cut.
-- `.idea/` is untracked and absent from `.gitignore`.
+- `main` and `develop` are level at v0.1.0, but no release process is exercised
+  beyond this first cut.
+- The roster still names `teammate/claude` as a placeholder. `coord.py` refuses
+  any owner that does not match `handle/claude` or `handle/codex`.
+- No broker, data, or research code exists. Every G1 to G6 artifact is open.
 
 ## Next three tasks
 
-1. Run `code-reviewer` over the merged UNIT-001 diff and act on the findings.
-2. Claim UNIT-010, the paper endpoint assertion, which is the first execution
-   unit and the gate every later order path depends on.
-3. Record the real competition dates and account facts in the run manifest,
+1. Dispatch UNIT-010, the paper endpoint assertion, to Codex with
+   `scripts/dispatch.sh UNIT-010 pablo/codex`. It is the gate every later order
+   path depends on.
+2. Record the real competition dates and account facts in the run manifest,
    then pass or block G0.
+3. Write the intakes for UNIT-011 and UNIT-012 so the execution lane has a
+   queue deeper than one unit.
 
 ## Read first next session
 
