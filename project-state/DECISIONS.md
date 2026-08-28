@@ -378,3 +378,38 @@ belong in the trial registry or status file.
 - Revisit only if: a specialist is found editing outside its memory directory,
   in which case the answer is to remove memory from that agent rather than to
   add a rule nothing enforces.
+
+## D-020: Codex keeps no memory; Claude specialists do
+
+- Date: 2026-08-29
+- Origin: research into what each runtime actually offers, before enabling
+  anything.
+- Decision, Codex: memory stays off. It is disabled by default, per user,
+  cannot be governed through git, and is unavailable to subagents at all, since
+  the write pipeline skips any session whose source is a subagent. OpenAI's own
+  documentation settles it: "Keep required team guidance in `AGENTS.md` or
+  checked-in documentation. Treat memories as a helpful recall layer, not as
+  the only source for rules that must always apply." Nothing in this
+  repository's safety boundary may live somewhere best-effort redacted and
+  invisible to review.
+- Decision, Claude: specialists keep committed memory under
+  `.claude/agent-memory/`, per D-019. The difference between the runtimes is
+  deliberate: that memory is a file in the repository, so it is shared,
+  reviewable, and diffable, which is precisely what the Codex store is not.
+- Consequence: `AGENTS.md` is the shared instruction channel for Codex, and it
+  is not trust-gated, so it reaches a worktree regardless. It is capped at
+  `project_doc_max_bytes`, 32 KiB, and exceeding the cap truncates silently.
+  A harness check now guards that, because silent truncation of the safety
+  contract is the worst failure this file can have.
+- Verified rather than inferred: the documented rule that an untrusted project
+  makes Codex ignore project `.codex/` layers suggested dispatched agents in
+  worktrees would run unguarded, since the trust table names only the primary
+  clone. A live probe inside a worktree returned "Command blocked by PreToolUse
+  hook", so the guard does fire there. The documented rule does not apply the
+  way it reads for worktrees of a trusted project.
+- What the earlier claim actually proved: `verify_harness.sh` ran the guard
+  script inside a worktree and observed its self-test pass. That shows the
+  script works there. It never showed that Codex loads the hook there, which is
+  a different question and is the one that matters on the dispatch path.
+- Revisit only if: Codex memory becomes project-scoped, committable, and
+  available to subagents. All three would have to change.

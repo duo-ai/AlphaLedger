@@ -193,6 +193,17 @@ case $? in
     *) skip "codex guard trust (no readable codex config on this machine)" ;;
 esac
 
+# Codex concatenates the AGENTS.md chain up to project_doc_max_bytes, 32 KiB,
+# and skips files once the cap is hit. Truncation is silent, and this file
+# carries the safety boundary, so growing past the cap would quietly drop the
+# contract rather than fail.
+agents_bytes=$(wc -c < AGENTS.md)
+if [ "$agents_bytes" -lt 26000 ]; then
+    check 0 "AGENTS.md fits the codex 32 KiB cap ($agents_bytes bytes)"
+else
+    check 1 "AGENTS.md is $agents_bytes bytes, near the silent 32768 cap; split it"
+fi
+
 echo "== git flow =="
 git show-ref --verify --quiet refs/heads/develop; check $? "develop exists"
 git show-ref --verify --quiet refs/heads/main; check $? "main exists"

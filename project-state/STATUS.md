@@ -74,8 +74,11 @@ environment.
 - `scripts/coord.py`: claiming across runtimes. Self-test passes with 11 cases.
   The dependency gate was exercised on the real files in both directions:
   refused while UNIT-001 was unmerged, allowed once it merged.
-- `scripts/verify_harness.sh`: 33 checks, all passing, including both guards
-  firing inside a worktree.
+- `scripts/verify_harness.sh`: all checks passing, including both guard scripts
+  self-testing inside a worktree. Note the precision: that shows the script
+  runs there, not that a runtime loads the hook there. The second question was
+  answered separately by a live probe under `codex exec`, which returned
+  "Command blocked by PreToolUse hook" from inside a worktree. See D-020.
 - `.claude/hooks/guard.py` and `.codex/hooks/guard.py`: 23 and 25 cases.
 - `scripts/dispatch.sh`: one-line Codex dispatch for a unit. Codex is the
   standing default runtime for implementation work; see the parallel work
