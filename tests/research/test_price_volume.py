@@ -202,6 +202,57 @@ def test_a_moving_sector_is_subtracted_so_the_residual_is_not_the_raw_return() -
     assert block.features["residual_return_1s"] == pytest.approx(0.0, abs=1e-12)
 
 
+def test_one_wild_peer_does_not_move_the_residual_because_the_centre_is_a_median() -> None:
+    """The model is robust by choice, not by accident.
+
+    A mean would let a single peer with a corporate action or a squeeze drag
+    the whole cross-section, and the residual would then measure that peer.
+    """
+    wild = [
+        bar("PEER3", index, open_="50.00", high="61.00", low="49.00",
+            close="50.00" if index < SESSIONS - 1 else "60.00", volume=1_000_000)
+        for index in range(SESSIONS)
+    ]
+    sectors = {**SECTORS, "PEER3": "tech"}
+
+    block = build("TARGET", AS_OF, tuple(panel()) + tuple(wild), config(sector_by_symbol=sectors))
+
+    # peer returns are 0, 0 and +0.20, whose median is 0
+    assert block.features["residual_return_1s"] == pytest.approx(0.02, abs=1e-12)
+
+
+def test_the_volume_baseline_excludes_the_session_being_measured() -> None:
+    """A baseline that contained today would be partly compared with itself,
+    which flatters an unusual volume towards looking ordinary."""
+    narrow = config(abnormal_volume_sessions=2)
+
+    block = build("TARGET", AS_OF, panel(), narrow)
+
+    # the two prior sessions are 1,000,000 each, so the baseline is 1,000,000
+    # and not the 1,500,000 that including today's 2,000,000 would give
+    assert block.features["abnormal_volume"] == pytest.approx(1.0, abs=1e-12)
+
+
+def test_the_abnormal_return_window_starts_after_the_event_not_on_it() -> None:
+    """The event session's own move belongs to the event, not to the reaction
+    the feature is meant to measure."""
+    moved = [
+        bar("TARGET", index, open_="100.00", high="103.00", low="99.00",
+            close={SESSIONS - 2: "101.00", SESSIONS - 1: "102.00"}.get(index, "100.00"),
+            volume=1_000_000)
+        for index in range(SESSIONS)
+    ]
+    bars = tuple(moved) + tuple(flat_peer("PEER1")) + tuple(flat_peer("PEER2"))
+
+    block = build("TARGET", AS_OF, bars, config(), event_time=session_at(SESSIONS - 2))
+
+    # 102.00 against 101.00 only. Including the event session would add its own
+    # one percent move on top.
+    assert block.features["cumulative_abnormal_return"] == pytest.approx(
+        102 / 101 - 1, abs=1e-12
+    )
+
+
 # --- point in time ------------------------------------------------------
 
 
