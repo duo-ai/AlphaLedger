@@ -29,7 +29,7 @@ import tomllib
 from pathlib import Path
 
 
-def primary_clone() -> Path:
+def primary_clone() -> Path | None:
     """The main working copy, even when called from inside a worktree.
 
     `--git-common-dir` points at the primary clone's .git for every worktree of
@@ -44,10 +44,16 @@ def primary_clone() -> Path:
             check=False,
         )
     except OSError, subprocess.SubprocessError:
-        return Path.cwd().resolve()
+        return None
     if result.returncode != 0 or not result.stdout.strip():
-        return Path.cwd().resolve()
-    return Path(result.stdout.strip()).resolve().parent
+        return None
+    root = Path(result.stdout.strip()).resolve().parent
+    # Only answer for a checkout that actually carries the hook this checks.
+    # Falling back to the working directory could report another project's
+    # trust, or report success having verified nothing.
+    if not (root / ".codex" / "hooks.json").is_file():
+        return None
+    return root
 
 
 def main() -> int:
@@ -62,6 +68,10 @@ def main() -> int:
         return 2
 
     root = primary_clone()
+    if root is None:
+        print("cannot resolve the repository that owns .codex/hooks.json")
+        print("refusing to report on hook trust rather than guess")
+        return 2
     state = data.get("hooks", {}).get("state", {})
     entries = {k: v for k, v in state.items() if k.startswith(f"{root}/") and "pre_tool_use" in k}
     if not entries:
