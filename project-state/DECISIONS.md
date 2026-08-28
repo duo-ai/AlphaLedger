@@ -291,7 +291,7 @@ belong in the trial registry or status file.
   literally would have broken the evidence ledger, so the request is split.
 - Decision: two locations with a test that decides which one a value gets.
   Secrets go in the process environment, seeded from a gitignored dotfile whose
-  names are documented in `env.example`. Non-secret operational constants go in
+  names are documented in `.env.example`. Non-secret operational constants go in
   `config/`, committed and hashed into the run manifest.
 - The test: if a reader of the evidence ledger would need the value to
   understand why a decision was made, it is committed. If knowing it would let
