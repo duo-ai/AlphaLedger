@@ -43,6 +43,7 @@ EVENT_COLOUR = {
     "edit": 214,  # file change, amber
     "says": 252,  # message, near-white
     "find": 87,  # search, pale cyan
+    "plan": 111,  # the agent's todo list, soft violet
     "run": 245,
     "end": 245,
 }
@@ -88,7 +89,31 @@ class Agent:
         self.stem = path.stem
         self.tag = short(self.stem)
         self.colour = PALETTE[index % len(PALETTE)]
-        self.handle: object | None = None
+        self.handle = None
+        self.inode = -1
+
+    def open(self, *, from_start: bool) -> None:
+        self.handle = self.path.open(encoding="utf-8", errors="replace")
+        self.inode = self.path.stat().st_ino
+        if not from_start:
+            self.handle.seek(0, 2)
+
+    def replaced(self) -> bool:
+        """True once this log is a different file, or a shorter one.
+
+        A second dispatch of the same unit rotates the previous stream aside and
+        writes a new one at the same path. Without this the watcher keeps
+        reading the file that was moved away, which never grows again, and goes
+        quiet for the rest of the run while looking exactly like an agent that
+        is thinking.
+        """
+        if self.handle is None:
+            return False
+        try:
+            status = self.path.stat()
+        except OSError:
+            return False
+        return status.st_ino != self.inode or status.st_size < self.handle.tell()
 
     @property
     def is_review(self) -> bool:
@@ -121,11 +146,16 @@ def render(event: dict, agent: Agent, *, clock: bool = True) -> str | None:
         usage = event.get("usage", {})
         total = usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
         return line("end", f"run ended, {total:,} tokens")
-    if kind != "item.completed":
-        return None
-
     item = event.get("item", {})
     itype = item.get("type", "")
+    # Every other item is rendered when it completes, so its exit code or its
+    # result is known. A todo list has no completion event at all, so it is read
+    # from the events that do carry it or it is never seen.
+    if kind in ("item.started", "item.updated"):
+        if itype != "todo_list":
+            return None
+    elif kind != "item.completed":
+        return None
 
     if itype == "command_execution":
         command = item.get("command", "")
@@ -143,6 +173,14 @@ def render(event: dict, agent: Agent, *, clock: bool = True) -> str | None:
     if itype == "web_search":
         return line("find", str(item.get("query", "")))
 
+    if itype == "todo_list":
+        # what the agent thinks it is doing, which is the one signal a reader
+        # cannot reconstruct from the commands going past
+        steps = item.get("items") or []
+        done = sum(1 for s in steps if s.get("completed"))
+        current = next((s.get("text", "") for s in steps if not s.get("completed")), "all done")
+        return line("plan", f"{done}/{len(steps)}  {current}")
+
     if itype == "agent_message":
         text = " ".join(item.get("text", "").split())
         if not text:
@@ -158,17 +196,17 @@ def render(event: dict, agent: Agent, *, clock: bool = True) -> str | None:
     return None
 
 
-def discover(logdir: Path, unit: str | None) -> list[Agent]:
+def discover(logdir: Path, unit: str | None) -> list[Path]:
     logs = sorted(logdir.glob("*.jsonl"))
     if unit:
         number = unit.upper().removeprefix("UNIT-")
         logs = [p for p in logs if p.name.startswith(number)]
-    return [Agent(p, i) for i, p in enumerate(logs)]
+    return logs
 
 
 def split(logdir: Path) -> int:
     """One tmux pane per agent, each following a single unit."""
-    agents = discover(logdir, None)
+    agents = [Agent(p, i) for i, p in enumerate(discover(logdir, None))]
     if not agents:
         print("no dispatch logs to split")
         return 1
@@ -199,31 +237,66 @@ def split(logdir: Path) -> int:
     return 0
 
 
-def follow(agents: list[Agent], replay: bool) -> int:
-    for agent in agents:
-        agent.handle = agent.path.open(encoding="utf-8", errors="replace")
-        if not replay:
-            agent.handle.seek(0, 2)
-        print(f"{agent.label()} {paint(agent.stem, None, DIM)}")
+def drain(agent: Agent, replay: bool) -> bool:
+    """Render whatever the log has gained. True if it had anything at all."""
+    moved = False
+    while True:
+        position = agent.handle.tell()
+        raw = agent.handle.readline()
+        if not raw:
+            return moved
+        if not raw.endswith("\n"):
+            # the writer is mid-line. Rewind and read it whole next time, rather
+            # than parsing half an event and dropping it for good.
+            agent.handle.seek(position)
+            return moved
+        moved = True
+        raw = raw.strip()
+        if not raw.startswith("{"):
+            continue
+        try:
+            event = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        rendered = render(event, agent, clock=not replay)
+        if rendered:
+            print(rendered, flush=True)
+
+
+def follow(logdir: Path, unit: str | None, replay: bool) -> int:
+    agents: dict[Path, Agent] = {}
+
+    def adopt(path: Path, from_start: bool) -> None:
+        agent = Agent(path, len(agents))
+        agent.open(from_start=from_start)
+        agents[path] = agent
+        print(f"{agent.label()} {paint(agent.stem, None, DIM)}", flush=True)
+
+    for path in discover(logdir, unit):
+        adopt(path, replay)
     if agents:
         print(paint("─" * min(width(), 100), None, DIM))
 
     try:
         while True:
             idle = True
-            for agent in agents:
-                for raw in agent.handle:  # type: ignore[union-attr]
-                    raw = raw.strip()
-                    if not raw.startswith("{"):
-                        continue
+            if not replay:
+                # a unit dispatched after this started is worth following too
+                for path in discover(logdir, unit):
+                    if path not in agents:
+                        adopt(path, True)
+                for agent in agents.values():
+                    if agent.replaced():
+                        agent.handle.close()
+                        agent.open(from_start=True)
+                        print(
+                            f"{agent.label()} "
+                            f"{paint('log rotated, following the new run', None, DIM)}",
+                            flush=True,
+                        )
+            for agent in list(agents.values()):
+                if drain(agent, replay):
                     idle = False
-                    try:
-                        event = json.loads(raw)
-                    except json.JSONDecodeError:
-                        continue
-                    out = render(event, agent, clock=not replay)
-                    if out:
-                        print(out, flush=True)
             if replay:
                 return 0
             if idle:
@@ -233,12 +306,80 @@ def follow(agents: list[Agent], replay: bool) -> int:
         return 0
 
 
+def self_test() -> int:
+    """Follow a log across the rotation a second dispatch performs.
+
+    This is a live test rather than a unit one because the failure it guards
+    against is entirely about file identity: the watcher kept reading a handle
+    on a file that had been moved aside, which never grows again and therefore
+    looks exactly like an agent that is still thinking.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    cases = 0
+    root = Path(tempfile.mkdtemp(prefix="watch-selftest-"))
+    try:
+        logdir = root / ".dispatch"
+        logdir.mkdir()
+        log = logdir / "099-probe.jsonl"
+
+        def emit(path: Path, command: str) -> None:
+            payload = {
+                "type": "item.completed",
+                "item": {"type": "command_execution", "command": command, "exit_code": 0},
+            }
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(payload) + "\n")
+
+        emit(log, "before rotation")
+        out = root / "out.txt"
+        with out.open("w", encoding="utf-8") as sink:
+            watcher = subprocess.Popen(
+                [sys.executable, str(Path(__file__).resolve())],
+                cwd=root,
+                stdout=sink,
+                stderr=subprocess.STDOUT,
+                env={**os.environ, "NO_COLOR": "1"},
+            )
+        try:
+            time.sleep(1.5)
+            emit(log, "still the first file")
+            time.sleep(1.0)
+            # exactly what scripts/dispatch.sh does when it starts a second pass
+            log.rename(logdir / (log.name + ".1"))
+            emit(log, "after rotation")
+            emit(logdir / "100-late.jsonl", "a later dispatch")
+            time.sleep(2.5)
+        finally:
+            watcher.terminate()
+            watcher.wait(timeout=10)
+
+        text = out.read_text(encoding="utf-8", errors="replace")
+        assert "still the first file" in text, "must follow the log it opened"
+        cases += 1
+        assert "after rotation" in text, "must reopen a log that a second dispatch rotated aside"
+        cases += 1
+        assert "a later dispatch" in text, "must adopt a log created after the watch started"
+        cases += 1
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+    print(f"watch self-test passed: {cases} cases")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Follow dispatched Codex runs")
     parser.add_argument("unit", nargs="?", help="UNIT-011, or omit for all")
     parser.add_argument("--replay", action="store_true", help="print history and exit")
     parser.add_argument("--split", action="store_true", help="one tmux pane per agent")
+    parser.add_argument("--self-test", action="store_true", help="prove the follower works")
     args = parser.parse_args()
+
+    if args.self_test:
+        return self_test()
 
     logdir = Path(".dispatch")
     if not logdir.is_dir():
@@ -247,11 +388,10 @@ def main() -> int:
     if args.split:
         return split(logdir)
 
-    agents = discover(logdir, args.unit)
-    if not agents:
+    if not discover(logdir, args.unit):
         print(f"no dispatch log for {args.unit}" if args.unit else "no dispatch logs yet")
         return 1
-    return follow(agents, args.replay)
+    return follow(logdir, args.unit, args.replay)
 
 
 if __name__ == "__main__":
