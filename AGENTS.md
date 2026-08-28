@@ -123,6 +123,18 @@ That claims the unit, pushes the claim, cuts a worktree off `develop`, builds
 the prompt from the unit's own intake, and runs `codex exec` in the background.
 Add `--dry-run` to see the prompt without claiming anything.
 
+Several units can run at once, each in its own worktree:
+
+```bash
+scripts/dispatch.sh UNIT-010 UNIT-020 UNIT-021 pablo/codex
+```
+
+Units dispatched together must declare disjoint path globs. `coord.py` refuses
+a claim that overlaps work already in progress, and the dispatcher checks the
+whole batch before it claims anything, so a collision surfaces immediately
+rather than at merge time. If two units genuinely need the same file, the
+decomposition is wrong and they should be one unit.
+
 Claude sessions are best spent on the work Codex cannot do as well: authoring
 intakes, running the specialist reviews, integrating, and deciding. Reserve
 Claude for implementation only when a unit is small, or when it is so entangled

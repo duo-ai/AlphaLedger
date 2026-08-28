@@ -8,7 +8,7 @@ branch: -
 reviewer: backtest-auditor
 preferred_runtime: claude
 depends_on: [UNIT-001]
-paths: src/alphaledger/data/**
+paths: src/alphaledger/data/recorder.py, src/alphaledger/data/storage.py
 ---
 
 ## Problem

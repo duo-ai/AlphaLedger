@@ -51,6 +51,7 @@ check $? "coord list runs"
 
 # Probe a throwaway copy. A verification script must never mutate the registry.
 probe_units=$(mktemp -d)
+registry_before=$(git status --porcelain specs/ | sort)
 cp specs/units/*.md "$probe_units/"
 rewrite_state "$probe_units"/001-*.md 'merged' 'available'
 py scripts/coord.py --units-dir "$probe_units" claim UNIT-010 --owner probe/codex \
@@ -67,7 +68,7 @@ py scripts/coord.py --units-dir "$probe_units" claim UNIT-010 --owner other/clau
 [ $? -ne 0 ]; check $? "a second owner cannot claim a held unit"
 
 rm -r "$probe_units"
-git diff --quiet specs/
+[ "$registry_before" = "$(git status --porcelain specs/ | sort)" ]
 check $? "the probe never touched the real registry"
 
 # These harness checks do not replace the application quality gate in AGENTS.md.
@@ -109,7 +110,29 @@ bash scripts/dispatch.sh UNIT-010 pablo/codex --dry-run >/dev/null 2>&1
 check $? "dispatch dry run builds a prompt"
 bash scripts/dispatch.sh UNIT-010 pablo/claude --dry-run >/dev/null 2>&1
 [ $? -ne 0 ]; check $? "dispatch refuses a claude owner"
-git diff --quiet specs/; check $? "a dry run claims nothing"
+bash scripts/dispatch.sh UNIT-010 UNIT-020 UNIT-021 pablo/codex --dry-run >/dev/null 2>&1
+check $? "dispatch plans three disjoint units in parallel"
+
+# every pair of units must be safe to run at the same time
+python3 - <<'INNER' >/dev/null 2>&1
+import sys
+sys.path.insert(0, "scripts")
+import coord
+units = coord.load_all(coord.units_dir())
+ids = sorted(units)
+for i, a in enumerate(ids):
+    for b in ids[i + 1:]:
+        pa = str(units[a][0].get("paths", ""))
+        pb = str(units[b][0].get("paths", ""))
+        assert not coord.paths_overlap(pa, pb), f"{a} overlaps {b}"
+INNER
+check $? "no two units declare overlapping path globs"
+# compare before and after rather than demanding a clean tree, so uncommitted
+# spec edits do not masquerade as a dispatch mutation
+before=$(git status --porcelain specs/ | sort)
+bash scripts/dispatch.sh UNIT-010 pablo/codex --dry-run >/dev/null 2>&1
+after=$(git status --porcelain specs/ | sort)
+[ "$before" = "$after" ]; check $? "a dry run claims nothing"
 
 echo "== git flow =="
 git show-ref --verify --quiet refs/heads/develop; check $? "develop exists"
