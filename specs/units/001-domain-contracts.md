@@ -2,7 +2,7 @@
 id: UNIT-001
 title: Freeze the domain contracts
 lane: shared
-state: claimed
+state: merged
 owner: pablo/claude
 branch: feature/001-domain-contracts
 reviewer: code-reviewer
