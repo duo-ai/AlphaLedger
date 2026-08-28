@@ -157,3 +157,29 @@ belong in the trial registry or status file.
   scaffolded. No application code exists yet, so the condition holds.
 - Revisit only if: a required dependency is found to lack a cp314 wheel during
   scaffolding. Record the package and fall back to 3.13, not to 3.12.
+
+## D-013: ECC harness conventions
+
+- Date: 2026-08-28
+- Source: <https://github.com/affaan-m/ecc>, "Everything Claude Code", read on
+  2026-08-28.
+- Decision: adopt four ECC conventions. Conventional commit subjects, which
+  amends the commit style in D-011. `origin:` frontmatter on every skill.
+  `agents/openai.yaml` interface bindings on every Codex skill. Two ported
+  skills, `tdd-workflow` and `verification-loop`, adapted to this repository's
+  toolchain rather than copied.
+- Deliberate deviation: ECC sets `allow_implicit_invocation: true` on every
+  skill. AlphaLedger keeps every lifecycle skill manual-only, so no model can
+  decide by itself to run a paper smoke test, freeze research, or audit a
+  submission. Only `tdd-workflow` and `verification-loop` are implicitly
+  invocable, because neither touches trading state. This deviation is enforced
+  by a check in `scripts/verify_harness.sh`, not by convention.
+- Finding that changed nothing: ECC's parallel-work skill, `dmux-workflows`,
+  runs separate full agent sessions in tmux panes and recommends a git worktree
+  per pane for conflict-prone work. That is the model already accepted in
+  D-010. No write-capable subagent was introduced, and none is needed.
+- Rationale: the repository already matched ECC's agent and skill file layout.
+  The gaps were discoverability metadata and two missing workflow skills, not
+  architecture.
+- Revisit only if: ECC changes its skill schema, in which case re-read the
+  source before changing files here.

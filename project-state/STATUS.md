@@ -36,6 +36,10 @@ environment.
 - `scripts/verify_harness.sh`: 22 checks, all passing, including both guards
   firing inside a worktree.
 - `.claude/hooks/guard.py` and `.codex/hooks/guard.py`: 17 and 19 cases.
+- Eight skills across both runtimes, each with `origin` and, on the Codex side,
+  an `agents/openai.yaml` binding. `tdd-workflow` and `verification-loop` were
+  ported from ECC and adapted; the six lifecycle skills stay manual-only.
+- Commit subjects follow conventional commits, enforced by both guards.
 - Git flow is live. `develop` is on `origin` and is the GitHub default branch,
   so a fresh clone lands on the work rather than on stale `main`.
 
