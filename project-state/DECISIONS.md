@@ -3,7 +3,7 @@
 Only accepted, consequential choices belong here. Experiments and open ideas
 belong in the trial registry or status file.
 
-## D-001 — Paper-only system boundary
+## D-001: Paper-only system boundary
 
 - Date: 2026-08-27
 - Decision: AlphaLedger has no live-money endpoint or generic live-mode path.
@@ -11,7 +11,7 @@ belong in the trial registry or status file.
 - Revisit only if: a separate future project is explicitly authorized and
   independently threat-modeled. Do not relax this repository in place.
 
-## D-002 — Cross-sectional forward alpha
+## D-002: Cross-sectional forward alpha
 
 - Date: 2026-08-27
 - Decision: scan a frozen liquid universe and forecast future residual returns
@@ -21,7 +21,7 @@ belong in the trial registry or status file.
 - Revisit only if: chronological evidence rejects the design; the fallback is
   a separately validated price-volume model or no live alpha, not ticker hunting.
 
-## D-003 — Execution-first vertical slice
+## D-003: Execution-first vertical slice
 
 - Date: 2026-08-27
 - Decision: prove submit, reconciliation, monitoring, exit, restart recovery,
@@ -30,7 +30,7 @@ belong in the trial registry or status file.
 - Revisit only if: official rules prohibit paper access; then preserve the state
   machine with recorded fixtures and disclose the limitation.
 
-## D-004 — One writer, specialist reviewers
+## D-004: One writer, specialist reviewers
 
 - Date: 2026-08-27
 - Decision: the main coding-agent session owns edits; project subagents are
@@ -42,7 +42,7 @@ belong in the trial registry or status file.
 - Revisit only if: work is split into independent repositories or explicitly
   isolated worktrees with a reviewed integration protocol.
 
-## D-005 — Python 3.12 with uv
+## D-005: Python 3.12 with uv
 
 - Date: 2026-08-27
 - Decision: use Python 3.12, `uv`, a committed lockfile, and typed boundaries.
@@ -51,7 +51,7 @@ belong in the trial registry or status file.
 - Revisit only if: event infrastructure mandates another runtime before code is
   scaffolded. Do not introduce a second application language during the sprint.
 
-## D-006 — Agent Alpaca MCP is market-data-only
+## D-006: Agent Alpaca MCP is market-data-only
 
 - Date: 2026-08-27
 - Decision: commit Alpaca MCP with `assets`, `stock-data`, `options-data`,
@@ -62,7 +62,7 @@ belong in the trial registry or status file.
 - Revisit only if: a read-only account toolset becomes separately enforceable.
   Never add the trading toolset to committed coding-agent configuration.
 
-## D-007 — Pin Alpaca MCP 2.3.0 at harness creation
+## D-007: Pin Alpaca MCP 2.3.0 at harness creation
 
 - Date: 2026-08-27
 - Decision: `.mcp.json` and `.codex/config.toml` pin
@@ -72,7 +72,7 @@ belong in the trial registry or status file.
 - Revisit only if: Day-0 contract tests justify a version change. Record the new
   version, source, schema delta, and test result before changing the pin.
 
-## D-008 — Tool-neutral project state
+## D-008: Tool-neutral project state
 
 - Date: 2026-08-27
 - Decision: `project-state/` is the single checkpoint and decision-log location
@@ -82,7 +82,7 @@ belong in the trial registry or status file.
 - Revisit only if: a future runtime needs generated local state that cannot be
   represented in the canonical Markdown checkpoint.
 
-## D-009 — Spec-driven unit intake with a file-per-unit registry
+## D-009: Spec-driven unit intake with a file-per-unit registry
 
 - Date: 2026-08-28
 - Decision: work is decomposed into units, each specified by one Markdown
@@ -100,7 +100,7 @@ belong in the trial registry or status file.
 - Revisit only if: the unit count grows past what a directory listing can
   convey, at which point the registry needs an index, not a different model.
 
-## D-010 — Parallel writers in isolated worktrees
+## D-010: Parallel writers in isolated worktrees
 
 - Date: 2026-08-28
 - Decision: amends D-004. More than one coding-agent session may write, but
@@ -119,7 +119,7 @@ belong in the trial registry or status file.
   decomposition is wrong and the units should be merged, not the isolation
   relaxed.
 
-## D-011 — Git Flow branching model
+## D-011: Git Flow branching model
 
 - Date: 2026-08-28
 - Decision: `main` is production and `develop` is integration. Units are
@@ -136,7 +136,7 @@ belong in the trial registry or status file.
 - Revisit only if: the project moves to trunk-based delivery with real
   continuous deployment, which it does not have.
 
-## D-012 — Python 3.14
+## D-012: Python 3.14
 
 - Date: 2026-08-28
 - Decision: amends D-005. The implementation targets Python 3.14 with `uv` and

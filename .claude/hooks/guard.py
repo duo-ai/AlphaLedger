@@ -65,6 +65,15 @@ BRANCH_CREATION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bgit\s+worktree\s+add\s+[^\s]+\s+-b\s+([^\s]+)"),
 )
 
+COMMIT_MESSAGE_ARGUMENT = re.compile(
+    r"-m\s+(?:\"((?:[^\"\\]|\\.)*)\"|'((?:[^']|'\\'')*)'|([^\s]+))"
+)
+
+
+def _message_text(match: tuple[str, ...]) -> str:
+    return next((group for group in match if group), "")
+
+
 COMMIT_TELLS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
         re.compile(r"co-authored-by\s*:[^\n]*(claude|codex|gpt|copilot|anthropic|openai)", re.I),
@@ -97,8 +106,9 @@ def _git_violation(command: str) -> str | None:
         return None
 
     if re.search(r"\bgit\s+commit\b", command, re.I):
+        message = " ".join(_message_text(m) for m in COMMIT_MESSAGE_ARGUMENT.findall(command))
         for pattern, reason in COMMIT_TELLS:
-            if pattern.search(command):
+            if pattern.search(message):
                 return f"{reason} in a commit message"
         if _current_branch() == "main":
             return "a direct commit to main; main takes only --no-ff merges from release/ or hotfix/"
@@ -199,6 +209,7 @@ def _self_test() -> int:
         ({"tool_name": "Bash", "tool_input": {"command": "git push --force origin develop"}}, True),
         ({"tool_name": "Bash", "tool_input": {"command": "grep -b pattern file.py && git status"}}, False),
         ({"tool_name": "Bash", "tool_input": {"command": "git worktree add ../wt/x -b nope"}}, True),
+        ({"tool_name": "Bash", "tool_input": {"command": "cat > f.md <<'X'\nprose \u2014 with a dash\nX\ngit commit -m 'add prose'"}}, False),
     )
     failures = [
         index

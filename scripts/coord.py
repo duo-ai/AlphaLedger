@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AlphaLedger unit coordination CLI — the Claude/Codex work channel.
+"""AlphaLedger unit coordination CLI, the Claude and Codex work channel.
 
 The registry is the directory ``specs/units/``: one Markdown intake file per
 unit, carrying ``---`` frontmatter. One file per unit is deliberate. Two people
