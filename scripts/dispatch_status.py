@@ -37,7 +37,7 @@ def last_event(path: Path) -> tuple[str, str]:
             item = event.get("item", {})
             if event.get("type") == "item.completed" and item.get("type") == "agent_message":
                 said = " ".join(item.get("text", "").split())
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         pass
     return kind, said
 
