@@ -152,7 +152,10 @@ sys.path.insert(0, "scripts")
 import coord
 
 units = coord.load_all(coord.units_dir())
-ids = sorted(units)
+# D-010 forbids two *writers* holding one file. A merged unit is not a writer,
+# and keeping its glob reserved would make any later unit that amends its files
+# impossible to declare. coord.py claim already filters the same way.
+ids = sorted(i for i in units if units[i][0]["state"] != "merged")
 for i, a in enumerate(ids):
     for b in ids[i + 1 :]:
         pa = str(units[a][0].get("paths", ""))

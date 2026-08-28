@@ -243,3 +243,43 @@ belong in the trial registry or status file.
   checksum, that makes a torn final line provably distinguishable from a
   deliberate truncation. Recovery may then truncate to the last provably
   complete record, and to nothing else.
+
+## D-016: The news label record holds what the labeler emits
+
+- Date: 2026-08-28
+- Origin: writing the UNIT-023 intake surfaced a conflict between two sources
+  of truth. `orchestrator-system-prompt.md` Prompt B, the labeler's actual
+  contract, emits `entity_match`, the ticker, `unknown` for novelty and
+  relevance, and a list of stated limitations. `NewsLabel`, frozen by UNIT-001
+  from design section 14, holds none of those and its `Novelty` and `Relevance`
+  literals exclude `unknown`.
+- Decision: amend the frozen contracts to hold what the labeler emits, rather
+  than narrow the labeler to fit the record. UNIT-002 makes the change.
+- Rationale: the alternative is lossy in the two ways that matter most.
+  Dropping `entity_match` discards the only field that says an article is not
+  about this company, and mapping `unknown` onto a defined value records more
+  certainty than the model expressed. Both leave a downstream reader unable to
+  tell a confident label from a hedged one, which is the shape of an
+  unfalsifiable claim.
+- Boundary preserved: this widens what may be stored, not what may be believed.
+  Prompt B's consistency rules, such as `not_matched` forcing
+  `relevance=incidental`, stay with the labeler adapter, which validates model
+  output and excludes what is invalid. D-014 already draws that line: the
+  frozen record enforces what is universally true of a field, the adapter
+  enforces what is true of its source. Prompt B qualifies some of its own
+  rules, so a record that enforced them would reject labels the contract
+  permits.
+- Blast radius: `NewsLabel` is referenced only by `domain/contracts.py`, its
+  own `__init__`, and the UNIT-001 tests. No news code exists yet, so the
+  amendment lands before there is anything to migrate. That is why it is being
+  done now rather than after UNIT-023.
+- Consequence, recorded because it changed a mechanism: the harness check that
+  forbids two units declaring overlapping path globs compared every unit,
+  including merged ones. UNIT-001 declared `src/alphaledger/domain/**`, so no
+  later unit could ever declare a file under it and the amendment was
+  impossible to specify. The check now considers only units that are not
+  merged, which is what D-010 always meant, since the invariant is about
+  concurrent writers, and it matches the filter `coord.py claim` already
+  applies.
+- Revisit only if: the labeler contract itself changes. Prompt B and
+  `NewsLabel` are now two halves of one interface and have to move together.

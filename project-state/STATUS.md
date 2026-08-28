@@ -111,13 +111,9 @@ environment.
   already-open recorder can still duplicate a fact the first committed.
 - Nothing compares the price family against news or combined baselines, which
   is the comparison the whole lane exists to make.
-- The labeler contract and the frozen `NewsLabel` record disagree. Prompt B in
-  `orchestrator-system-prompt.md` emits `entity_match`, a ticker, and `unknown`
-  for novelty and relevance; design section 14 and
-  `src/alphaledger/domain/contracts.py` hold none of those. A conforming
-  labeler cannot be recorded without either amending the frozen contracts or
-  discarding what the model said it was unsure about. UNIT-023 is `blocked` on
-  it and the full statement is in that intake.
+- The news label amendment accepted in D-016 is specified as UNIT-002 but not
+  implemented. Until it merges, `NewsLabel` cannot hold what Prompt B emits and
+  `coord.py` refuses a claim on UNIT-023.
 - No news, forecast, structure, risk, order, or ledger code exists. Every G1 to
   G6 artifact is open.
 
@@ -128,10 +124,9 @@ environment.
    holding the shape of everything after it.
 2. Dispatch UNIT-011 and UNIT-012 to Codex. The execution lane is two units
    behind the research lane and owns the harder safety surface.
-3. Resolve the news label conflict recorded in the UNIT-023 intake, then write
-   the intakes for UNIT-025, the pooled forecast model, and UNIT-026, the
-   baselines and metrics. UNIT-023 and UNIT-024 are written; UNIT-024 is
-   claimable now and UNIT-023 is blocked on that conflict.
+3. UNIT-002, the news label amendment accepted in D-016. It is small, it is
+   shared lane, and UNIT-023 depends on it. UNIT-024 is claimable in parallel;
+   the two do not share a file.
 
 ## Read first next session
 
