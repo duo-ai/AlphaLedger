@@ -8,7 +8,7 @@ branch: feature/003-news-category
 reviewer: code-reviewer
 preferred_runtime: claude
 depends_on: [UNIT-002]
-paths: src/alphaledger/domain/contracts.py, tests/domain/test_contracts.py
+paths: src/alphaledger/domain/contracts.py, src/alphaledger/domain/__init__.py, tests/domain/test_contracts.py
 claimed_at: 2026-08-28T22:06:46Z
 ---
 
@@ -88,3 +88,11 @@ uv run mypy src
 ```
 
 ## Handoff notes
+
+- 2026-08-29 pablo/claude: the declared paths omitted
+  `src/alphaledger/domain/__init__.py`, while the Contract section requires
+  `CATEGORIES` to be exported from `alphaledger.domain`, which is that file.
+  The unit could not satisfy its own contract inside its own globs. Paths
+  widened. Same defect class that stopped UNIT-010 on its first dispatch, so it
+  is worth asking of any new intake: does the declared path set contain
+  everything the contract names?
