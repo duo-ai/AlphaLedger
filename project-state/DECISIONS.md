@@ -283,3 +283,36 @@ belong in the trial registry or status file.
   applies.
 - Revisit only if: the labeler contract itself changes. Prompt B and
   `NewsLabel` are now two halves of one interface and have to move together.
+
+## D-017: Secrets live in the environment, constants live in config
+
+- Date: 2026-08-28
+- Origin: a request to move constants into an environment file. Acting on it
+  literally would have broken the evidence ledger, so the request is split.
+- Decision: two locations with a test that decides which one a value gets.
+  Secrets go in the process environment, seeded from a gitignored dotfile whose
+  names are documented in `env.example`. Non-secret operational constants go in
+  `config/`, committed and hashed into the run manifest.
+- The test: if a reader of the evidence ledger would need the value to
+  understand why a decision was made, it is committed. If knowing it would let
+  someone act as us, it is a secret. A value that is both is a design error and
+  must be split.
+- Rationale: the whole claim of this project is that a session can be
+  reproduced and audited. `risk_config_hash`, `feature_version`, and
+  `run_manifest_hash` exist to prove what configuration produced a decision. A
+  risk limit read from an untracked file cannot be hashed, cannot be proven
+  after the fact, and would make the ledger an assertion rather than evidence.
+- The rules already anticipated this. `.claude/rules/30-execution.md` scopes
+  `config/**/*risk*` and `config/**/*broker*`, and
+  `.claude/rules/20-research-integrity.md` scopes `config/**/*model*` and
+  `config/**/*feature*`. The globs existed; the directory did not.
+- Money in these files is a string, never a TOML float, because `money()`
+  rejects float outright.
+- Status recorded rather than hidden: every value committed today mirrors a
+  dataclass default in already-merged code and none has been selected on data.
+  Design sections 4 and 5.1 require selection on development data, registration
+  as a trial, and freezing before an autonomous session. UNIT-004 makes the
+  files the source and pins them against the code defaults so the two cannot
+  drift silently.
+- Revisit only if: a value is found that is genuinely both secret and needed to
+  explain a decision. Split it rather than relaxing the boundary.

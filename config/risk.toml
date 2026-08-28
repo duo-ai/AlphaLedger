@@ -1,0 +1,17 @@
+# Frozen risk policy. The arm state binds to the hash of this file, so editing
+# it during a session invalidates the arm. See .claude/rules/01-safety.md.
+#
+# Money and fractions are strings for the same reason as universe.toml.
+
+maximum_loss_fraction_per_new_trade = "0.00375"
+maximum_concurrent_positions = 2
+max_contracts_per_structure = 3
+smoke_test_max_contracts = 1
+
+require_defined_risk = true
+require_risk_token = true
+require_human_paper_arm = true
+
+# Half risk until the first complete round trip succeeds, per the build plan.
+# Promotion to full risk is a deliberate act, not a default.
+start_at_half_risk = true

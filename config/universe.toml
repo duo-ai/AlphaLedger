@@ -1,0 +1,10 @@
+# Universe screening floors. Mirrors UniverseFloors in
+# src/alphaledger/data/universe.py, which is currently the source of these
+# defaults. Declared, not selected: see config/README.md.
+#
+# Money is a string, never a TOML float. The domain's money() rejects float
+# outright, because a binary float cannot represent a decimal price exactly.
+
+min_prior_close = "10"
+min_median_dollar_volume = "10000000"
+max_symbols = 30

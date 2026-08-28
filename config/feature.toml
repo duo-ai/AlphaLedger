@@ -1,0 +1,23 @@
+# Price and volume feature configuration. Mirrors FeatureConfig in
+# src/alphaledger/evidence/price_volume.py. Any change here changes
+# feature_version, which is the point.
+#
+# Declared defaults, not selected on data. Design section 5.1 requires these
+# lookbacks and winsorization limits to be chosen on development data,
+# registered as trials, and frozen before an autonomous session.
+
+lookback_sessions = 60
+residual_volatility_sessions = 20
+abnormal_volume_sessions = 20
+atr_sessions = 14
+extreme_sessions = 20
+min_sector_peers = 2
+
+# Winsorization is in units of standard deviation, so a float is correct here.
+# These are not money.
+winsor_lower = -5.0
+winsor_upper = 5.0
+
+# Symbol to sector. Empty until the universe is frozen; a symbol absent from
+# this map falls back to the market and is flagged sector_fallback_market.
+[sector_by_symbol]

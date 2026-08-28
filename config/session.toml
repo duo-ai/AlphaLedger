@@ -1,0 +1,13 @@
+# Session cadence and the strategy allowlist. Non-secret, and needed to explain
+# why a scan happened when it did, so it is committed rather than environmental.
+
+timezone = "America/New_York"
+scheduled_scans = ["10:00", "12:30", "15:00"]
+no_new_entry_first_minutes = 10
+no_new_entry_final_minutes = 45
+
+# Only defined-risk debit verticals go live. Adding a structure here is a
+# decision, not configuration: it requires a recorded decision record first.
+strategy_allowlist = ["bull_call_debit_vertical", "bear_put_debit_vertical"]
+dte_min = 7
+dte_max = 21
