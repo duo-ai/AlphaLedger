@@ -5,7 +5,9 @@ import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Mapping
 from dataclasses import FrozenInstanceError
+from dataclasses import fields as dataclass_fields
 from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
@@ -18,6 +20,154 @@ from alphaledger.evidence.price_volume import FeatureConfig as ResearchFeatureCo
 
 COMMITTED_CONFIG = Path(__file__).parents[2] / "config"
 CONFIG_FILENAMES = ("universe.toml", "feature.toml", "risk.toml", "session.toml")
+HASH_FIELD_MUTATIONS = (
+    ("min_prior_close", "universe.toml", 'min_prior_close = "10"', 'min_prior_close = "11"'),
+    (
+        "min_median_dollar_volume",
+        "universe.toml",
+        'min_median_dollar_volume = "10000000"',
+        'min_median_dollar_volume = "11000000"',
+    ),
+    ("max_symbols", "universe.toml", "max_symbols = 30", "max_symbols = 29"),
+    (
+        "lookback_sessions",
+        "feature.toml",
+        "lookback_sessions = 60",
+        "lookback_sessions = 61",
+    ),
+    (
+        "residual_volatility_sessions",
+        "feature.toml",
+        "residual_volatility_sessions = 20",
+        "residual_volatility_sessions = 21",
+    ),
+    (
+        "abnormal_volume_sessions",
+        "feature.toml",
+        "abnormal_volume_sessions = 20",
+        "abnormal_volume_sessions = 21",
+    ),
+    ("atr_sessions", "feature.toml", "atr_sessions = 14", "atr_sessions = 15"),
+    (
+        "extreme_sessions",
+        "feature.toml",
+        "extreme_sessions = 20",
+        "extreme_sessions = 21",
+    ),
+    (
+        "min_sector_peers",
+        "feature.toml",
+        "min_sector_peers = 2",
+        "min_sector_peers = 3",
+    ),
+    ("winsor_lower", "feature.toml", "winsor_lower = -5.0", "winsor_lower = -4.5"),
+    ("winsor_upper", "feature.toml", "winsor_upper = 5.0", "winsor_upper = 4.5"),
+    (
+        "sector_by_symbol",
+        "feature.toml",
+        "[sector_by_symbol]",
+        '[sector_by_symbol]\nAAPL = "technology"',
+    ),
+    (
+        "maximum_loss_fraction_per_new_trade",
+        "risk.toml",
+        'maximum_loss_fraction_per_new_trade = "0.00375"',
+        'maximum_loss_fraction_per_new_trade = "0.004"',
+    ),
+    (
+        "maximum_concurrent_positions",
+        "risk.toml",
+        "maximum_concurrent_positions = 2",
+        "maximum_concurrent_positions = 3",
+    ),
+    (
+        "max_contracts_per_structure",
+        "risk.toml",
+        "max_contracts_per_structure = 3",
+        "max_contracts_per_structure = 4",
+    ),
+    (
+        "start_at_half_risk",
+        "risk.toml",
+        "start_at_half_risk = true",
+        "start_at_half_risk = false",
+    ),
+    (
+        "timezone",
+        "session.toml",
+        'timezone = "America/New_York"',
+        'timezone = "UTC"',
+    ),
+    (
+        "scheduled_scans",
+        "session.toml",
+        'scheduled_scans = ["10:00", "12:30", "15:00"]',
+        'scheduled_scans = ["10:01", "12:30", "15:00"]',
+    ),
+    (
+        "no_new_entry_first_minutes",
+        "session.toml",
+        "no_new_entry_first_minutes = 10",
+        "no_new_entry_first_minutes = 11",
+    ),
+    (
+        "no_new_entry_final_minutes",
+        "session.toml",
+        "no_new_entry_final_minutes = 45",
+        "no_new_entry_final_minutes = 46",
+    ),
+    (
+        "strategy_allowlist",
+        "session.toml",
+        'strategy_allowlist = ["bull_call_debit_vertical", "bear_put_debit_vertical"]',
+        'strategy_allowlist = ["bull_call_debit_vertical"]',
+    ),
+    ("dte_min", "session.toml", "dte_min = 7", "dte_min = 8"),
+    ("dte_max", "session.toml", "dte_max = 21", "dte_max = 22"),
+)
+INVARIANT_FIELD_MUTATIONS = (
+    (
+        "smoke_test_max_contracts",
+        "smoke_test_max_contracts = 1",
+        "smoke_test_max_contracts = 2",
+    ),
+    ("require_defined_risk", "require_defined_risk = true", "require_defined_risk = false"),
+    ("require_risk_token", "require_risk_token = true", "require_risk_token = false"),
+    (
+        "require_human_paper_arm",
+        "require_human_paper_arm = true",
+        "require_human_paper_arm = false",
+    ),
+)
+SECTION_FIELDS = (
+    ("universe", "min_prior_close"),
+    ("universe", "min_median_dollar_volume"),
+    ("universe", "max_symbols"),
+    ("feature", "lookback_sessions"),
+    ("feature", "residual_volatility_sessions"),
+    ("feature", "abnormal_volume_sessions"),
+    ("feature", "atr_sessions"),
+    ("feature", "extreme_sessions"),
+    ("feature", "min_sector_peers"),
+    ("feature", "winsor_lower"),
+    ("feature", "winsor_upper"),
+    ("feature", "sector_by_symbol"),
+    ("risk", "maximum_loss_fraction_per_new_trade"),
+    ("risk", "maximum_concurrent_positions"),
+    ("risk", "max_contracts_per_structure"),
+    ("risk", "smoke_test_max_contracts"),
+    ("risk", "require_defined_risk"),
+    ("risk", "require_risk_token"),
+    ("risk", "require_human_paper_arm"),
+    ("risk", "start_at_half_risk"),
+    ("session", "timezone"),
+    ("session", "scheduled_scans"),
+    ("session", "no_new_entry_first_minutes"),
+    ("session", "no_new_entry_final_minutes"),
+    ("session", "strategy_allowlist"),
+    ("session", "dte_min"),
+    ("session", "dte_max"),
+)
 
 
 def _config_api() -> ModuleType:
@@ -57,9 +207,7 @@ def _hash_in_subprocess(directory: Path) -> str:
     return completed.stdout.strip()
 
 
-def test_full_load_preserves_every_value_in_immutable_records_and_hashes_content(
-    tmp_path: Path,
-) -> None:
+def test_full_load_preserves_every_value_and_hashes_content(tmp_path: Path) -> None:
     config_api = _config_api()
     directory = _copy_config(tmp_path)
 
@@ -102,14 +250,89 @@ def test_full_load_preserves_every_value_in_immutable_records_and_hashes_content
     )
     assert len(loaded.frozen_config_hash) == 64
     assert loaded.frozen_config_hash == config_api.config_hash(loaded)
+
+
+def test_regression_cases_cover_every_section_field(tmp_path: Path) -> None:
+    config_api = _config_api()
+    loaded = config_api.load(_copy_config(tmp_path))
+    expected_fields = {
+        filename: {field.name for field in dataclass_fields(getattr(loaded, section))}
+        for filename, section in (
+            ("universe.toml", "universe"),
+            ("feature.toml", "feature"),
+            ("risk.toml", "risk"),
+            ("session.toml", "session"),
+        )
+    }
+    hash_fields = {filename: set() for filename in CONFIG_FILENAMES}
+    for field, filename, _, _ in HASH_FIELD_MUTATIONS:
+        hash_fields[filename].add(field)
+    hash_fields["risk.toml"].update(field for field, _, _ in INVARIANT_FIELD_MUTATIONS)
+    immutable_fields = {
+        section: {field.name for field in dataclass_fields(getattr(loaded, section))}
+        for section in ("universe", "feature", "risk", "session")
+    }
+    covered_immutable_fields = {
+        section: {field for candidate, field in SECTION_FIELDS if candidate == section}
+        for section in immutable_fields
+    }
+
+    assert hash_fields == expected_fields
+    assert covered_immutable_fields == immutable_fields
+
+
+@pytest.mark.parametrize(
+    ("field", "filename", "before", "after"),
+    HASH_FIELD_MUTATIONS,
+    ids=[case[0] for case in HASH_FIELD_MUTATIONS],
+)
+def test_every_valid_field_change_changes_the_frozen_hash(
+    tmp_path: Path,
+    field: str,
+    filename: str,
+    before: str,
+    after: str,
+) -> None:
+    config_api = _config_api()
+    baseline = config_api.load(_copy_config(tmp_path, "baseline"))
+    changed_directory = _copy_config(tmp_path, field)
+    _replace(changed_directory, filename, before, after)
+
+    changed = config_api.load(changed_directory)
+
+    assert changed.frozen_config_hash != baseline.frozen_config_hash
+
+
+@pytest.mark.parametrize(
+    ("section", "field"),
+    SECTION_FIELDS,
+    ids=[f"{section}.{field}" for section, field in SECTION_FIELDS],
+)
+def test_every_nested_section_field_rejects_assignment(
+    tmp_path: Path, section: str, field: str
+) -> None:
+    config_api = _config_api()
+    loaded = config_api.load(_copy_config(tmp_path))
+    record = getattr(loaded, section)
+
+    with pytest.raises(FrozenInstanceError):
+        setattr(record, field, getattr(record, field))
+
+
+def test_frozen_config_rejects_section_assignment(tmp_path: Path) -> None:
+    config_api = _config_api()
+    loaded = config_api.load(_copy_config(tmp_path))
+
     with pytest.raises(FrozenInstanceError):
         loaded.risk = loaded.risk  # type: ignore[misc]
+
+
+def test_nested_sector_mapping_rejects_item_assignment(tmp_path: Path) -> None:
+    config_api = _config_api()
+    loaded = config_api.load(_copy_config(tmp_path))
+
     with pytest.raises(TypeError):
         loaded.feature.sector_by_symbol["AAPL"] = "technology"  # type: ignore[index]
-
-    changed_directory = _copy_config(tmp_path, "changed-config")
-    _replace(changed_directory, "session.toml", "dte_max = 21", "dte_max = 20")
-    assert config_api.load(changed_directory).frozen_config_hash != loaded.frozen_config_hash
 
 
 def test_same_directory_hashed_in_a_subprocess_produces_the_same_string(tmp_path: Path) -> None:
@@ -145,25 +368,28 @@ def test_unknown_key_in_any_config_file_is_rejected_and_names_the_key(
         config_api.load(directory)
 
 
-def test_value_outside_its_range_is_rejected_by_the_section_record(tmp_path: Path) -> None:
+def test_public_section_record_rejects_value_above_its_validated_range() -> None:
     config_api = _config_api()
-    directory = _copy_config(tmp_path)
-    _replace(directory, "universe.toml", "max_symbols = 30", "max_symbols = 31")
 
     with pytest.raises(ValueError, match="design cap of 30"):
-        config_api.load(directory)
+        config_api.UniverseConfig(
+            min_prior_close=Decimal("10"),
+            min_median_dollar_volume=Decimal("10000000"),
+            max_symbols=31,
+        )
 
 
 @pytest.mark.parametrize(
-    "field",
-    ("require_defined_risk", "require_risk_token", "require_human_paper_arm"),
+    ("field", "before", "after"),
+    INVARIANT_FIELD_MUTATIONS,
+    ids=[case[0] for case in INVARIANT_FIELD_MUTATIONS],
 )
-def test_mandatory_safety_gate_cannot_be_disabled_and_names_the_invariant(
-    tmp_path: Path, field: str
+def test_invariant_only_field_change_fails_closed_and_names_the_field(
+    tmp_path: Path, field: str, before: str, after: str
 ) -> None:
     config_api = _config_api()
     directory = _copy_config(tmp_path)
-    _replace(directory, "risk.toml", f"{field} = true", f"{field} = false")
+    _replace(directory, "risk.toml", before, after)
 
     with pytest.raises(ValueError, match=field):
         config_api.load(directory)
@@ -224,25 +450,45 @@ def test_loading_config_never_reads_the_process_environment(
 ) -> None:
     directory = _copy_config(tmp_path)
 
-    class EnvironmentReadFails(dict[str, str]):
-        def __getitem__(self, key: str) -> str:
-            pytest.fail(f"loader read environment key {key!r}")
+    class EnvironmentReadFails(Mapping[object, object]):
+        def __getitem__(self, key: object) -> NoReturn:
+            pytest.fail(f"loader read the environment with key {key!r}")
 
-        def get(self, key: str, default: str | None = None) -> str | None:
-            pytest.fail(f"loader read environment key {key!r}")
-
-        def __iter__(self):  # type: ignore[no-untyped-def]
+        def __iter__(self) -> NoReturn:
             pytest.fail("loader iterated over the process environment")
 
-    def getenv_fails(key: str, default: str | None = None) -> NoReturn:
-        pytest.fail(f"loader called getenv for {key!r}")
+        def __len__(self) -> NoReturn:
+            pytest.fail("loader measured the process environment")
 
-    monkeypatch.setattr(os, "environ", EnvironmentReadFails())
-    monkeypatch.setattr(os, "getenv", getenv_fails)
-    monkeypatch.delitem(sys.modules, "alphaledger.config", raising=False)
+        def __contains__(self, key: object) -> NoReturn:
+            pytest.fail(f"loader checked the environment for key {key!r}")
 
-    config_api = importlib.import_module("alphaledger.config")
+        def get(self, key: object, default: object = None) -> NoReturn:
+            pytest.fail(f"loader read the environment with key {key!r}")
 
-    loaded = config_api.load(directory)
+        def keys(self) -> NoReturn:
+            pytest.fail("loader read environment keys")
+
+        def items(self) -> NoReturn:
+            pytest.fail("loader read environment items")
+
+        def values(self) -> NoReturn:
+            pytest.fail("loader read environment values")
+
+        def copy(self) -> NoReturn:
+            pytest.fail("loader copied the process environment")
+
+    def getenv_fails(key: object, default: object = None) -> NoReturn:
+        pytest.fail(f"loader called an environment getter for {key!r}")
+
+    with monkeypatch.context() as environment_guard:
+        environment_guard.setattr(os, "environ", EnvironmentReadFails())
+        environment_guard.setattr(os, "environb", EnvironmentReadFails())
+        environment_guard.setattr(os, "getenv", getenv_fails)
+        environment_guard.setattr(os, "getenvb", getenv_fails)
+        environment_guard.delitem(sys.modules, "alphaledger.config", raising=False)
+
+        config_api = importlib.import_module("alphaledger.config")
+        loaded = config_api.load(directory)
 
     assert loaded.frozen_config_hash == config_api.config_hash(loaded)
