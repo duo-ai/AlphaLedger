@@ -15,6 +15,10 @@ fail=0
 # scripts/hook_python.sh for why a bare system interpreter is not safe here.
 py() { bash scripts/hook_python.sh "$@"; }
 
+skip() {
+    echo "  SKIP  $1"
+}
+
 check() {
     if [ "$1" -eq 0 ]; then
         echo "  PASS  $2"
@@ -45,6 +49,16 @@ rewrite_state() {
         && mv "${_file}.new" "$_file"
 }
 
+# The probe copies the live registry, so it must not inherit a real claim.
+# Without this the dependency checks start failing the moment someone claims
+# the unit the probe uses, which is a property of the registry, not a defect.
+release_unit() {
+    sed -e 's/^state: .*$/state: available/' \
+        -e 's/^owner: .*$/owner: -/' \
+        -e 's/^branch: .*$/branch: -/' \
+        -e '/^claimed_at:/d' "$1" > "$1.new" && mv "$1.new" "$1"
+}
+
 echo "== unit registry =="
 py scripts/coord.py list >/dev/null 2>&1
 check $? "coord list runs"
@@ -53,6 +67,7 @@ check $? "coord list runs"
 probe_units=$(mktemp -d)
 registry_before=$(git status --porcelain specs/ | sort)
 cp specs/units/*.md "$probe_units/"
+release_unit "$probe_units"/010-*.md
 rewrite_state "$probe_units"/001-*.md 'merged' 'available'
 py scripts/coord.py --units-dir "$probe_units" claim UNIT-010 --owner probe/codex \
     >/dev/null 2>&1
@@ -105,34 +120,46 @@ done
 [ "$c" -eq 0 ]; check $? "lifecycle skills stay manual-only ($c wrong)"
 
 echo "== codex dispatch =="
-command -v codex >/dev/null 2>&1; check $? "codex CLI on PATH"
-bash scripts/dispatch.sh UNIT-010 pablo/codex --dry-run >/dev/null 2>&1
-check $? "dispatch dry run builds a prompt"
-bash scripts/dispatch.sh UNIT-010 pablo/claude --dry-run >/dev/null 2>&1
-[ $? -ne 0 ]; check $? "dispatch refuses a claude owner"
-bash scripts/dispatch.sh UNIT-010 UNIT-020 UNIT-021 pablo/codex --dry-run >/dev/null 2>&1
-check $? "dispatch plans three disjoint units in parallel"
+if command -v codex >/dev/null 2>&1; then
+    check 0 "codex CLI on PATH"
+    bash scripts/dispatch.sh UNIT-010 pablo/codex --dry-run >/dev/null 2>&1
+    check $? "dispatch dry run builds a prompt"
+    bash scripts/dispatch.sh UNIT-010 pablo/claude --dry-run >/dev/null 2>&1
+    [ $? -ne 0 ]; check $? "dispatch refuses a claude owner"
+    bash scripts/dispatch.sh UNIT-010 UNIT-020 UNIT-021 pablo/codex --dry-run >/dev/null 2>&1
+    check $? "dispatch plans three disjoint units in parallel"
 
-# every pair of units must be safe to run at the same time
-python3 - <<'INNER' >/dev/null 2>&1
+    # compare before and after rather than demanding a clean tree, so an
+    # uncommitted spec edit cannot masquerade as a dispatch mutation
+    before=$(git status --porcelain specs/ | sort)
+    bash scripts/dispatch.sh UNIT-010 pablo/codex --dry-run >/dev/null 2>&1
+    [ "$before" = "$(git status --porcelain specs/ | sort)" ]
+    check $? "a dry run claims nothing"
+else
+    skip "codex CLI on PATH (absent, so the dispatch checks cannot run here)"
+    skip "dispatch dry run builds a prompt"
+    skip "dispatch refuses a claude owner"
+    skip "dispatch plans three disjoint units in parallel"
+    skip "a dry run claims nothing"
+fi
+
+# No codex needed, and this matters most to the writer who does not have it:
+# two units whose globs overlap cannot be worked at the same time.
+py - <<'INNER' >/dev/null 2>&1
 import sys
+
 sys.path.insert(0, "scripts")
 import coord
+
 units = coord.load_all(coord.units_dir())
 ids = sorted(units)
 for i, a in enumerate(ids):
-    for b in ids[i + 1:]:
+    for b in ids[i + 1 :]:
         pa = str(units[a][0].get("paths", ""))
         pb = str(units[b][0].get("paths", ""))
         assert not coord.paths_overlap(pa, pb), f"{a} overlaps {b}"
 INNER
 check $? "no two units declare overlapping path globs"
-# compare before and after rather than demanding a clean tree, so uncommitted
-# spec edits do not masquerade as a dispatch mutation
-before=$(git status --porcelain specs/ | sort)
-bash scripts/dispatch.sh UNIT-010 pablo/codex --dry-run >/dev/null 2>&1
-after=$(git status --porcelain specs/ | sort)
-[ "$before" = "$after" ]; check $? "a dry run claims nothing"
 
 echo "== git flow =="
 git show-ref --verify --quiet refs/heads/develop; check $? "develop exists"
