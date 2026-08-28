@@ -297,17 +297,43 @@ FOLLOWUP
     # the default uv cache sits outside the sandbox and is not writable there
     # Reasoning effort is pinned here rather than inherited from whoever's
     # personal config happens to be loaded, so a dispatch is reproducible.
+    # A second pass would otherwise truncate the stream of the pass it follows,
+    # which is the evidence of what the agent did and what the reviewer read.
+    if [ -s "$log" ]; then
+        n=1
+        while [ -e "$log.$n" ]; do n=$((n + 1)); done
+        mv "$log" "$log.$n"
+    fi
+
+    # --approve-for-me already runs under the workspace-write sandbox and, as of
+    # codex-cli 0.150.1, refuses to be given -s as well. Do not add it back.
     nohup env UV_CACHE_DIR="$worktree/.uv-cache" codex exec \
         -c model_reasoning_effort=xhigh \
         --approve-for-me \
         -C "$worktree" \
-        -s workspace-write \
         --add-dir "$GIT_COMMON" \
         --json \
         -o "$result" \
         - < "$LOGDIR/$slug.prompt.txt" > "$log" 2>&1 &
+    pid=$!
 
-    echo "  $unit  pid $!  $log"
+    # A launch that dies on an argument error used to be indistinguishable from
+    # one that started: the pid was printed, the log held a usage message, and
+    # the failure surfaced only when someone wondered why nothing had happened.
+    # Wait for the first event, or for the process to be gone, whichever is
+    # first, and refuse to report a dispatch that never began.
+    for _ in $(seq 20); do
+        grep -q "^{" "$log" 2>/dev/null && break
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.5
+    done
+    if ! grep -q "^{" "$log" 2>/dev/null; then
+        die "$unit emitted no events, so it never started. codex said:
+$(head -5 "$log")
+Units already dispatched in this batch are still running."
+    fi
+
+    echo "  $unit  pid $pid  $log"
 done
 
 echo
