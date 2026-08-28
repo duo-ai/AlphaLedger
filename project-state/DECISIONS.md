@@ -341,6 +341,13 @@ belong in the trial registry or status file.
   structurally incapable of the failure it named, and a defect introduced by
   the previous round's own fix. None of those were found by the implementer,
   by the quality gate, or by the harness.
+- Amended 2026-08-29: the routing above is now enforced. `coord.py review`
+  refuses a verdict recorded under any name but the one the unit's frontmatter
+  declares. The merge gate only asks whether the last verdict was clear, so it
+  could not tell a clearance from the declared specialist apart from one
+  attributed to a specialist that never ran, and the routing was prose. Found by
+  recording a UNIT-004 verdict under `backtest-auditor` when the unit names
+  `execution-safety-reviewer`, which the registry accepted without complaint.
 - Accepted cost: a unit cannot merge on a Friday because its reviewer has not
   run. That is the intended failure direction.
 - Revisit only if: a reviewer becomes a bottleneck in practice, in which case
