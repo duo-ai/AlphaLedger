@@ -66,6 +66,7 @@ def main() -> int:
     handles: dict[Path, object] = {}
     inodes: dict[Path, int] = {}
     finished: set[str] = set()
+    graded: set[str] = set()
     seen_activity = False
 
     def adopt(path: Path, *, from_end: bool) -> None:
@@ -126,6 +127,12 @@ def main() -> int:
                     total = usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
                     finished.add(unit)
                     say(unit, "FINISHED", f"run ended, {total:,} tokens")
+                    # A review that ends without stating a verdict in either
+                    # shape is the one outcome this watch must not pass over in
+                    # silence: the findings are there, nothing announces them,
+                    # and a review nobody grades is a review that did not happen.
+                    if unit.endswith(".review") and unit not in graded:
+                        say(unit, "VERDICT", "none stated; grade it from the findings")
                     continue
 
                 if kind != "item.completed":
@@ -134,12 +141,24 @@ def main() -> int:
                 if item.get("type") != "agent_message":
                     continue
                 text = item.get("text", "")
-                # a review exists to produce a verdict, so say it the moment it
-                # appears rather than waiting for the run to end
-                verdict = re.search(r"VERDICT:\s*(clear|conditional|block)", text, re.I)
-                if verdict and unit.endswith(".review"):
-                    say(unit, "VERDICT", verdict.group(1).lower())
-                    continue
+                # A review exists to produce a verdict, so say it the moment it
+                # appears rather than waiting for the run to end. It arrives in
+                # one of two shapes: the prose line the prompt asks for, or, when
+                # `codex exec review --json` answers with a structured payload,
+                # an `overall_correctness` field and no prose line at all. Both
+                # are the verdict, and a monitor that knew only the first was
+                # silent on half the reviews.
+                if unit.endswith(".review"):
+                    stated = re.search(r"VERDICT:\s*(clear|conditional|block)", text, re.I)
+                    if stated:
+                        graded.add(unit)
+                        say(unit, "VERDICT", stated.group(1).lower())
+                        continue
+                    scored = re.search(r'"overall_correctness"\s*:\s*"([^"]+)"', text)
+                    if scored:
+                        graded.add(unit)
+                        say(unit, "VERDICT", f"{scored.group(1)} (no VERDICT line; grade it)")
+                        continue
                 # only the opening matters: a summary often mentions what it did
                 # not do, and that is not the agent stopping
                 if STOP_WORDS.search(text[:200]):
