@@ -2,7 +2,7 @@
 id: UNIT-011
 title: Map Alpaca order schemas behind a typed adapter
 lane: execution
-state: in_review
+state: claimed
 owner: pablo/codex
 branch: feature/011-order-schema-adapter
 reviewer: execution-safety-reviewer
@@ -12,7 +12,8 @@ paths: src/alphaledger/execution/__init__.py, src/alphaledger/execution/orders.p
 claimed_at: 2026-08-28T22:06:35Z
 reviewed_by: execution-safety-reviewer
 review_verdict: block
-reviewed_at: 2026-08-28T23:05:29Z
+reviewed_at: 2026-08-28T23:42:34Z
+review_log: [block, block]
 ---
 
 ## Problem
@@ -96,9 +97,13 @@ They exist because an order alone cannot rebuild truth after a restart: an
 ambiguous submit that partially filled is visible as fills and as a held
 position, and a reconciler with no typed way to read either has to bypass this
 boundary or stay halted. Carry what reconciliation needs and nothing more. For
-an activity, its broker id, its type, the symbol, the signed quantity, the
-price, and the time. For a position, the symbol, the signed quantity, the
-average entry price, and the side. Quantity is an integer and every price is a
+an activity, its broker id, the id of the order it belongs to, its type, the
+symbol, the signed quantity, the price, and the time. The order id is what links
+a fill to the intent that caused it; without it, two orders in the same option
+are indistinguishable after a restart and a reconciler cannot tell whether
+retrying would duplicate one. For a position, the symbol, the signed quantity,
+the average entry price, and the side, and a quantity whose sign contradicts the
+side is malformed broker truth under AC-5 rather than a record to construct. Quantity is an integer and every price is a
 `Decimal`, on the same terms as the rest of this module. Both parsers obey AC-4
 and AC-5: an unrecognised enumerated value becomes `unknown` rather than a
 default, and a truncated payload raises the typed adapter error.
@@ -218,4 +223,35 @@ the documented shape. Any test that reaches the live API carries the
   of validation deliberately, and introducing it here would split the
   validation story across two idioms at the boundary that most needs one. It is
   one decision for the whole boundary, and it is recorded on UNIT-004 too.
+
+- 2026-08-29 code review round two, `execution-safety-reviewer`, verdict block.
+  One P1 and one P2, both inside `orders.py`, both on the reconciliation surface
+  round one asked for.
+  1. P1, `orders.py` around line 116. `BrokerActivity` keeps the activity's own
+     id and drops the `order_id` the documented fixture supplies. Under an
+     ambiguous submit with a prior or concurrent order in the same option,
+     aggregate positions and symbol-only fills cannot say which intent filled,
+     so a reconciler cannot tell whether retrying would duplicate an order.
+     Preserve and parse it, and test two orders on the same symbol.
+  2. P2, `orders.py` around line 242. A position with `qty="-1"` and
+     `side="long"`, or a positive quantity with `short`, currently constructs a
+     frozen record whose own fields disagree. A restart reconciler then infers
+     opposite positions depending on which field it reads. Refuse it under AC-5.
+  3. The reviewer also found that
+     `test_ambiguous_submit_reconstructs_leg_quantities_from_activities_and_positions`
+     reasserts quantities its own fixture configured, so it stays green while
+     order correlation is broken. It is the test for the finding above and has
+     to change with it.
+- 2026-08-29 pablo/claude, on spending a third round. `coord.py` refused to
+  reopen this unit without `--another-pass`, which is D-022 working as intended.
+  The round is justified: both findings are inside the unit's declared globs,
+  the first bears on AC-9 and on the restart path AC-5 governs, and the second
+  is AC-5 directly. The first is also partly an intake defect again. My Contract
+  paragraph listed what an activity should carry and omitted the order id, which
+  is the one field the reconciliation story depends on. That is fixed above.
+- 2026-08-29 pablo/claude, scope for round three. These two findings and the
+  test that goes with them are the whole of it. The reviewer's list of arm
+  expiry, risk and config binding, sizing, idempotency, timeout lookup, complete
+  reconciliation, staleness, exits and flattening, and ledger behaviour belongs
+  to UNIT-012 onward. It is not in scope here and must not be implemented here.
 
