@@ -154,6 +154,21 @@ def test_value_outside_its_range_is_rejected_by_the_section_record(tmp_path: Pat
         config_api.load(directory)
 
 
+@pytest.mark.parametrize(
+    "field",
+    ("require_defined_risk", "require_risk_token", "require_human_paper_arm"),
+)
+def test_mandatory_safety_gate_cannot_be_disabled_and_names_the_invariant(
+    tmp_path: Path, field: str
+) -> None:
+    config_api = _config_api()
+    directory = _copy_config(tmp_path)
+    _replace(directory, "risk.toml", f"{field} = true", f"{field} = false")
+
+    with pytest.raises(ValueError, match=field):
+        config_api.load(directory)
+
+
 def test_hash_before_and_after_process_restart_is_identical(tmp_path: Path) -> None:
     _config_api()
     directory = _copy_config(tmp_path)

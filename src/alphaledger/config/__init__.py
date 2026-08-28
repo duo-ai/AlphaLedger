@@ -223,9 +223,12 @@ class RiskConfig:
             "require_defined_risk",
             "require_risk_token",
             "require_human_paper_arm",
-            "start_at_half_risk",
         ):
-            _set(self, field, _boolean(getattr(self, field), field))
+            required = _boolean(getattr(self, field), field)
+            if not required:
+                raise ValueError(f"{field} is mandatory and cannot be disabled")
+            _set(self, field, required)
+        _set(self, "start_at_half_risk", _boolean(self.start_at_half_risk, "start_at_half_risk"))
 
 
 @dataclass(frozen=True, slots=True)
