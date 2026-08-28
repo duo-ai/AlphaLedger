@@ -2,13 +2,14 @@
 id: UNIT-022
 title: Build residual price and volume features
 lane: research
-state: available
-owner: -
-branch: -
+state: claimed
+owner: mazwy/claude
+branch: feature/022-price-volume-features
 reviewer: backtest-auditor
 preferred_runtime: claude
 depends_on: [UNIT-001, UNIT-021]
 paths: src/alphaledger/evidence/price_volume.py, tests/research/test_price_volume.py
+claimed_at: 2026-08-28T19:56:15Z
 ---
 
 ## Problem
