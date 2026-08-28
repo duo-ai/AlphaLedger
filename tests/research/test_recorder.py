@@ -399,6 +399,11 @@ def test_a_float_payload_value_is_rejected_because_a_price_is_money(tmp_path: Pa
         store.record(bar(payload={"close": 191.25}))
 
     assert raised.value.field == "payload[close]"
+    # The field alone is not enough: a generic type check would name the same
+    # field. The rejection has to say a float price is a money defect, or the
+    # money specific branch could be deleted without a test noticing.
+    assert "money" in str(raised.value)
+    assert "191.25" in str(raised.value)
 
 
 def test_a_nested_payload_value_is_rejected(tmp_path: Path) -> None:
