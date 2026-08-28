@@ -378,6 +378,7 @@ def test_documented_activity_and_position_parse_to_expected_frozen_records() -> 
     position = parse_position(_documented_option_position())
 
     assert activity.broker_id == "20190524113406977::8efc7b9a-8b2b-4000-9955-d36e7db0df74"
+    assert activity.order_id == "904837e3-3b76-47ec-b432-046db621571b"
     assert activity.activity_type is order_adapter.BrokerActivityType.FILL
     assert activity.symbol == "LPCN"
     assert activity.signed_quantity == 1
@@ -394,49 +395,49 @@ def test_documented_activity_and_position_parse_to_expected_frozen_records() -> 
         position.average_entry_price = Decimal("7.00")
 
 
-def test_ambiguous_submit_reconstructs_leg_quantities_from_activities_and_positions() -> None:
+def test_restart_correlates_same_symbol_fills_by_order_and_matches_broker_position() -> None:
     parse_activity = getattr(order_adapter, "parse_activity", None)
     parse_position = getattr(order_adapter, "parse_position", None)
     assert callable(parse_activity), "parse_activity must support restart reconciliation"
     assert callable(parse_position), "parse_position must support restart reconciliation"
 
-    long_symbol = "SPY260918C00500000"
-    short_symbol = "SPY260918C00505000"
-    long_activity = {
+    symbol = "SPY260918C00500000"
+    intended_order_id = "order-intended"
+    concurrent_order_id = "order-concurrent"
+    intended_fill = {
         **_documented_trade_activity(),
-        "id": "activity-long",
-        "symbol": long_symbol,
+        "id": "activity-intended",
+        "order_id": intended_order_id,
+        "symbol": symbol,
         "price": "3.40",
     }
-    short_activity = {
+    concurrent_fill = {
         **_documented_trade_activity(),
-        "id": "activity-short",
-        "symbol": short_symbol,
+        "id": "activity-concurrent",
+        "order_id": concurrent_order_id,
+        "symbol": symbol,
+        "qty": "2",
         "side": "sell",
         "price": "2.15",
         "type": "partial_fill",
     }
-    long_position = {
+    resulting_position = {
         **_documented_option_position(),
-        "symbol": long_symbol,
-        "qty": "1",
-        "avg_entry_price": "3.40",
-    }
-    short_position = {
-        **_documented_option_position(),
-        "symbol": short_symbol,
+        "symbol": symbol,
         "qty": "-1",
-        "avg_entry_price": "2.15",
+        "avg_entry_price": "0.90",
         "side": "short",
     }
 
-    activities = tuple(parse_activity(raw) for raw in (long_activity, short_activity))
-    positions = tuple(parse_position(raw) for raw in (long_position, short_position))
+    activities = tuple(parse_activity(raw) for raw in (intended_fill, concurrent_fill))
+    position = parse_position(resulting_position)
 
-    activity_quantities = {activity.symbol: activity.signed_quantity for activity in activities}
-    position_quantities = {position.symbol: position.signed_quantity for position in positions}
-    assert activity_quantities == {long_symbol: 1, short_symbol: -1}
-    assert position_quantities == activity_quantities
+    filled_by_order = {
+        activity.order_id: activity.signed_quantity for activity in activities
+    }
+    assert filled_by_order == {intended_order_id: 1, concurrent_order_id: -2}
+    assert position.symbol == symbol
+    assert position.signed_quantity == sum(filled_by_order.values())
 
 
 @pytest.mark.parametrize(
@@ -445,7 +446,16 @@ def test_ambiguous_submit_reconstructs_leg_quantities_from_activities_and_positi
         (
             "parse_activity",
             _documented_trade_activity,
-            ("id", "type", "symbol", "qty", "price", "side", "transaction_time"),
+            (
+                "id",
+                "order_id",
+                "type",
+                "symbol",
+                "qty",
+                "price",
+                "side",
+                "transaction_time",
+            ),
         ),
         (
             "parse_position",
@@ -475,6 +485,20 @@ def test_truncated_activity_or_position_raises_redacted_typed_adapter_error(
         assert not isinstance(error.value, (KeyError, TypeError))
         assert "credential-shaped-value" not in formatted_error
         assert "authorization" not in formatted_error
+
+
+@pytest.mark.parametrize(
+    ("quantity", "side"),
+    (("-1", "long"), ("1", "short")),
+)
+def test_position_quantity_sign_conflicting_with_side_is_rejected(
+    quantity: str,
+    side: str,
+) -> None:
+    raw = {**_documented_option_position(), "qty": quantity, "side": side}
+
+    with pytest.raises(OrderAdapterError, match=r"qty.*side"):
+        order_adapter.parse_position(raw)
 
 
 def test_unrecognised_activity_type_and_position_side_remain_explicit_unknowns() -> None:
