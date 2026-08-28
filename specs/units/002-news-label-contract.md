@@ -141,11 +141,31 @@ validator.
   test, including a record that enforced a Prompt B consistency rule, which is
   the failure this unit is deliberately not supposed to have.
 
-### Not verified, and a gap worth a later unit
+### Review round one, code-reviewer
 
-`category` is still `str` on the frozen record while design section 5.2 and
-Prompt B both enumerate nine values. It accepts any string today. That is the
-same class of gap this unit just closed for the other fields, and closing it
-was outside the scope D-016 accepted. It should be its own small unit before
-UNIT-023 encodes a category into a feature.
+No critical or high findings. Both were fixed.
+
+- Medium, and the reviewer was right that a handoff note was too weak for it.
+  `category` is still a bare `str` while Prompt B and design section 5.2 both
+  enumerate nine values, and this unit is what made that inconsistent: before
+  it, no enumerated field was checked at run time, so `category` was uniform
+  with its neighbours; after it, `category` is the only one left unchecked. It
+  is genuinely outside the scope D-016 accepted, so it is not fixed here, but
+  it is now UNIT-003 with a dependency edge into UNIT-023 rather than prose
+  nobody has to read. An unvalidated category reaching feature encoding is the
+  same failure D-016's rationale invokes for entity match.
+- Low. `_one_of` advertised a normalised return value that no call site kept.
+  Harmless today, and a trap the moment someone adds case folding inside it. It
+  now returns nothing, and says why.
+
+The reviewer independently reproduced four defects, including hand-adding
+Prompt B's `not_matched` consistency rule to the record, which is the failure
+this unit is specifically built not to have. That one is caught by a named
+test, which is the evidence that the D-016 boundary is enforced rather than
+merely written down.
+
+### Not verified
+
+`category` is unvalidated until UNIT-003 lands. No labeler exists, so Prompt B
+fidelity is checked against the prompt text and not against a running model.
 

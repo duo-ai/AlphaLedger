@@ -171,11 +171,16 @@ def _leg(value: Mapping[str, object], field: str) -> Mapping[str, object]:
     return MappingProxyType(out)
 
 
-def _one_of(value: object, allowed: tuple[str, ...], field: str) -> str:
-    """Check an enumerated field against its allowed values at run time."""
+def _one_of(value: object, allowed: tuple[str, ...], field: str) -> None:
+    """Check an enumerated field against its allowed values at run time.
+
+    Returns nothing on purpose. Its siblings, `require_utc` and `_strings`,
+    return a normalised value that the caller stores through `_set`; this one
+    normalises nothing, and advertising a return that no call site keeps would
+    invite a later edit to add case folding here and silently have it discarded.
+    """
     if value not in allowed:
         raise ValueError(f"{field} must be one of {', '.join(allowed)}; got {value!r}")
-    return str(value)
 
 
 def _set(instance: object, field: str, value: object) -> None:
