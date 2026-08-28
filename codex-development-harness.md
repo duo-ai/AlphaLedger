@@ -148,6 +148,13 @@ decision and contract-test evidence.
 | `$paper-smoke submit` | one-contract G1 test | exact acknowledgement and app-only order path |
 | `$handoff` | useful session checkpoint | edits shared state, no git mutation |
 | `$submission-readiness` | G5/G6 | audit only; no submission or broker mutation without a separate request |
+| `$social-update` | daily progress post | writes a draft to `social/`; never posts |
+
+Each skill carries `agents/openai.yaml`, the Codex interface binding, with
+`allow_implicit_invocation: false` on every lifecycle skill. Only
+`$tdd-workflow` and `$verification-loop` may be selected implicitly, because
+neither touches trading state.
+
 
 Descriptions explicitly require user invocation because Codex discovers and
 may otherwise select skills by their descriptions. The exact acknowledgement

@@ -1,6 +1,7 @@
 ---
 name: bootstrap
 description: Use only when the user explicitly invokes $bootstrap to inspect and validate the local AlphaLedger environment after clone or toolchain changes.
+origin: AlphaLedger
 ---
 
 # Bootstrap AlphaLedger in Codex

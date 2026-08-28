@@ -1,0 +1,7 @@
+interface:
+  display_name: "Submission Readiness"
+  short_description: "Audit the frozen repository and competition artifacts"
+  brand_color: "#14B8A6"
+  default_prompt: "Use $submission-readiness to audit the frozen competition package."
+policy:
+  allow_implicit_invocation: false

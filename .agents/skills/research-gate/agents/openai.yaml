@@ -1,0 +1,7 @@
+interface:
+  display_name: "Research Gate"
+  short_description: "Audit whether alpha may be frozen under G3"
+  brand_color: "#F59E0B"
+  default_prompt: "Use $research-gate to audit whether the alpha candidate may be frozen."
+policy:
+  allow_implicit_invocation: false

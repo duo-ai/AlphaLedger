@@ -1,0 +1,7 @@
+interface:
+  display_name: "Social Update"
+  short_description: "Draft today's progress post from real evidence"
+  brand_color: "#A855F7"
+  default_prompt: "Use $social-update to draft today's progress post from real evidence."
+policy:
+  allow_implicit_invocation: false

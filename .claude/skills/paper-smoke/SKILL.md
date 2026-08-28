@@ -1,6 +1,7 @@
 ---
 name: paper-smoke
 description: Run the human-controlled, one-contract AlphaLedger paper-order lifecycle smoke test after dry-run evidence is complete.
+origin: AlphaLedger
 argument-hint: "[dry-run|submit]"
 disable-model-invocation: true
 ---

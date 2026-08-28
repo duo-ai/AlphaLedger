@@ -1,0 +1,7 @@
+interface:
+  display_name: "Verification Loop"
+  short_description: "Run the repository quality gate and report"
+  brand_color: "#10B981"
+  default_prompt: "Use $verification-loop to run the quality gate and report the result."
+policy:
+  allow_implicit_invocation: true

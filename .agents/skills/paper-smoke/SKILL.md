@@ -1,6 +1,7 @@
 ---
 name: paper-smoke
 description: Use only when the user explicitly invokes $paper-smoke for the human-controlled one-contract AlphaLedger paper-order lifecycle after dry-run evidence exists.
+origin: AlphaLedger
 ---
 
 # Paper lifecycle smoke test

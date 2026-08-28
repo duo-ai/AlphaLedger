@@ -1,6 +1,7 @@
 ---
 name: social-update
 description: Draft today's public progress update for AlphaLedger from real repository evidence, for human review before posting.
+origin: AlphaLedger
 disable-model-invocation: true
 ---
 

@@ -1,6 +1,7 @@
 ---
 name: social-update
 description: Use only when the user explicitly invokes $social-update to draft today's public progress update from real AlphaLedger evidence.
+origin: AlphaLedger
 ---
 
 # Draft the daily social update in Codex
