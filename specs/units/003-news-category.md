@@ -2,13 +2,14 @@
 id: UNIT-003
 title: Enumerate the news category on the label
 lane: shared
-state: available
-owner: -
-branch: -
+state: claimed
+owner: pablo/claude
+branch: feature/003-news-category
 reviewer: code-reviewer
 preferred_runtime: claude
 depends_on: [UNIT-002]
 paths: src/alphaledger/domain/contracts.py, tests/domain/test_contracts.py
+claimed_at: 2026-08-28T22:06:46Z
 ---
 
 ## Problem
