@@ -316,3 +316,29 @@ belong in the trial registry or status file.
   drift silently.
 - Revisit only if: a value is found that is genuinely both secret and needed to
   explain a decision. Split it rather than relaxing the boundary.
+
+## D-018: Review is a gate, not a convention
+
+- Date: 2026-08-29
+- Origin: UNIT-010 merged with its review outstanding. Nothing refused it; the
+  rule existed only as prose.
+- Decision: `coord.py state <unit> merged` refuses a unit with no recorded
+  review, and refuses one whose last verdict was not `clear`. A review is
+  recorded with `coord.py review <unit> --by <reviewer> --verdict
+  clear|conditional|block`. Re-claiming a unit clears the verdict, because a
+  verdict describes a branch state that a re-claim reopens.
+- Routing: Codex-dispatched work is reviewed by the Codex specialist of the
+  same role, through `codex exec review --base develop`, so a review does not
+  mix model families. Claude-owned work is reviewed by the Claude specialist,
+  which only an orchestrating session can spawn, and `scripts/review.sh` says
+  so rather than pretending it can.
+- Rationale: the reviews have paid for themselves repeatedly. On UNIT-010 they
+  found a bare string shredded into characters across every audit field, NaN
+  and Infinity admitted into forecast values, a test asserting on a double
+  structurally incapable of the failure it named, and a defect introduced by
+  the previous round's own fix. None of those were found by the implementer,
+  by the quality gate, or by the harness.
+- Accepted cost: a unit cannot merge on a Friday because its reviewer has not
+  run. That is the intended failure direction.
+- Revisit only if: a reviewer becomes a bottleneck in practice, in which case
+  the fix is more reviewers or narrower units, not a weaker gate.

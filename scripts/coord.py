@@ -20,6 +20,8 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
+VERDICTS = ("clear", "conditional", "block")
+
 STATES = ("available", "claimed", "in_review", "merged", "blocked")
 
 ALLOWED_TRANSITIONS: dict[str, tuple[str, ...]] = {
@@ -221,6 +223,10 @@ def cmd_claim(units: dict, unit_id: str, owner: str, branch: str | None) -> int:
     meta["owner"] = owner
     meta["branch"] = branch or f"feature/{slug}"
     meta["claimed_at"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # a re-claim reopens the work, so a verdict from the previous round no
+    # longer describes what is on the branch
+    meta.pop("review_verdict", None)
+    order[:] = [k for k in order if k != "review_verdict"]
     for key in ("branch", "claimed_at"):
         if key not in order:
             order.append(key)
@@ -240,6 +246,26 @@ def cmd_claim(units: dict, unit_id: str, owner: str, branch: str | None) -> int:
     return 0
 
 
+def cmd_review(units: dict, unit_id: str, reviewer: str, verdict: str) -> int:
+    """Record that a review happened and what it concluded."""
+    meta, order, body, path = get(units, unit_id)
+    if verdict not in VERDICTS:
+        raise UnitError(f"verdict must be one of {', '.join(VERDICTS)}; got {verdict!r}")
+    if meta["state"] not in ("claimed", "in_review"):
+        raise UnitError(f"{unit_id} is {meta['state']}; review applies to work in progress")
+    meta["reviewed_by"] = reviewer
+    meta["review_verdict"] = verdict
+    meta["reviewed_at"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    for key in ("reviewed_by", "review_verdict", "reviewed_at"):
+        if key not in order:
+            order.append(key)
+    write_unit(path, meta, order, body)
+    print(f"{unit_id}: reviewed by {reviewer}, verdict {verdict}")
+    if verdict != "clear":
+        print("  not mergeable until the findings are addressed and it is reviewed again")
+    return 0
+
+
 def cmd_state(units: dict, unit_id: str, new_state: str) -> int:
     meta, order, body, path = get(units, unit_id)
     current = str(meta["state"])
@@ -248,6 +274,19 @@ def cmd_state(units: dict, unit_id: str, new_state: str) -> int:
     if new_state not in ALLOWED_TRANSITIONS[current]:
         allowed = ", ".join(ALLOWED_TRANSITIONS[current]) or "nothing (terminal)"
         raise UnitError(f"{unit_id}: {current} -> {new_state} is not allowed; allowed: {allowed}")
+    if new_state == "merged":
+        verdict = str(meta.get("review_verdict", ""))
+        if not verdict:
+            raise UnitError(
+                f"{unit_id} has no recorded review. A unit merges only after the reviewer "
+                f"named in its frontmatter reports. Record it with: "
+                f"coord.py review {unit_id} --by <reviewer> --verdict clear"
+            )
+        if verdict != "clear":
+            raise UnitError(
+                f"{unit_id} last review returned {verdict!r}. Address the findings and "
+                "record a new review before merging."
+            )
     meta["state"] = new_state
     if new_state == "available":
         meta["owner"] = UNCLAIMED
@@ -329,12 +368,24 @@ def self_test() -> int:
 
         # 6. the same unit is claimable once its dependency reaches merged
         cmd_state(load_all(directory), "UNIT-001", "in_review")
+        try:
+            cmd_state(load_all(directory), "UNIT-001", "merged")
+            raise AssertionError("merging without a review must be refused")
+        except UnitError as exc:
+            assert "no recorded review" in str(exc), "refusal must name the missing review"
+        cmd_review(load_all(directory), "UNIT-001", "code-reviewer", "conditional")
+        try:
+            cmd_state(load_all(directory), "UNIT-001", "merged")
+            raise AssertionError("a conditional verdict must not merge")
+        except UnitError as exc:
+            assert "conditional" in str(exc), "refusal must name the verdict"
+        cmd_review(load_all(directory), "UNIT-001", "code-reviewer", "clear")
         cmd_state(load_all(directory), "UNIT-001", "merged")
         assert cmd_claim(load_all(directory), "UNIT-010", "ada/claude", None) == 0
         assert load_all(directory)["UNIT-010"][0]["owner"] == "ada/claude", (
             "dependency gate must open"
         )
-        cases += 1
+        cases += 3
 
         # 7. a merged unit is terminal
         try:
@@ -431,6 +482,11 @@ def main(argv: list[str] | None = None) -> int:
     p_claim.add_argument("--owner", required=True, help="handle/claude or handle/codex")
     p_claim.add_argument("--branch")
 
+    p_review = sub.add_parser("review", help="record a review and its verdict")
+    p_review.add_argument("unit_id")
+    p_review.add_argument("--by", required=True, help="the reviewer that reported")
+    p_review.add_argument("--verdict", required=True, choices=VERDICTS)
+
     p_state = sub.add_parser("state", help="transition a unit")
     p_state.add_argument("unit_id")
     p_state.add_argument("new_state", choices=STATES)
@@ -450,6 +506,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_show(units, args.unit_id)
         if args.command == "claim":
             return cmd_claim(units, args.unit_id, args.owner, args.branch)
+        if args.command == "review":
+            return cmd_review(units, args.unit_id, args.by, args.verdict)
         if args.command == "state":
             return cmd_state(units, args.unit_id, args.new_state)
     except UnitError as exc:
