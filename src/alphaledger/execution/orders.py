@@ -116,6 +116,7 @@ class BrokerOrder:
 @dataclass(frozen=True, slots=True)
 class BrokerActivity:
     broker_id: str
+    order_id: str
     activity_type: BrokerActivityType
     symbol: str
     signed_quantity: int
@@ -219,6 +220,7 @@ def parse_activity(raw: Mapping[str, object]) -> BrokerActivity:
 
     return BrokerActivity(
         broker_id=_required_string(raw, "id", record_kind="activity"),
+        order_id=_required_string(raw, "order_id", record_kind="activity"),
         activity_type=activity_type,
         symbol=_required_string(raw, "symbol", record_kind="activity"),
         signed_quantity=quantity_sign * quantity,
@@ -238,10 +240,15 @@ def parse_position(raw: Mapping[str, object]) -> BrokerPosition:
         side = BrokerPositionSide(raw_side)
     except ValueError:
         side = BrokerPositionSide.UNKNOWN
+    signed_quantity = _required_integer(raw, "qty", record_kind="position")
+    if (side is BrokerPositionSide.LONG and signed_quantity < 0) or (
+        side is BrokerPositionSide.SHORT and signed_quantity > 0
+    ):
+        raise OrderAdapterError("broker position fields 'qty' and 'side' conflict")
 
     return BrokerPosition(
         symbol=_required_string(raw, "symbol", record_kind="position"),
-        signed_quantity=_required_integer(raw, "qty", record_kind="position"),
+        signed_quantity=signed_quantity,
         average_entry_price=_required_exact_decimal(
             raw,
             "avg_entry_price",

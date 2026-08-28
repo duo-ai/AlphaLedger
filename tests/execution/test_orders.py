@@ -432,9 +432,7 @@ def test_restart_correlates_same_symbol_fills_by_order_and_matches_broker_positi
     activities = tuple(parse_activity(raw) for raw in (intended_fill, concurrent_fill))
     position = parse_position(resulting_position)
 
-    filled_by_order = {
-        activity.order_id: activity.signed_quantity for activity in activities
-    }
+    filled_by_order = {activity.order_id: activity.signed_quantity for activity in activities}
     assert filled_by_order == {intended_order_id: 1, concurrent_order_id: -2}
     assert position.symbol == symbol
     assert position.signed_quantity == sum(filled_by_order.values())
