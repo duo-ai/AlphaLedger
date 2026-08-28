@@ -180,7 +180,7 @@ def cmd_claim(units: dict, unit_id: str, owner: str, branch: str | None) -> int:
     print(f"claimed {unit_id} for {owner} on branch {meta['branch']}")
     print("\nCommit and push the claim to develop before you start work:")
     print(
-        f"  git add {path.as_posix()} && git commit -m 'claim: {unit_id} ({owner})' && git push origin develop"
+        f"  git add {path.as_posix()} && git commit -m 'chore(registry): claim {unit_id} for {owner}' && git push origin develop"
     )
     print("\nThen create the isolated worktree:")
     print(f"  git worktree add {worktree} -b {meta['branch']} develop")

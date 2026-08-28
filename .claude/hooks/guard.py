@@ -67,6 +67,24 @@ BRANCH_CREATION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bgit\s+worktree\s+add\s+[^\s]+\s+-b\s+([^\s]+)"),
 )
 
+CONVENTIONAL_TYPES = (
+    "feat",
+    "fix",
+    "docs",
+    "style",
+    "refactor",
+    "perf",
+    "test",
+    "build",
+    "ci",
+    "chore",
+    "revert",
+)
+
+CONVENTIONAL_SUBJECT = re.compile(
+    r"^(?:" + "|".join(CONVENTIONAL_TYPES) + r")(?:\([a-z0-9._/-]+\))?!?: .+"
+)
+
 COMMIT_MESSAGE_ARGUMENT = re.compile(
     r"-m\s+(?:\"((?:[^\"\\]|\\.)*)\"|'((?:[^']|'\\'')*)'|([^\s]+))"
 )
@@ -108,10 +126,17 @@ def _git_violation(command: str) -> str | None:
         return None
 
     if re.search(r"\bgit\s+commit\b", command, re.I):
-        message = " ".join(_message_text(m) for m in COMMIT_MESSAGE_ARGUMENT.findall(command))
+        messages = [_message_text(m) for m in COMMIT_MESSAGE_ARGUMENT.findall(command)]
+        message = " ".join(messages)
         for pattern, reason in COMMIT_TELLS:
             if pattern.search(message):
                 return f"{reason} in a commit message"
+        if messages and not CONVENTIONAL_SUBJECT.match(messages[0]):
+            allowed = ", ".join(CONVENTIONAL_TYPES)
+            return (
+                f"a commit subject outside conventional commits: {messages[0]!r}. "
+                f"Use 'type(scope): subject' with one of: {allowed}"
+            )
         if _current_branch() == "main":
             return (
                 "a direct commit to main; main takes only --no-ff merges from release/ or hotfix/"
@@ -217,21 +242,21 @@ def _self_test() -> int:
         (
             {
                 "tool_name": "Bash",
-                "tool_input": {"command": "git commit -m 'x\n\nCo-Authored-By: Claude <a@b>'"},
+                "tool_input": {"command": "git commit -m 'chore: x' -m 'Co-Authored-By: Claude <a@b>'"},
             },
             True,
         ),
         (
             {
                 "tool_name": "Bash",
-                "tool_input": {"command": "git commit -m 'fix guard \u2014 tighten regex'"},
+                "tool_input": {"command": "git commit -m 'fix(hooks): guard \u2014 tighten regex'"},
             },
             True,
         ),
         (
             {
                 "tool_name": "Bash",
-                "tool_input": {"command": "git commit -m 'tighten the guard regex'"},
+                "tool_input": {"command": "git commit -m 'fix(hooks): tighten the guard regex'"},
             },
             False,
         ),
@@ -266,9 +291,31 @@ def _self_test() -> int:
             {
                 "tool_name": "Bash",
                 "tool_input": {
-                    "command": "cat > f.md <<'X'\nprose \u2014 with a dash\nX\ngit commit -m 'add prose'"
+                    "command": "cat > f.md <<'X'\nprose \u2014 with a dash\nX\ngit commit -m 'docs: add prose'"
                 },
             },
+            False,
+        ),
+        (
+            {"tool_name": "Bash", "tool_input": {"command": "git commit -m 'tidy the guard'"}},
+            True,
+        ),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git commit -m 'fix(hooks): tidy the guard'"},
+            },
+            False,
+        ),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git commit -m 'chore(registry): claim UNIT-010'"},
+            },
+            False,
+        ),
+        (
+            {"tool_name": "Bash", "tool_input": {"command": "git commit --amend --no-edit"}},
             False,
         ),
     )

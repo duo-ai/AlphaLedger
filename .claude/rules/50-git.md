@@ -40,8 +40,13 @@ One unit in `specs/units/` is one `feature/` branch, named
 
 ## Commit messages
 
-- One commit does one thing. The subject says which thing, in the imperative,
-  under about 72 characters.
+- Use conventional commits: `type(scope): subject`. Types are `feat`, `fix`,
+  `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, and
+  `revert`. Scope is optional and lowercase, for example `feat(execution):`.
+- The subject is imperative and the whole line stays under about 72 characters.
+  One commit does one thing and the subject says which thing.
+- A registry claim is `chore(registry): claim UNIT-010 for pablo/codex`.
+  `scripts/coord.py` prints the exact command.
 - Add a body only when the reason is not visible in the diff, and keep it to a
   few plain lines. A commit body is not a design document; that belongs in the
   unit intake under `specs/units/`.
@@ -49,3 +54,6 @@ One unit in `specs/units/` is one `feature/` branch, named
   model, a "Generated with" line, or a robot emoji. The guard hook blocks these.
 - Do not use em dashes or en dashes in commit messages or in project prose. Use
   a comma, a colon, or two sentences.
+
+Commits made before 2026-08-28 predate this convention. History is not
+rewritten to match it.
