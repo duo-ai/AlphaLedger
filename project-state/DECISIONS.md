@@ -183,3 +183,33 @@ belong in the trial registry or status file.
   architecture.
 - Revisit only if: ECC changes its skill schema, in which case re-read the
   source before changing files here.
+
+## D-014: Where point-in-time ordering is enforced
+
+- Date: 2026-08-28
+- Origin: the UNIT-001 gating review found that `ObservationTimestamps`
+  accepted any ordering of its six timestamps, and that `StructurePlan.legs`
+  accepted unvalidated values.
+- Decision, timestamps: the domain type enforces exactly one ordering,
+  `first_seen_time >= source_time`. Design section 4 defines `first_seen_time`
+  as the published time plus a conservative latency buffer, so this ordering is
+  guaranteed by the contract itself, and its violation means observing a record
+  before its source emitted it.
+- Every other ordering is deferred to the data adapter in UNIT-020, and this is
+  deliberate, not an oversight. `event_time` may legitimately fall after
+  `first_seen_time`: a scheduled earnings date is known weeks ahead. A domain
+  type that rejected that would corrupt exactly the point-in-time evidence it
+  exists to protect. `AGENTS.md` already assigns point-in-time construction to
+  data adapters, which hold the feed semantics needed to judge the rest.
+- Decision, legs: leg values are restricted to `str`, `int`, `Decimal`, and
+  `datetime`. `float` is rejected with a money-specific message, closing a path
+  that would have smuggled a strike past `.claude/rules/01-safety.md`. Nested
+  containers are rejected because a shared reference would let a caller mutate
+  a plan after a `RiskApproval` was bound to its payload hash, making that
+  binding false while every field-level immutability guarantee still held.
+- Design section 14 leaves the leg schema open, so this bounds values without
+  changing the shape. UNIT-014 may promote a leg to a typed record; that would
+  be a narrowing, not a conflict.
+- Revisit only if: UNIT-020 finds a real feed where `first_seen_time` precedes
+  `source_time` for a legitimate reason. Record the feed and the mechanism
+  before relaxing anything.

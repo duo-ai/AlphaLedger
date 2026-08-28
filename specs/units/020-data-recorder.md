@@ -40,6 +40,14 @@ Out:
 - Feature construction (UNIT-022) and labelling (UNIT-023).
 - Universe membership (UNIT-021).
 
+## Inherited obligation
+
+Per D-014, `ObservationTimestamps` enforces only `first_seen_time >=
+source_time`. Every other ordering among the six timestamps is this unit's
+responsibility, because only the adapter knows the feed semantics. In
+particular `event_time` may legitimately follow `first_seen_time` for a
+scheduled event, so the check here is feed-aware rather than a blanket sort.
+
 ## Contract
 
 `alphaledger.data.recorder.record(observation) -> ObservationId`, append-only.
