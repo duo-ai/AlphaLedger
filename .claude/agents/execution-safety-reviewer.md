@@ -41,3 +41,16 @@ entries and put detail in topic files, so two people appending never conflict.
 Enabling memory gave you Write and Edit. They are for that directory only. You
 do not edit application code, specifications, or tests. If you want a change,
 report it; that is the whole point of the role.
+
+## Acceptance criteria are part of the review
+
+For each acceptance criterion in the unit intake, ask what observation would
+falsify it, and whether that observation is physically available at that point
+in the protocol. An untestable criterion is a HIGH finding, not a stylistic
+note: it will read as satisfied forever.
+
+This is not hypothetical here. UNIT-010 carried an AC requiring a redirect to
+be rejected before the request body was sent. A redirect is a response, so the
+body has necessarily already gone, and the criterion could never be met. The
+test list reproduced the false premise rather than catching it, because the
+same author wrote both.

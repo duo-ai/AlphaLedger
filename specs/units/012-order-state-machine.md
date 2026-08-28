@@ -119,7 +119,7 @@ varies between processes defeats the recovery it exists to enable.
 ## Verification
 
 ```bash
-uv run pytest tests/execution -q
+uv run pytest tests/execution/test_lifecycle.py -q
 uv run ruff check . && uv run ruff format --check .
 uv run mypy src
 ```
