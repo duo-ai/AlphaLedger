@@ -67,10 +67,24 @@ def main() -> int:
     finished: set[str] = set()
     seen_activity = False
 
+    def already_finished(path: Path) -> bool:
+        """A run that completed before this watch started is not missing.
+
+        Without this, every pre-existing log looks unfinished and is reported
+        GONE the moment no codex process is running, which is exactly what
+        happened to a run that had ended cleanly hours earlier.
+        """
+        try:
+            return '"type":"turn.completed"' in path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return False
+
     while True:
         # pick up logs from a batch dispatched after this started
         for path in sorted(LOGDIR.glob("*.jsonl")):
             if path not in handles:
+                if already_finished(path):
+                    finished.add(path.stem)
                 handle = path.open(encoding="utf-8", errors="replace")
                 handle.seek(0, 2)
                 handles[path] = handle
