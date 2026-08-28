@@ -265,7 +265,7 @@ def walk_forward(
     # geometry is still true, but it does not get to look like the others.
     if ordered:
         for fold in folds:
-            for name, window, assigned, flag in (
+            for name, window, members, flag in (
                 (
                     "calibration",
                     fold.calibration,
@@ -274,7 +274,7 @@ def walk_forward(
                 ),
                 ("test", fold.test, fold.test_labels, EMPTY_TEST_WINDOW),
             ):
-                if assigned:
+                if members:
                     continue
                 candidates = sum(1 for label in ordered if window.holds(label.prediction_time))
                 # A window nothing was predicted in is a data gap. A window whose
