@@ -2,7 +2,7 @@
 id: UNIT-020
 title: Record point-in-time observations with the timestamp contract
 lane: research
-state: claimed
+state: in_review
 owner: mazwy/claude
 branch: feature/020-data-recorder
 reviewer: backtest-auditor
@@ -101,3 +101,70 @@ uv run ruff check . && uv run mypy src
 ```
 
 ## Handoff notes
+
+Implemented as `src/alphaledger/data/storage.py`, a JSON Lines file opened only
+in append mode, plus `src/alphaledger/data/recorder.py`, which owns validation,
+availability derivation, and the `as_of` read.
+
+### Orderings enforced here, per the D-014 obligation
+
+Universal, every feed:
+
+1. `first_seen_time >= source_time`. Checked here as well as in the domain type
+   so the rejection names the field and the feed.
+2. `received_time >= source_time`. A value is either a live arrival or a
+   backfill fetch, and both follow emission.
+3. `first_seen_time <= as_of`. `as_of` is the knowledge cutoff the record is
+   filed under, so a later first-seen would place a future observation inside a
+   point-in-time snapshot.
+
+Feed aware, from `FeedPolicy`:
+
+4. `event_time <= first_seen_time` unless the feed declares
+   `event_time_may_follow_first_seen`. This is the D-014 exception: a calendar
+   feed sets it, a bar feed never does.
+5. `first_seen_time >= received_time` for a feed that proves delivery. Not
+   enforced otherwise, because a backfilled article's fetch time says nothing
+   about when a subscriber could have read it.
+
+A feed with no registered policy is rejected. There is no default policy,
+because a default would be an unchecked assumption about timestamp semantics.
+
+### Two deliberate choices worth a reviewer's attention
+
+A feed that cannot prove delivery does not accept a caller supplied
+`first_seen_time` at all. It is derived as `source_time` plus the policy lag and
+flagged `availability_lag_applied`. Accepting one and quietly taking the more
+conservative of the two would have hidden an optimistic caller.
+
+Rule 2 was chosen without a real feed connected. If a live feed is found whose
+publisher clock legitimately runs ahead of ours, this is the rule to revisit,
+and the revisit belongs in `project-state/DECISIONS.md` rather than in a local
+relaxation.
+
+### Verified
+
+- `uv run pytest tests/research/test_recorder.py -q`: 29 passed.
+- `uv sync --frozen`, `uv run ruff check .`, `uv run ruff format --check .`,
+  `uv run mypy src`, `uv run pytest`: all pass, 93 tests.
+- Twelve defects were injected one at a time and every one was caught by a
+  named test. The first pass found a real weakness: the float payload test
+  asserted only the field name, so it passed against a deleted money check. It
+  now asserts the reason as well.
+- The restart tests spawn real `sys.executable` subprocesses and assert that
+  the file's earlier bytes are a strict prefix after each restart.
+
+### Not verified
+
+- No real feed is connected. Every timestamp in these tests is a fixture, so
+  the ordering rules are proven self consistent, not proven against Alpaca.
+- Concurrent writers are not tested. Two processes appending to one store is
+  plausible under the current design but unproven, and nothing yet needs it.
+- Store size, rotation, and retention are untouched.
+
+### Hazard for the next session
+
+Mutation testing rewrote a source file to the same byte length within the same
+second, so CPython reused the cached bytecode and four unrelated tests failed
+against a mutation that had already been reverted. Set
+`PYTHONDONTWRITEBYTECODE=1` for any harness that edits sources in place.
