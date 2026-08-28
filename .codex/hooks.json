@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "project_root=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; python3 \"$project_root/.codex/hooks/guard.py\"",
+            "command": "project_root=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; bash \"$project_root/scripts/hook_python.sh\" \"$project_root/.codex/hooks/guard.py\"",
             "commandWindows": "$projectRoot = git rev-parse --show-toplevel 2>$null; if (-not $?) { $projectRoot = (Get-Location).Path }; py -3 \"$projectRoot\\.codex\\hooks\\guard.py\"",
             "timeout": 5,
             "statusMessage": "Checking AlphaLedger safety boundaries"
@@ -20,7 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "project_root=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; python3 \"$project_root/scripts/social_check.py\"",
+            "command": "project_root=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; bash \"$project_root/scripts/hook_python.sh\" \"$project_root/scripts/social_check.py\"",
             "commandWindows": "$projectRoot = git rev-parse --show-toplevel 2>$null; if (-not $?) { $projectRoot = (Get-Location).Path }; py -3 \"$projectRoot\\scripts\\social_check.py\"",
             "timeout": 5,
             "statusMessage": "Checking the daily progress draft"
