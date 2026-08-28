@@ -106,7 +106,7 @@ Two people and three coding-agent runtimes share this repository. Read
 |---|---|---|---|
 | `pablo/codex` | Codex | execution | `src/alphaledger/{broker,execution,risk,structure,ledger}/**` |
 | `pablo/claude` | Claude Code | execution and shared | intake authoring, review, integration |
-| `teammate/claude` | Claude Code | research | `src/alphaledger/{data,evidence,forecast}/**`, `research/**` |
+| `mazwy/claude` | Claude Code | research | `src/alphaledger/{data,evidence,forecast}/**`, `research/**` |
 
 Lanes have disjoint path globs. Never write outside the lane of the unit you
 hold.

@@ -12,11 +12,22 @@ a time. Read it once, fully, before you claim anything.
 
 Three units, in this order:
 
-| Unit | Title | Blocked by |
+| Unit | Title | State |
 |---|---|---|
-| UNIT-020 | Record point-in-time observations with the timestamp contract | nothing, claimable now |
-| UNIT-021 | Generate the lagged frozen universe | nothing, claimable now |
-| UNIT-022 | Build residual price and volume features | UNIT-021 |
+| UNIT-020 | Record point-in-time observations with the timestamp contract | merged |
+| UNIT-021 | Generate the lagged frozen universe | merged |
+| UNIT-022 | Build residual price and volume features | merged |
+| UNIT-024 | Split chronologically and register every trial | merged |
+| UNIT-003 | Enumerate the news category on the label | claimable now |
+| UNIT-023 | Encode point-in-time news into features | blocked by UNIT-003 |
+
+The first four are done. The evidence and validation scaffolding they built is
+what everything below now rests on, so read their handoff notes before starting
+UNIT-003: they record decisions you would otherwise have to rediscover.
+
+UNIT-003 is small and sits in the shared lane rather than the research one, but
+UNIT-023 depends on it, so it is the thing standing between you and the news
+family. Take it first.
 
 You own these paths and nothing else:
 
@@ -67,6 +78,29 @@ Things you will care about:
 
 **UNIT-010, the paper endpoint assertion.** Yours only in that it proves the
 system cannot reach a live host. You will not touch it.
+
+### What the merged research units already give you
+
+Read their handoff notes; this is only the shape.
+
+- `data/recorder.py` and `storage.py`: six timestamps and a feed on every
+  record, an `as_of` read with no wall-clock alternative, orderings judged feed
+  by feed under the obligation D-014 hands the adapter, and `record` idempotent
+  across a restart. D-015 records why a corrupted store refuses writes as well
+  as reads rather than truncating to the last readable line.
+- `data/universe.py`: membership decided at the prior close from evidence
+  knowable then, capped at thirty, hashed so a frozen run is verifiable in
+  another process. Tied timestamps and unregistered feeds are refused rather
+  than resolved.
+- `evidence/price_volume.py`: the eight features from design section 5.1. A
+  missing feature is absent and named in a flag, never an imputed zero.
+- `forecast/`: an expanding walk-forward purged by at least the horizon, and an
+  append-only trial registry that refuses a result for an unregistered trial and
+  refuses a second result over the first.
+- `NewsLabel` was amended by UNIT-002 under D-016 so the record holds what the
+  labeler actually emits, including `entity_match` and `unknown`. Read D-016
+  before touching anything news-shaped: it draws the line between what the
+  frozen record enforces and what the adapter enforces.
 
 ## Why this lane is different
 
