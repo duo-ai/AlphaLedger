@@ -213,40 +213,71 @@ def test_full_load_preserves_every_value_and_hashes_content(tmp_path: Path) -> N
 
     loaded = config_api.load(directory)
 
-    assert loaded.universe == config_api.UniverseConfig(
-        min_prior_close=Decimal("10"),
-        min_median_dollar_volume=Decimal("10000000"),
-        max_symbols=30,
+    assert (
+        loaded.universe.min_prior_close,
+        loaded.universe.min_median_dollar_volume,
+        loaded.universe.max_symbols,
+    ) == (
+        Decimal("10"),
+        Decimal("10000000"),
+        30,
     )
-    assert loaded.feature == config_api.FeatureConfig(
-        lookback_sessions=60,
-        residual_volatility_sessions=20,
-        abnormal_volume_sessions=20,
-        atr_sessions=14,
-        extreme_sessions=20,
-        min_sector_peers=2,
-        winsor_lower=-5.0,
-        winsor_upper=5.0,
-        sector_by_symbol={},
+    assert (
+        loaded.feature.lookback_sessions,
+        loaded.feature.residual_volatility_sessions,
+        loaded.feature.abnormal_volume_sessions,
+        loaded.feature.atr_sessions,
+        loaded.feature.extreme_sessions,
+        loaded.feature.min_sector_peers,
+        loaded.feature.winsor_lower,
+        loaded.feature.winsor_upper,
+        dict(loaded.feature.sector_by_symbol),
+    ) == (
+        60,
+        20,
+        20,
+        14,
+        20,
+        2,
+        -5.0,
+        5.0,
+        {},
     )
-    assert loaded.risk == config_api.RiskConfig(
-        maximum_loss_fraction_per_new_trade=Decimal("0.00375"),
-        maximum_concurrent_positions=2,
-        max_contracts_per_structure=3,
-        smoke_test_max_contracts=1,
-        require_defined_risk=True,
-        require_risk_token=True,
-        require_human_paper_arm=True,
-        start_at_half_risk=True,
+    assert (
+        loaded.risk.maximum_loss_fraction_per_new_trade,
+        loaded.risk.maximum_concurrent_positions,
+        loaded.risk.max_contracts_per_structure,
+        loaded.risk.smoke_test_max_contracts,
+        loaded.risk.require_defined_risk,
+        loaded.risk.require_risk_token,
+        loaded.risk.require_human_paper_arm,
+        loaded.risk.start_at_half_risk,
+    ) == (
+        Decimal("0.00375"),
+        2,
+        3,
+        1,
+        True,
+        True,
+        True,
+        True,
     )
-    assert loaded.session == config_api.SessionConfig(
-        timezone="America/New_York",
-        scheduled_scans=("10:00", "12:30", "15:00"),
-        no_new_entry_first_minutes=10,
-        no_new_entry_final_minutes=45,
-        strategy_allowlist=("bull_call_debit_vertical", "bear_put_debit_vertical"),
-        dte_min=7,
-        dte_max=21,
+    assert (
+        loaded.session.timezone,
+        loaded.session.scheduled_scans,
+        loaded.session.no_new_entry_first_minutes,
+        loaded.session.no_new_entry_final_minutes,
+        loaded.session.strategy_allowlist,
+        loaded.session.dte_min,
+        loaded.session.dte_max,
+    ) == (
+        "America/New_York",
+        ("10:00", "12:30", "15:00"),
+        10,
+        45,
+        ("bull_call_debit_vertical", "bear_put_debit_vertical"),
+        7,
+        21,
     )
     assert len(loaded.frozen_config_hash) == 64
     assert loaded.frozen_config_hash == config_api.config_hash(loaded)
@@ -301,6 +332,36 @@ def test_every_valid_field_change_changes_the_frozen_hash(
     changed = config_api.load(changed_directory)
 
     assert changed.frozen_config_hash != baseline.frozen_config_hash
+
+
+def test_distinct_high_precision_decimal_values_produce_distinct_frozen_hashes(
+    tmp_path: Path,
+) -> None:
+    config_api = _config_api()
+    first_directory = _copy_config(tmp_path, "first")
+    second_directory = _copy_config(tmp_path, "second")
+    original = 'maximum_loss_fraction_per_new_trade = "0.00375"'
+    _replace(
+        first_directory,
+        "risk.toml",
+        original,
+        'maximum_loss_fraction_per_new_trade = "0.1234567890123456789012345678901"',
+    )
+    _replace(
+        second_directory,
+        "risk.toml",
+        original,
+        'maximum_loss_fraction_per_new_trade = "0.1234567890123456789012345678902"',
+    )
+
+    first = config_api.load(first_directory)
+    second = config_api.load(second_directory)
+
+    assert (
+        first.risk.maximum_loss_fraction_per_new_trade
+        != second.risk.maximum_loss_fraction_per_new_trade
+    )
+    assert first.frozen_config_hash != second.frozen_config_hash
 
 
 @pytest.mark.parametrize(

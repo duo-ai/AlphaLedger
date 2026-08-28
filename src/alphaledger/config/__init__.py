@@ -388,10 +388,10 @@ def _load_session(directory: Path) -> SessionConfig:
 
 
 def _decimal_string(value: Decimal) -> str:
-    normalized = value.normalize()
-    if normalized == 0:
+    if value == 0:
         return "0"
-    return format(normalized, "f")
+    rendered = format(value, "f")
+    return rendered.rstrip("0").rstrip(".") if "." in rendered else rendered
 
 
 def _content_hash(
