@@ -202,6 +202,37 @@ Twenty-seven defects were injected one at a time after these fixes and every
 one is caught by a named test. Two were additionally checked by hand after the
 harness returned an inconsistent verdict on one of them; both are caught.
 
+### Review round two, backtest-auditor
+
+No new defects. All seven round one fixes were verified by independent
+reconstruction rather than by rerunning this branch's suite. The event window
+boundary was probed at five positions, including an event exactly on a session
+close, an event outside the panel at both ends, and a panel with a holiday gap;
+the reviewer's own first expectation on the gap case was wrong and the code was
+right.
+
+One residual finding, now fixed. `no_peer_data` was a bare flag, so a block
+where one session of twenty four was left undemeaned looked identical to a
+block where nothing was ever demeaned. The z-score would then mix one raw
+return into its window with nothing saying how much of the block that was. The
+flag now carries the count, and a test distinguishes one missing session from a
+panel with no peers at all.
+
+### Open question for the adapter, deliberately not answered here
+
+`Bar` now refuses a non-positive price and an open or close outside its own
+high and low. Both are tautologically true of a well formed OHLC bar, and both
+fail closed. The unverified case is cross-vendor reconciliation: a busted or
+corrected trade, or a mismatch between an adjusted close and unadjusted highs
+and lows around a corporate action, could in principle produce an inconsistent
+print from a real feed, which would now halt rather than flag and continue.
+
+Whether Alpaca's raw or adjusted bar history ever emits a close outside its own
+range is a question for `alpaca-docs-researcher`, and it should be answered
+before UNIT-020's adapter feeds this module rather than discovered when it
+does. Halting is the reading `.claude/rules/01-safety.md` asks for, so the
+answer should confirm or overturn a stated decision, not settle an accident.
+
 ### Not verified
 
 - No adapter produces `Bar` records from Alpaca. Every bar here is a fixture.
