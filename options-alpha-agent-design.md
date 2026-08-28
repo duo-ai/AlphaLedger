@@ -1,4 +1,4 @@
-# AlphaLedger — options alpha agent design specification
+# AlphaLedger: options alpha agent design specification
 
 Version: replanned baseline, 27 Aug 2026  
 Mode: Alpaca competition paper account only  
@@ -38,7 +38,7 @@ audit in minutes.
 
 ### MVP scope
 
-- 20–30 highly liquid, US-listed, optionable stocks and broad ETFs.
+- 20 to 30 highly liquid, US-listed, optionable stocks and broad ETFs.
 - Three scheduled scans per session plus event-triggered rescans on new news.
 - Two alpha families: residual price/volume and structured news.
 - One live strategy family: bullish or bearish debit verticals.
@@ -136,7 +136,7 @@ At each prior close, form the next session's universe from symbols that are:
 1. active, tradable, and `options_enabled`;
 2. at least $10 at the prior close;
 3. ranked in the top cohort by trailing 20-session median dollar volume;
-4. supported by at least one 7–21 DTE expiration with non-zero two-sided
+4. supported by at least one 7 to 21 DTE expiration with non-zero two-sided
    quotes near the money; and
 5. free of unresolved symbol changes or corporate actions.
 
@@ -222,7 +222,7 @@ source counting, ticker mapping, and label-to-feature encoding. A headline is
 never “corroborated” merely because several outlets syndicated the same wire
 story.
 
-### 5.3 Options surface and activity — capability-gated
+### 5.3 Options surface and activity: capability-gated
 
 Potential features, motivated by the attached book's options-market chapter,
 are:
@@ -358,11 +358,11 @@ Only directional debit verticals go live initially:
 | Negative residual | Put debit spread | Buy near-ATM put; sell lower-strike put; same expiry |
 | Weak, mixed, or poor quality | `no_trade` | No legs |
 
-Use 7–21 DTE, no same-day expiration, and close before expiry. Enumerate real
+Use 7 to 21 DTE, no same-day expiration, and close before expiry. Enumerate real
 chains rather than asking the LLM for strikes. Initial target bands are roughly
-0.45–0.60 absolute delta for the long leg and 0.20–0.35 for the short leg,
+0.45 to 0.60 absolute delta for the long leg and 0.20 to 0.35 for the short leg,
 subject to current quote quality. The engine selects among candidates using
-liquidity, cost drag, forecast alignment, and exact risk—not the nearest delta
+liquidity, cost drag, forecast alignment, and exact risk, not the nearest delta
 alone.
 
 ### Extensions after validation
@@ -534,7 +534,7 @@ Each position has a machine-generated plan at entry:
 
 - thesis horizon and last valid timestamp;
 - profit-taking, loss-budget, and signal-invalidation conditions selected
-  from the locked validation—not improvised live;
+  from the locked validation, not improvised live;
 - maximum holding period;
 - news/data conditions that force review or exit;
 - expiry cutoff; and
@@ -550,7 +550,7 @@ arrives. No trade may remain open merely because an option mark is missing.
 
 ### Append-only records
 
-For every candidate—including `no_trade`—store:
+For every candidate, including `no_trade`, store:
 
 - raw-data hashes and timestamps;
 - feed and capability mode;
@@ -729,4 +729,4 @@ Research priors to test rather than assume:
 Re-verify event rules, judging weights, account provisioning, data entitlement,
 submission requirements, and the tested MCP/API schemas at kickoff. If a
 rule conflicts with this document, the rule wins and the configuration must be
-updated before arming—not silently during a live session.
+updated before arming, not silently during a live session.
