@@ -32,6 +32,8 @@ belong in the trial registry or status file.
 
 ## D-004: One writer, specialist reviewers
 
+- Amended by D-010: parallel writers are permitted in isolated worktrees.
+
 - Date: 2026-08-27
 - Decision: the main coding-agent session owns edits; project subagents are
   bounded, read-only research and review specialists.
@@ -43,6 +45,8 @@ belong in the trial registry or status file.
   isolated worktrees with a reviewed integration protocol.
 
 ## D-005: Python 3.12 with uv
+
+- Superseded by D-012: the interpreter is now 3.14. The rest of D-005 stands.
 
 - Date: 2026-08-27
 - Decision: use Python 3.12, `uv`, a committed lockfile, and typed boundaries.
