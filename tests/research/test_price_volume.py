@@ -421,6 +421,31 @@ def test_an_intraday_event_still_excludes_the_session_it_happened_in() -> None:
     assert block.features["cumulative_abnormal_return"] == pytest.approx(102 / 101 - 1, abs=1e-12)
 
 
+def test_the_event_window_spans_every_session_after_the_event_not_just_the_last() -> None:
+    """Two sessions of reaction, so a builder that returned only the most
+    recent residual, or reconstructed sessions positionally, cannot pass."""
+    closes = {SESSIONS - 2: "101.00", SESSIONS - 1: "102.00"}
+    moved = [
+        bar(
+            "TARGET",
+            index,
+            open_="100.00",
+            high="103.00",
+            low="99.00",
+            close=closes.get(index, "100.00"),
+            volume=1_000_000,
+        )
+        for index in range(SESSIONS)
+    ]
+    bars = tuple(moved) + tuple(flat_peer("PEER1")) + tuple(flat_peer("PEER2"))
+
+    block = build("TARGET", AS_OF, bars, config(), event_time=session_at(SESSIONS - 3))
+
+    assert block.features["cumulative_abnormal_return"] == pytest.approx(
+        (101 / 100 - 1) + (102 / 101 - 1), abs=1e-12
+    )
+
+
 def test_the_five_session_sum_is_a_sum_and_not_the_latest_move() -> None:
     """Two moves of different sizes inside the window, so a builder returning
     only the last one cannot pass."""
