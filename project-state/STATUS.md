@@ -1,17 +1,22 @@
 # AlphaLedger project status
 
-Last updated: 2026-08-28
+Last updated: 2026-08-29
 
 ## Current phase
 
-Released as v0.1.0, and `develop` has moved well past it. Seven units are
-merged. The research lane delegated in `RESEARCH-LANE.md` is complete, and the
+Released as v0.1.0, and `develop` has moved well past it. Eight units are
+merged, and two more are in a second pass after their first review returned
+`block`. The research lane delegated in `RESEARCH-LANE.md` is complete, and the
 validation discipline that has to exist before any model is fit is in place:
 point-in-time recording, the lagged frozen universe, the residual price and
 volume baseline, chronological purged splits, and the trial registry. The
-frozen label contract now holds what the labeler emits. The execution lane
-still has the paper endpoint assertion and nothing after it. No news, model,
-structure, risk, order, or ledger code exists.
+frozen label contract now holds what the labeler emits, and every enumerated
+field on it is checked at run time.
+
+The execution lane has the paper endpoint assertion merged and the order schema
+adapter on a branch, blocked on review findings. UNIT-004, the frozen
+configuration loader, is in the same position. No news, model, structure, risk,
+order lifecycle, or ledger code exists on `develop`.
 
 Every number in the research lane comes from a fixture. Nothing has touched
 Alpaca.
@@ -29,17 +34,17 @@ environment.
 
 ## Verified artifacts
 
-- `specs/`: the SDD intake, the unit template, and eleven unit intakes. Seven
-  merged. UNIT-003 and UNIT-023 are the research queue, UNIT-011 and UNIT-012
-  the execution one.
+- `specs/`: the SDD intake, the unit template, and twelve unit intakes. Eight
+  merged. UNIT-004 and UNIT-011 are on branches in a second pass, UNIT-023 is
+  the research queue, and UNIT-012 waits on UNIT-011.
 - `src/alphaledger/domain/`: the five records from design section 14 plus
   `ObservationTimestamps`. Money is `Decimal`, not the `float` the design
   sketched; the conflict and its resolution are recorded in the UNIT-001
   intake.
 - Quality gate passes end to end on 3.14: `uv sync --frozen`, `ruff check`,
-  `ruff format --check`, `mypy src` under strict, and 221 tests. The gate now
+  `ruff format --check`, `mypy src` under strict, and 242 tests. The gate now
   runs inside `verify_harness.sh` too, so the script cannot be green while
-  the repository gate is red.
+  the repository gate is red. `verify_harness.sh` is at 37 checks.
 - `src/alphaledger/data/recorder.py` and `storage.py`, UNIT-020. Six
   timestamps and a feed on every record, an `as_of` read with no wall-clock
   alternative, five orderings enforced feed by feed under the obligation D-014
@@ -71,7 +76,23 @@ environment.
   merge and one same-bar leak. Two of those were regressions introduced by an
   earlier round's own fix, which is the pattern `RESEARCH-LANE.md` predicts.
   Sixty-eight injected defects are each caught by a named test.
-- `scripts/coord.py`: claiming across runtimes. Self-test passes with 11 cases.
+- `src/alphaledger/domain/contracts.py`, UNIT-003. `category` is checked at
+  run time against a literal list, closing the last enumerated label field that
+  a `Literal` alone could not defend once the value came out of a model's JSON.
+  UNIT-023 depends on it.
+- `config/` and `.env.example`, per D-017. Non-secret operational constants are
+  committed so they can be hashed into a run manifest; secrets are named in
+  `.env.example` and live only in the environment. Every value there currently
+  mirrors a dataclass default and none has been selected on data. UNIT-004
+  makes these files the source and pins them against the code defaults, and it
+  is not merged yet, so today the code defaults are still the source.
+- `scripts/dispatch.sh`, `review.sh`, `watch.py`, `notable.py`, and
+  `dispatch_status.py`: dispatch a unit to Codex, dispatch its reviewer, follow
+  either as a live coloured stream, and be told when one stops or ends. A
+  `--continue` dispatch rebases the branch onto `develop` first, so a second
+  pass reads the intake amendment that carries the review findings rather than
+  the specification it already implemented.
+- `scripts/coord.py`: claiming across runtimes. Self-test passes with 18 cases.
   The dependency gate was exercised on the real files in both directions:
   refused while UNIT-001 was unmerged, allowed once it merged.
 - `scripts/verify_harness.sh`: all checks passing, including both guard scripts
@@ -79,7 +100,7 @@ environment.
   runs there, not that a runtime loads the hook there. The second question was
   answered separately by a live probe under `codex exec`, which returned
   "Command blocked by PreToolUse hook" from inside a worktree. See D-020.
-- `.claude/hooks/guard.py` and `.codex/hooks/guard.py`: 23 and 25 cases.
+- `.claude/hooks/guard.py` and `.codex/hooks/guard.py`: 40 and 42 cases.
 - `scripts/dispatch.sh`: one-line Codex dispatch for a unit. Codex is the
   standing default runtime for implementation work; see the parallel work
   protocol in `AGENTS.md`.
@@ -106,9 +127,18 @@ environment.
 
 - `main` and `develop` are level at v0.1.0, but no release process is exercised
   beyond this first cut.
-- The roster in `AGENTS.md` still names `teammate/claude` as a placeholder,
-  while the research lane is in fact being worked by `mazwy/claude`. The roster
-  table is stale, not the registry.
+- The Codex CLI changed under the dispatcher on 2026-08-29: 0.150.1 refuses
+  `--approve-for-me` together with `-s`, and both second-pass dispatches died on
+  the argument error while reporting a pid as though they had started. The
+  dispatcher now waits for a first event and refuses to report a launch that
+  never began, and it rotates a previous stream rather than truncating it. The
+  first-pass event streams for UNIT-004 and UNIT-011 were destroyed before that
+  rotation existed; their `.result.md` summaries and review artifacts survive,
+  the turn-by-turn record does not.
+- A review that omits its `VERDICT:` line is silent on the monitor, because
+  `scripts/notable.py` announces only a verdict it can see. The UNIT-004 review
+  did exactly that and was graded from its findings by the session, which is
+  what D-018 puts on the session anyway.
 - No real feed is connected anywhere. Every timestamp rule, screening
   condition, and feature value is proven self consistent against fixtures, not
   against Alpaca.
@@ -139,14 +169,15 @@ environment.
 
 ## Next three tasks
 
-1. Record the real competition dates and account facts in the run manifest,
-   then pass or block G0. It is the oldest open item and now the only thing
-   holding the shape of everything after it.
-2. Dispatch UNIT-011 and UNIT-012 to Codex. The execution lane is two units
-   behind the research lane and owns the harder safety surface.
-3. UNIT-002, the news label amendment accepted in D-016. It is small, it is
-   shared lane, and UNIT-023 depends on it. UNIT-024 is claimable in parallel;
-   the two do not share a file.
+1. Land UNIT-004 and UNIT-011. Both are in a second pass against recorded
+   findings, both must be reviewed again, and UNIT-012 cannot be claimed until
+   UNIT-011 merges.
+2. Record the real competition dates and account facts in the run manifest,
+   then pass or block G0. It is the oldest open item and the only thing holding
+   the shape of everything after it. It needs facts only the user has.
+3. UNIT-012, the order state machine and idempotent client order ids, the
+   moment UNIT-011 merges. UNIT-023 is claimable in parallel in the research
+   lane; the two do not share a file.
 
 ## Read first next session
 
