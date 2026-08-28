@@ -69,7 +69,9 @@ def bar(
 def flat_peer(symbol: str, sessions: int = SESSIONS) -> list[Bar]:
     """A peer that never moves, so the sector median return is exactly zero."""
     return [
-        bar(symbol, index, open_="50.00", high="51.00", low="49.00", close="50.00", volume=1_000_000)
+        bar(
+            symbol, index, open_="50.00", high="51.00", low="49.00", close="50.00", volume=1_000_000
+        )
         for index in range(sessions)
     ]
 
@@ -78,21 +80,33 @@ def target(sessions: int = SESSIONS) -> list[Bar]:
     """Flat at 100 until the last session, which moves 2 percent on twice the
     volume, with a range of 4.00 against a true range of 2.00 before it."""
     bars = [
-        bar("TARGET", index, open_="100.00", high="101.00", low="99.00", close="100.00",
-            volume=1_000_000)
+        bar(
+            "TARGET",
+            index,
+            open_="100.00",
+            high="101.00",
+            low="99.00",
+            close="100.00",
+            volume=1_000_000,
+        )
         for index in range(sessions - 1)
     ]
     bars.append(
-        bar("TARGET", sessions - 1, open_="101.00", high="103.00", low="99.00", close="102.00",
-            volume=2_000_000)
+        bar(
+            "TARGET",
+            sessions - 1,
+            open_="101.00",
+            high="103.00",
+            low="99.00",
+            close="102.00",
+            volume=2_000_000,
+        )
     )
     return bars
 
 
 def panel(sessions: int = SESSIONS) -> tuple[Bar, ...]:
-    return tuple(
-        target(sessions) + flat_peer("PEER1", sessions) + flat_peer("PEER2", sessions)
-    )
+    return tuple(target(sessions) + flat_peer("PEER1", sessions) + flat_peer("PEER2", sessions))
 
 
 def config(**overrides: object) -> FeatureConfig:
@@ -169,8 +183,15 @@ def test_a_moving_sector_is_subtracted_so_the_residual_is_not_the_raw_return() -
     """If the peers move with the target, the residual is smaller than the raw
     return. Without this the feature would just be momentum."""
     moving = [
-        bar(symbol, index, open_="50.00", high="51.00", low="49.00",
-            close="50.00" if index < SESSIONS - 1 else "51.00", volume=1_000_000)
+        bar(
+            symbol,
+            index,
+            open_="50.00",
+            high="51.00",
+            low="49.00",
+            close="50.00" if index < SESSIONS - 1 else "51.00",
+            volume=1_000_000,
+        )
         for symbol in ("PEER1", "PEER2")
         for index in range(SESSIONS)
     ]
@@ -191,9 +212,16 @@ def test_a_bar_stamped_after_as_of_is_rejected_rather_than_used() -> None:
     dropping it would leave the caller believing the builder had honoured a
     cutoff it never checked.
     """
-    leaked = bar("TARGET", SESSIONS, open_="102.00", high="110.00", low="102.00",
-                 close="110.00", volume=9_000_000,
-                 first_seen_time=AS_OF + timedelta(minutes=1))
+    leaked = bar(
+        "TARGET",
+        SESSIONS,
+        open_="102.00",
+        high="110.00",
+        low="102.00",
+        close="110.00",
+        volume=9_000_000,
+        first_seen_time=AS_OF + timedelta(minutes=1),
+    )
 
     with pytest.raises(LeakedBarError) as raised:
         build("TARGET", AS_OF, (*panel(), leaked), config())
@@ -203,10 +231,21 @@ def test_a_bar_stamped_after_as_of_is_rejected_rather_than_used() -> None:
 
 
 def test_a_bar_first_seen_exactly_at_as_of_is_knowable_at_as_of() -> None:
-    edge = bar("TARGET", SESSIONS - 1, open_="101.00", high="103.00", low="99.00",
-               close="102.00", volume=2_000_000, first_seen_time=AS_OF)
-    bars = tuple(item for item in panel() if not (item.symbol == "TARGET" and item.session ==
-                 session_at(SESSIONS - 1)))
+    edge = bar(
+        "TARGET",
+        SESSIONS - 1,
+        open_="101.00",
+        high="103.00",
+        low="99.00",
+        close="102.00",
+        volume=2_000_000,
+        first_seen_time=AS_OF,
+    )
+    bars = tuple(
+        item
+        for item in panel()
+        if not (item.symbol == "TARGET" and item.session == session_at(SESSIONS - 1))
+    )
 
     block = build("TARGET", AS_OF, (*bars, edge), config())
 
@@ -228,8 +267,15 @@ def test_an_earlier_as_of_sees_only_what_was_knowable_then() -> None:
 def test_two_bars_for_one_session_that_disagree_are_ambiguous_not_ordered() -> None:
     """The same rule UNIT-021 needed: a tie resolved by arrival order makes the
     result depend on how the panel was assembled."""
-    disagreeing = bar("TARGET", SESSIONS - 1, open_="101.00", high="103.00", low="99.00",
-                      close="105.00", volume=2_000_000)
+    disagreeing = bar(
+        "TARGET",
+        SESSIONS - 1,
+        open_="101.00",
+        high="103.00",
+        low="99.00",
+        close="105.00",
+        volume=2_000_000,
+    )
 
     with pytest.raises(AmbiguousBarError) as raised:
         build("TARGET", AS_OF, (*panel(), disagreeing), config())
@@ -263,8 +309,9 @@ def test_a_flat_price_gives_a_missing_marker_rather_than_a_zero_denominator() ->
     domain type rejects NaN, so it has to be handled rather than produced."""
     flat = tuple(flat_peer("TARGET") + flat_peer("PEER1") + flat_peer("PEER2"))
     still = [
-        bar(symbol, index, open_="50.00", high="50.00", low="50.00", close="50.00",
-            volume=1_000_000)
+        bar(
+            symbol, index, open_="50.00", high="50.00", low="50.00", close="50.00", volume=1_000_000
+        )
         for symbol in ("TARGET", "PEER1", "PEER2")
         for index in range(SESSIONS)
     ]
@@ -425,9 +472,23 @@ def test_an_empty_panel_yields_an_empty_block_rather_than_an_error() -> None:
     assert NO_QUALIFYING_DATA in block.quality_flags
 
 
-def test_an_as_of_before_every_bar_yields_an_empty_block() -> None:
-    block = build("TARGET", FIRST_SESSION - timedelta(days=1), panel(), config())
+def test_an_unfiltered_panel_at_an_early_as_of_stops_rather_than_reporting_no_data() -> None:
+    """ "No data" and "data you must not use" are different answers.
 
+    Discarding every unknowable bar and reporting an empty block would let a
+    caller who forgot to restrict the panel read a leak as a quiet no-trade.
+    """
+    with pytest.raises(LeakedBarError):
+        build("TARGET", FIRST_SESSION - timedelta(days=1), panel(), config())
+
+
+def test_a_correctly_restricted_panel_before_every_bar_is_simply_empty() -> None:
+    early = FIRST_SESSION - timedelta(days=1)
+    knowable = tuple(item for item in panel() if item.first_seen_time <= early)
+
+    block = build("TARGET", early, knowable, config())
+
+    assert knowable == ()
     assert block.features == {}
     assert NO_QUALIFYING_DATA in block.quality_flags
 
