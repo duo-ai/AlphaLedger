@@ -312,6 +312,20 @@ def cmd_review(units: dict, unit_id: str, reviewer: str, verdict: str) -> int:
         raise UnitError(f"verdict must be one of {', '.join(VERDICTS)}; got {verdict!r}")
     if meta["state"] not in ("claimed", "in_review"):
         raise UnitError(f"{unit_id} is {meta['state']}; review applies to work in progress")
+    # The merge gate only asks whether the last verdict was clear, so it cannot
+    # tell a verdict from the declared reviewer apart from one recorded under any
+    # other name. Without this the routing in D-018, execution work to the
+    # execution reviewer, is prose rather than a rule, and a typo silently
+    # attributes a clearance to a specialist that never ran.
+    declared = str(meta.get("reviewer", ""))
+    if not declared or declared == "-":
+        raise UnitError(f"{unit_id} declares no reviewer, so no review of it can be recorded")
+    if reviewer != declared:
+        raise UnitError(
+            f"{unit_id} names {declared} as its reviewer; refusing to record a verdict "
+            f"from {reviewer!r}. If the reviewer really did change, change the "
+            f"frontmatter first so the record and the routing agree."
+        )
     meta["reviewed_by"] = reviewer
     meta["review_verdict"] = verdict
     meta["reviewed_at"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -440,6 +454,16 @@ def self_test() -> int:
         except UnitError as exc:
             assert "conditional" in str(exc), "refusal must name the verdict"
         cmd_review(load_all(directory), "UNIT-001", "code-reviewer", "clear")
+        # a verdict recorded under a name the unit did not declare is refused,
+        # because the merge gate cannot tell one reviewer's clearance from
+        # another's and would accept a specialist that never ran
+        try:
+            cmd_review(load_all(directory), "UNIT-001", "backtest-auditor", "clear")
+        except UnitError as exc:
+            assert "code-reviewer" in str(exc), "refusal must name the declared reviewer"
+        else:
+            raise AssertionError("a review by an undeclared reviewer must be refused")
+        cases += 1
         cmd_state(load_all(directory), "UNIT-001", "merged")
         assert cmd_claim(load_all(directory), "UNIT-010", "ada/claude", None) == 0
         assert load_all(directory)["UNIT-010"][0]["owner"] == "ada/claude", (
