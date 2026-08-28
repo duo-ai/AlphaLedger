@@ -33,6 +33,9 @@ belong in the trial registry or status file.
 ## D-004: One writer, specialist reviewers
 
 - Amended by D-010: parallel writers are permitted in isolated worktrees.
+- Amended by D-019: specialists hold Write and Edit for their own memory
+  directory, so the read-only guarantee below is now a stated boundary rather
+  than a tool-enforced one.
 
 - Date: 2026-08-27
 - Decision: the main coding-agent session owns edits; project subagents are
@@ -342,3 +345,36 @@ belong in the trial registry or status file.
   run. That is the intended failure direction.
 - Revisit only if: a reviewer becomes a bottleneck in practice, in which case
   the fix is more reviewers or narrower units, not a weaker gate.
+
+## D-019: Specialists keep committed memory, and are no longer strictly read-only
+
+- Date: 2026-08-29
+- Origin: research into what Claude Code actually offers for agent memory,
+  prompted by wanting reviewer knowledge to accumulate rather than being
+  rediscovered every session.
+- Finding that forced the choice: enabling `memory:` on a subagent
+  automatically grants it Read, Write, and Edit, even where its `tools:` list
+  omits them. There is no documented way to have durable agent memory and a
+  tool-enforced read-only reviewer at the same time.
+- Decision: amends D-004. The six specialists gain `memory: project`, writing
+  to `.claude/agent-memory/<name>/`, which is committed and therefore shared
+  between both developers and across machines. They consequently hold Write and
+  Edit.
+- The boundary that replaces the tool list: a specialist writes its own memory
+  directory and nothing else. It does not edit application code, specifications,
+  or tests. That is now stated in every agent's own instructions, because it is
+  no longer enforced by the tool list. This is a weaker guarantee than D-004
+  gave, and the weakening is deliberate and recorded rather than discovered.
+- Why accept it: the reviews are where the real defects have been found, and
+  each round currently starts from nothing. A reviewer that remembers a defect
+  class it has already seen is worth more than one that cannot write a file.
+- Rejected alternative: Claude Code's auto memory. It lives at
+  `~/.claude/projects/<project>/memory/` and is explicitly machine-local, so it
+  reaches one person on one machine. It cannot be the shared channel for a two
+  person team, whatever else it is good for.
+- Convention, because the documentation is silent on merging two versions of one
+  memory index: `MEMORY.md` holds one line per entry and detail goes in topic
+  files. Two appends merge; two rewrites do not.
+- Revisit only if: a specialist is found editing outside its memory directory,
+  in which case the answer is to remove memory from that agent rather than to
+  add a rule nothing enforces.

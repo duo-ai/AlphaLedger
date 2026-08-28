@@ -28,8 +28,14 @@ adds only Claude-specific operation. Status and decisions live in the shared
 `project-state/` directory so the Claude and Codex harnesses resume from the
 same verified checkpoint.
 
-Specialist agents can inspect, research, and run already-approved checks, but
-cannot edit files. The main interactive session remains the sole writer. This
+Specialist agents inspect, research, and run already-approved checks. Each
+keeps committed memory at `.claude/agent-memory/<name>/`, which is how a
+reviewer accumulates knowledge across sessions and how both developers see it.
+
+Enabling that memory grants Write and Edit, so the read-only guarantee is now a
+stated boundary rather than a tool-enforced one: a specialist writes its own
+memory directory and nothing else. D-019 records the trade and why it was
+accepted. The main interactive session remains the writer of everything else. This
 is deliberate: Anthropic's maintained examples distinguish autonomous agents
 from user-invoked workflows, and a one-week trading build benefits more from
 independent reviews than from several processes modifying one checkout.
