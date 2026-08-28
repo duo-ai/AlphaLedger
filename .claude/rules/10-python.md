@@ -7,7 +7,7 @@ paths:
 
 # Python implementation rules
 
-- Target Python 3.12 and manage dependencies with `uv`; commit and honor the
+- Target Python 3.14 and manage dependencies with `uv`; commit and honor the
   lockfile. Pin broker, MCP, model, and schema-sensitive dependencies.
 - Type public functions and domain boundaries. Prefer small immutable domain
   objects over dictionaries once data crosses an adapter boundary.

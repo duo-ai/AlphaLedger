@@ -43,7 +43,7 @@ submission audit.
 
 1. Install a current Claude Code release. Version 2.1.233 or later is required
    for `claude plugin validate .claude/agents`.
-2. Install Python 3.12 and `uv`/`uvx`.
+2. Install Python 3.14 and `uv`/`uvx`.
 3. Start from the repository root. Project settings are read from the directory
    where Claude Code starts:
 

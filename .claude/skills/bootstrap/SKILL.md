@@ -12,7 +12,7 @@ create application code.
 1. Read `AGENTS.md`, `project-state/STATUS.md`, and
    `project-state/DECISIONS.md`.
 2. Report `claude --version`, `uv --version`, and `python3 --version`. Claude
-   Code 2.1.233 or later is required for the agent validator; Python 3.12 is the
+   Code 2.1.233 or later is required for the agent validator; Python 3.14 is the
    implementation target.
 3. Validate strict JSON in `.claude/settings.json` and `.mcp.json` without
    expanding or printing environment values.

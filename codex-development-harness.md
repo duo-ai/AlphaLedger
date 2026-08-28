@@ -27,7 +27,7 @@ holds project configuration, hooks, rules, and custom-agent TOML files.
 ## First use
 
 1. Install a current Codex CLI or open the project in the Codex app. Install
-   Python 3.12 and `uv`/`uvx`.
+   Python 3.14 and `uv`/`uvx`.
 2. Start at the repository root so root instructions, project skills, and
    project configuration resolve as intended:
 
