@@ -2,7 +2,7 @@
 id: UNIT-022
 title: Build residual price and volume features
 lane: research
-state: in_review
+state: merged
 owner: mazwy/claude
 branch: feature/022-price-volume-features
 reviewer: backtest-auditor
