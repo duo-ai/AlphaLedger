@@ -20,6 +20,33 @@ set -euo pipefail
 
 die() { echo "dispatch: $*" >&2; exit 1; }
 
+# A second pass only happens through the registry, so the review round count and
+# the escalation after two rounds that did not clear sit on the path rather than
+# beside it. Without this the dispatcher is a way around that gate, and the gate
+# is a convention again.
+require_claimed() {
+    local unit="$1" state
+    state=$(bash scripts/hook_python.sh - "$unit" <<'STATE'
+import pathlib
+import sys
+
+unit = sys.argv[1]
+for path in sorted(pathlib.Path("specs/units").glob("*.md")):
+    text = path.read_text()
+    if f"id: {unit}\n" not in text:
+        continue
+    for line in text.split("---", 2)[1].splitlines():
+        key, _, value = line.partition(":")
+        if key.strip() == "state":
+            print(value.strip())
+    break
+STATE
+)
+    [ "$state" = "claimed" ] || die "$unit is '$state', not 'claimed'. A second pass goes through the registry:
+  python3 scripts/coord.py state $unit claimed
+which is where the review round count lives, and the refusal after two rounds that did not clear."
+}
+
 UNITS=()
 OWNER=""
 DRY_RUN=false
@@ -166,6 +193,7 @@ echo
 if [ "$DRY_RUN" = true ]; then
     for i in "${!UNITS[@]}"; do
         slug="${SLUGS[$i]}"
+        [ "$CONTINUE" = true ] && require_claimed "${UNITS[$i]}"
         build_prompt "${UNITS[$i]}" "$slug" "feature/$slug" "$LOGDIR/$slug.prompt.txt"
         echo "  ${UNITS[$i]}  ->  feature/$slug  ($LOGDIR/$slug.prompt.txt)"
     done
@@ -181,8 +209,11 @@ git diff --quiet && git diff --cached --quiet \
 
 # A leftover branch or worktree means a previous run died midway. Say so before
 # claiming anything, so a retry cannot deepen the mess.
-for slug in "${SLUGS[@]}"; do
+for i in "${!SLUGS[@]}"; do
+    slug="${SLUGS[$i]}"
+    unit="${UNITS[$i]}"
     if [ "$CONTINUE" = true ]; then
+        require_claimed "$unit"
         wt="$ROOT/../AlphaLedger-wt/$slug"
         [ -d "$wt" ] \
             || die "--continue needs an existing worktree at ../AlphaLedger-wt/$slug. Dispatch without it to start fresh."
@@ -276,6 +307,12 @@ Reconcile the existing code with the updated specification. Where a test is
 named as theatre, replace it rather than adding another beside it. Where an
 acceptance criterion was corrected because the original was unachievable,
 implement the corrected one and do not try to satisfy the old wording.
+
+Not every finding is yours to fix. If one asks for work outside this unit's
+declared path globs, or for behaviour no acceptance criterion of this unit
+names, do not implement it. Say so plainly in your summary and leave it. A unit
+that grows to absorb the next three units never finishes, and the reviewer is
+not the source of truth about scope; the intake is.
 
 Keep the existing commits. Add new ones on top.
 FOLLOWUP

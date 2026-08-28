@@ -472,3 +472,50 @@ belong in the trial registry or status file.
 - Revisit only if: units grow large enough that one intake stops being enough
   to implement from, at which point the plan and tasks split earns a second
   look.
+
+## D-022: The review loop is bounded by a human decision, not by a lower bar
+
+- Date: 2026-08-29
+- Origin: UNIT-004 and UNIT-011 both returned `block` on their first review and
+  went to a second pass. Nothing in the harness could have told a third round
+  from a thirtieth, and nothing bounded what a reviewer could ask for.
+- The failure this prevents: a reviewer with an unbounded mandate always finds
+  something. The UNIT-011 review listed arm expiry, exact loss sizing, duplicate
+  invocation timeout lookup, stale clock and feed faults, bounded exits, and
+  ledger transitions as work still outstanding. Not one of those lives in
+  `src/alphaledger/execution/orders.py`, and none of them is an acceptance
+  criterion of that unit. A unit held open for work it was never asked to do
+  does not close.
+- Decision, three parts.
+  1. Every verdict is kept, in order, in `review_log`. A unit reviewed before
+     that field existed seeds it from the verdict it already carries, so the
+     count is not short by one.
+  2. `coord.py state <unit> claimed` refuses to reopen a unit whose last two
+     verdicts were both not `clear`, unless `--another-pass` is passed. The
+     refusal states the choice: if the outstanding findings are actionable
+     inside the unit's own path globs and bear on its numbered acceptance
+     criteria, spend the round; if they belong to a later unit, they are not
+     findings against this one, so narrow the intake or open a new unit.
+  3. `dispatch.sh --continue` refuses a unit that is not `claimed`, so a second
+     pass cannot route around that transition. This is the part that makes the
+     rest enforcement rather than convention: the dispatcher never called
+     `coord.py state` and the reopen was being done by hand.
+- The reviewer's mandate is bounded in its own prompt: a finding carries
+  severity only if it is actionable inside the declared globs and bears on a
+  numbered acceptance criterion. Everything else goes under "Out of scope",
+  with no severity, and cannot move the verdict. A second pass brief now says
+  the same thing from the other side: findings outside the intake are not the
+  implementer's to fix, and the intake, not the reviewer, is the source of
+  truth about scope.
+- What was deliberately not done: no verdict is ever weakened, and no unit
+  merges on anything but `clear`. `AGENTS.md` forbids weakening a gate to get a
+  result, and a round limit that let a blocked unit through would be exactly
+  that. The limit stops automatic re-dispatch and hands the decision to a
+  person; it does not lower the bar the unit has to clear.
+- Rejected: detecting a repeated finding by comparing its text across rounds.
+  The wording changes between rounds, so the comparison would be fuzzy, and a
+  fuzzy match that says "you already fixed this" is worse than no check.
+- Revisit only if: a unit legitimately needs more than two rounds often enough
+  that `--another-pass` becomes reflexive. That would mean units are too large,
+  and the answer is a narrower decomposition, not a higher limit.
+

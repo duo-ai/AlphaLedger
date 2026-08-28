@@ -32,7 +32,7 @@ ALLOWED_TRANSITIONS: dict[str, tuple[str, ...]] = {
     "blocked": ("available",),
 }
 
-LIST_KEYS = ("depends_on",)
+LIST_KEYS = ("depends_on", "review_log")
 OWNER_PATTERN = re.compile(r"[a-z0-9][a-z0-9_.-]*/(claude|codex)")
 UNCLAIMED = "-"
 
@@ -326,20 +326,34 @@ def cmd_review(units: dict, unit_id: str, reviewer: str, verdict: str) -> int:
             f"from {reviewer!r}. If the reviewer really did change, change the "
             f"frontmatter first so the record and the routing agree."
         )
+    log = meta.get("review_log")
+    if not isinstance(log, list):
+        # A unit reviewed before the log existed carries one verdict and no
+        # history. Seed from it rather than starting the count at zero, or the
+        # round that follows looks like the first and the escalation below
+        # fires a whole round late.
+        previous = str(meta.get("review_verdict", ""))
+        log = [previous] if previous in VERDICTS else []
+    meta["review_log"] = [*log, verdict]
     meta["reviewed_by"] = reviewer
     meta["review_verdict"] = verdict
     meta["reviewed_at"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    for key in ("reviewed_by", "review_verdict", "reviewed_at"):
+    for key in ("reviewed_by", "review_verdict", "reviewed_at", "review_log"):
         if key not in order:
             order.append(key)
     write_unit(path, meta, order, body)
-    print(f"{unit_id}: reviewed by {reviewer}, verdict {verdict}")
+    rounds = len(meta["review_log"])
+    print(f"{unit_id}: reviewed by {reviewer}, verdict {verdict}, round {rounds}")
     if verdict != "clear":
         print("  not mergeable until the findings are addressed and it is reviewed again")
+    if verdict != "clear" and rounds >= 2 and str(meta["review_log"][-2]) != "clear":
+        print(f"  {rounds} rounds have not cleared this unit. Reopening it now needs")
+        print("  --another-pass, so that the decision to spend another round is a")
+        print("  human one. See the message that refusal prints.")
     return 0
 
 
-def cmd_state(units: dict, unit_id: str, new_state: str) -> int:
+def cmd_state(units: dict, unit_id: str, new_state: str, another_pass: bool = False) -> int:
     meta, order, body, path = get(units, unit_id)
     current = str(meta["state"])
     if new_state not in STATES:
@@ -347,6 +361,20 @@ def cmd_state(units: dict, unit_id: str, new_state: str) -> int:
     if new_state not in ALLOWED_TRANSITIONS[current]:
         allowed = ", ".join(ALLOWED_TRANSITIONS[current]) or "nothing (terminal)"
         raise UnitError(f"{unit_id}: {current} -> {new_state} is not allowed; allowed: {allowed}")
+    if current == "in_review" and new_state == "claimed" and not another_pass:
+        log = meta.get("review_log")
+        log = [str(v) for v in log] if isinstance(log, list) else []
+        if len(log) >= 2 and log[-1] != "clear" and log[-2] != "clear":
+            raise UnitError(
+                f"{unit_id} has been through {len(log)} review rounds without clearing "
+                f"({', '.join(log)}). Another pass is not automatically the answer. "
+                f"Decide first: if the outstanding findings are actionable inside this "
+                f"unit's own path globs and bear on its numbered acceptance criteria, "
+                f"reopen it with --another-pass. If they belong to a later unit, they "
+                f"are not findings against this one; record that and narrow the intake, "
+                f"or split the work into a new unit. This refusal exists so a reviewer "
+                f"with an unbounded mandate cannot keep a unit open forever."
+            )
     if new_state == "merged":
         verdict = str(meta.get("review_verdict", ""))
         if not verdict:
@@ -561,6 +589,57 @@ def self_test() -> int:
         except UnitError as exc:
             assert "clarification" in str(exc), "refusal must name the clarification"
         cases += 1
+        # every verdict survives the file, and two that do not clear refuse a
+        # reflexive third pass. Counting matters more than the count: a reviewer
+        # with an unbounded mandate always finds something, so the loop has to
+        # reach a human rather than spend rounds on its own.
+        if load_all(directory)["UNIT-020"][0]["state"] == "available":
+            cmd_claim(load_all(directory), "UNIT-020", "ada/claude", None)
+        cmd_state(load_all(directory), "UNIT-020", "in_review")
+        cmd_review(load_all(directory), "UNIT-020", "code-reviewer", "block")
+        cmd_state(load_all(directory), "UNIT-020", "claimed")
+        cmd_state(load_all(directory), "UNIT-020", "in_review")
+        cmd_review(load_all(directory), "UNIT-020", "code-reviewer", "block")
+        log = load_all(directory)["UNIT-020"][0]["review_log"]
+        assert log == ["block", "block"], f"every verdict must survive the file, got {log!r}"
+        cases += 1
+        try:
+            cmd_state(load_all(directory), "UNIT-020", "claimed")
+            raise AssertionError("a third pass after two failed rounds must not be automatic")
+        except UnitError as exc:
+            assert "--another-pass" in str(exc), "refusal must name the way through it"
+        cases += 1
+        cmd_state(load_all(directory), "UNIT-020", "claimed", another_pass=True)
+        cmd_state(load_all(directory), "UNIT-020", "in_review")
+        cmd_review(load_all(directory), "UNIT-020", "code-reviewer", "conditional")
+        log = load_all(directory)["UNIT-020"][0]["review_log"]
+        assert log == ["block", "block", "conditional"], (
+            f"three rounds must round-trip, got {log!r}"
+        )
+        cases += 1
+
+        # a unit reviewed before the log existed carries a verdict and no
+        # history, and must still count that round
+        meta, order, body, path = load_all(directory)["UNIT-010"]
+        meta["state"] = "in_review"
+        meta["reviewed_by"] = "code-reviewer"
+        meta["review_verdict"] = "block"
+        for key in ("reviewed_by", "review_verdict"):
+            if key not in order:
+                order.append(key)
+        write_unit(path, meta, order, body)
+        cmd_review(load_all(directory), "UNIT-010", "code-reviewer", "block")
+        assert load_all(directory)["UNIT-010"][0]["review_log"] == ["block", "block"], (
+            "a verdict recorded before the log existed must seed it"
+        )
+        cases += 1
+        try:
+            cmd_state(load_all(directory), "UNIT-010", "claimed")
+            raise AssertionError("a seeded history must gate the next pass too")
+        except UnitError as exc:
+            assert "--another-pass" in str(exc), "refusal must name the way through it"
+        cases += 1
+
         (directory / "099-dupe.md").write_text(
             _sample("UNIT-001", "shared", "available", UNCLAIMED)
         )
@@ -604,6 +683,11 @@ def main(argv: list[str] | None = None) -> int:
     p_state = sub.add_parser("state", help="transition a unit")
     p_state.add_argument("unit_id")
     p_state.add_argument("new_state", choices=STATES)
+    p_state.add_argument(
+        "--another-pass",
+        action="store_true",
+        help="reopen a unit that two review rounds have not cleared",
+    )
 
     args = parser.parse_args(argv)
     if args.self_test:
@@ -623,7 +707,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "review":
             return cmd_review(units, args.unit_id, args.by, args.verdict)
         if args.command == "state":
-            return cmd_state(units, args.unit_id, args.new_state)
+            return cmd_state(units, args.unit_id, args.new_state, args.another_pass)
     except UnitError as exc:
         print(f"[coord] {exc}", file=sys.stderr)
         return 1

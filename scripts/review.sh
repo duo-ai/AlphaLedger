@@ -113,6 +113,16 @@ The repository prefers a well established package to bespoke code. If this
 change hand-rolls something a known library already does, say so and name the
 library.
 
+A finding carries severity only if it is actionable inside this unit's declared
+path globs and bears on one of its numbered acceptance criteria. Work that
+belongs to a later unit is not a finding against this one. Put anything like
+that under a heading "Out of scope", with no severity, and do not let it move
+the verdict. A reviewer with an unbounded mandate always finds something, and a
+unit held open for work it was never asked to do never closes.
+
+If a finding restates one an earlier round already addressed, say so and say
+what is still wrong with the fix, rather than raising it again as new.
+
 End with a verdict on its own line, exactly one of:
   VERDICT: clear
   VERDICT: conditional
