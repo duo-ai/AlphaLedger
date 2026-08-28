@@ -10,6 +10,9 @@ preferred_runtime: codex
 depends_on: [UNIT-001, UNIT-010]
 paths: src/alphaledger/execution/__init__.py, src/alphaledger/execution/orders.py, tests/execution/test_orders.py
 claimed_at: 2026-08-28T22:06:35Z
+reviewed_by: execution-safety-reviewer
+review_verdict: block
+reviewed_at: 2026-08-28T23:05:29Z
 ---
 
 ## Problem
