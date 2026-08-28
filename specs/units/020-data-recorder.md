@@ -8,7 +8,7 @@ branch: feature/020-data-recorder
 reviewer: backtest-auditor
 preferred_runtime: claude
 depends_on: [UNIT-001]
-paths: src/alphaledger/data/recorder.py, src/alphaledger/data/storage.py, tests/research/test_recorder.py
+paths: src/alphaledger/data/__init__.py, src/alphaledger/data/recorder.py, src/alphaledger/data/storage.py, tests/research/__init__.py, tests/research/test_recorder.py
 claimed_at: 2026-08-28T19:04:14Z
 ---
 
@@ -40,6 +40,15 @@ Out:
 
 - Feature construction (UNIT-022) and labelling (UNIT-023).
 - Universe membership (UNIT-021).
+
+## Resolved gaps
+
+The declared `paths` originally named three files but not the two package
+markers those files need to be importable: `src/alphaledger/data/__init__.py`
+and `tests/research/__init__.py`. Neither package exists yet and neither is
+claimed by another unit, so both were added to `paths` here before any code was
+written. UNIT-011 declares its own `execution/__init__.py`, so this follows the
+established convention rather than introducing one.
 
 ## Inherited obligation
 
