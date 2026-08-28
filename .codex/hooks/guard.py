@@ -51,6 +51,11 @@ def _sensitive_path(path: str) -> str | None:
     parts = [part for part in normalized.split("/") if part]
     basename = parts[-1] if parts else ""
 
+    # These names are conventions for a file that documents variable NAMES and
+    # holds no values. Everything else beginning with the dotted prefix stays
+    # blocked, including .local and .production.
+    if basename in {".env.example", ".env.sample", ".env.template"}:
+        return None
     if basename == ".env" or basename.startswith(".env."):
         return "environment file"
     if any(part in {"secret", "secrets", "credentials"} for part in parts):
@@ -214,7 +219,9 @@ def _bash_violation(command: str) -> str | None:
         return "live application mode"
     if re.search(r"\$\{?ALPACA_(?:API_KEY|SECRET_KEY)\}?", command, re.I):
         return "credential expansion in a shell command"
-    if re.search(r"(?:^|[\s/])\.env(?:[.\s/]|$)", command, re.I):
+    if re.search(
+        r"(?:^|[\s/])\.env(?!\.example\b|\.sample\b|\.template\b)(?:[.\s/]|$)", command, re.I
+    ):
         return "shell access to an environment file"
     return None
 
@@ -302,6 +309,12 @@ def violation(payload: dict[str, Any]) -> str | None:
 
 
 def _self_test() -> int:
+    # The branch rules read the working copy, so pin it. Otherwise the suite
+    # reports a different result on develop than on a feature branch.
+    global _current_branch
+    real_current_branch = _current_branch
+    _current_branch = lambda: "feature/self-test"  # noqa: E731
+
     cases = (
         ({"tool_name": "Read", "tool_input": {"path": "/repo/.env"}}, True),
         ({"tool_name": "Bash", "tool_input": {"command": "git reset --hard HEAD"}}, True),
@@ -492,7 +505,37 @@ def _self_test() -> int:
             },
             False,
         ),
+        ({"tool_name": "Write", "tool_input": {"file_path": "/repo/.env.example"}}, False),
+        ({"tool_name": "Read", "tool_input": {"file_path": "/repo/.env.local"}}, True),
+        ({"tool_name": "Read", "tool_input": {"file_path": "/repo/.env.production"}}, True),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git mv env.example .env.example"},
+            },
+            False,
+        ),
+        (
+            {"tool_name": "Bash", "tool_input": {"command": "cat .env.local"}},
+            True,
+        ),
     )
+
+    branch_cases = (
+        ("develop", "git commit -m 'feat(x): direct'", True),
+        ("develop", "git commit -m 'chore(registry): claim UNIT-011 for a/codex'", False),
+        ("main", "git commit -m 'chore(registry): claim UNIT-011 for a/codex'", True),
+        ("feature/x", "git commit -m 'feat(x): on a feature branch'", False),
+    )
+    for branch, command, expected_block in branch_cases:
+        _current_branch = lambda b=branch: b  # noqa: E731
+        payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+        if bool(violation(payload)) is not expected_block:
+            print(f"guard self-test failed: branch case {branch} {command!r}", file=sys.stderr)
+            _current_branch = real_current_branch
+            return 1
+    _current_branch = real_current_branch
+
     failures = [
         index
         for index, (payload, expected_block) in enumerate(cases, start=1)
@@ -501,7 +544,8 @@ def _self_test() -> int:
     if failures:
         print(f"guard self-test failed: cases {failures}", file=sys.stderr)
         return 1
-    print(f"guard self-test passed: {len(cases)} cases")
+    _current_branch = real_current_branch
+    print(f"guard self-test passed: {len(cases) + len(branch_cases)} cases")
     return 0
 
 
