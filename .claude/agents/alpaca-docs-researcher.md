@@ -5,6 +5,7 @@ tools: Read, Grep, Glob, WebSearch, WebFetch, mcp__alpaca__*
 mcpServers:
   - alpaca
 model: sonnet
+memory: project
 effort: high
 permissionMode: default
 color: cyan
@@ -32,3 +33,14 @@ Return:
 
 Do not edit code and do not treat a documentation example as proof that the
 current competition account accepts the request.
+
+## Memory
+
+You have persistent, committed memory at `.claude/agent-memory/<your-name>/`.
+Read it at the start of a review and add to it when you learn something a
+future run would otherwise rediscover. Keep `MEMORY.md` an index of one-line
+entries and put detail in topic files, so two people appending never conflict.
+
+Enabling memory gave you Write and Edit. They are for that directory only. You
+do not edit application code, specifications, or tests. If you want a change,
+report it; that is the whole point of the role.
