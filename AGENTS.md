@@ -106,7 +106,7 @@ Two people and three coding-agent runtimes share this repository. Read
 |---|---|---|---|
 | `pablo/codex` | Codex | execution | `src/alphaledger/{broker,execution,risk,structure,ledger}/**` |
 | `pablo/claude` | Claude Code | execution and shared | intake authoring, review, integration |
-| `<teammate>/claude` | Claude Code | research | `src/alphaledger/{data,evidence,forecast}/**`, `research/**` |
+| `teammate/claude` | Claude Code | research | `src/alphaledger/{data,evidence,forecast}/**`, `research/**` |
 
 Lanes have disjoint path globs. Never write outside the lane of the unit you
 hold. Codex carries the larger budget, so units marked
@@ -121,6 +121,11 @@ git switch develop && git pull --rebase origin develop
 python3 scripts/coord.py list --state available
 python3 scripts/coord.py claim UNIT-010 --owner pablo/codex
 ```
+
+Claim from the primary clone, not from a worktree. Git refuses to check the
+same branch out twice, so only one working copy can sit on `develop`. Keep the
+primary clone on `develop` as the claiming station and let worktrees hold
+`feature/` branches only.
 
 `claim` refuses a unit that is already owned, one whose dependencies are not
 `merged`, and an owner string that does not name both a person and a runtime.

@@ -29,6 +29,10 @@ this is merged.
 
 In:
 
+- The Python project itself, because nothing here can be verified without it:
+  `pyproject.toml` with `requires-python = ">=3.14"`, a committed `uv.lock`,
+  the `src/` and `tests/` layout, and the ruff, mypy, and pytest configuration
+  named in the quality gate in `AGENTS.md`.
 - `NewsLabel`, `EvidenceCard`, `Forecast`, `StructurePlan`, `RiskApproval` as
   frozen dataclasses.
 - The money and quantity types used across the boundary, with declared rounding.
@@ -60,6 +64,9 @@ UTC and are rejected otherwise.
 - AC-4: instances are frozen. Mutating any field raises.
 - AC-5: importing `alphaledger.domain` performs no I/O and imports no adapter,
   broker, or model package.
+- AC-6: `uv sync --frozen` succeeds on 3.14 and each command in the quality
+  gate runs. `requires-python` is `>=3.14`, so the interpreter is pinned where
+  it is enforced rather than only where it is described.
 
 ## Test list
 

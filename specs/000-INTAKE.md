@@ -66,7 +66,7 @@ Three writers across two people:
 |---|---|---|---|
 | `pablo/codex` | Codex | execution | implementation-heavy units |
 | `pablo/claude` | Claude Code | execution and shared | intake authoring, review, integration |
-| `<teammate>/claude` | Claude Code | research | research and evidence units |
+| `teammate/claude` | Claude Code | research | research and evidence units |
 
 Codex has the larger budget, so implementation-heavy units carry
 `preferred_runtime: codex`. Claude sessions are better spent writing intakes,
