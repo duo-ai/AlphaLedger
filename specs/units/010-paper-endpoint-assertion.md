@@ -8,7 +8,7 @@ branch: feature/010-paper-endpoint-assertion
 reviewer: execution-safety-reviewer
 preferred_runtime: codex
 depends_on: [UNIT-001]
-paths: src/alphaledger/broker/**, tests/execution/**
+paths: src/alphaledger/broker/**, tests/execution/test_endpoint.py
 claimed_at: 2026-08-28T17:54:19Z
 ---
 
