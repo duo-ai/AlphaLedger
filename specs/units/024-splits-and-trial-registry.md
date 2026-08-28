@@ -2,7 +2,7 @@
 id: UNIT-024
 title: Split chronologically and register every trial
 lane: research
-state: claimed
+state: in_review
 owner: mazwy/claude
 branch: feature/024-splits-and-trial-registry
 reviewer: backtest-auditor
@@ -115,3 +115,64 @@ uv run mypy src
 ```
 
 ## Handoff notes
+
+`splits.py` builds the expanding walk-forward and decides which labels each
+window may use. `registry.py` records every attempt before it has a result.
+
+### Two deviations from this intake, both deliberate
+
+The contract line said `walk_forward(...) -> tuple[Fold, ...]`, but the
+no-trade criterion asks for the reason a span produced no folds, and a tuple
+carries no reason. It returns a `WalkForward` holding `.folds` and `.reasons`.
+The alternative, raising when no fold fits, would make an empty split an error,
+and an empty split is an answer.
+
+The scope said the registry does not reuse `alphaledger.data.storage`. It does.
+The rule was written to stop two units sharing one file, and that still holds:
+this registry writes its own file. Reuse here is a read-only import of a module
+UNIT-020 already built and tested, corruption behaviour included. Duplicating an
+append-only writer would have created a second corruption implementation to keep
+in sync, which is a worse outcome than the coupling. Say so if you disagree; the
+import is one line to reverse.
+
+### The rule that does the work
+
+A label is usable in a window only when both its prediction and its outcome
+fall inside it. A prediction near a boundary whose outcome resolves after it is
+excluded and named `outcome_crosses_boundary`, never trimmed or reassigned, and
+a prediction inside a purge gap is excluded as `in_purge_gap`. A configuration
+whose purge is shorter than the horizon is refused at construction rather than
+at use, because by the time a fold exists the caller is already reasoning about
+results.
+
+The registry refuses two things rather than accommodating them: a result for a
+trial nobody registered, and a second result over an existing one. The second
+matters as much as the first, since overwriting is how a disappointing result
+quietly becomes a better one.
+
+### Verified
+
+- `uv run pytest tests/research/test_splits.py tests/research/test_registry.py -q`:
+  33 passed.
+- `uv sync --frozen`, `ruff check`, `ruff format --check`, `mypy src`,
+  `pytest`: all pass, 209 tests.
+- The restart test spawns real subprocesses and asserts that an abandoned trial,
+  registered with no result, survives and that earlier bytes are a prefix.
+- Eighteen defects were injected one at a time. Four survived the first pass and
+  each exposed a real weakness rather than a false alarm: the overlap check is
+  subsumed by the gap check unless the message is asserted, the declared purge
+  was not pinned in the fold hash independently of the windows it moves, the
+  duplicate-registration test passed because reading collapses duplicates by id
+  so a growing log was invisible, and the float refusal was satisfied by a
+  generic type error. All four now have assertions that separate them.
+
+### Not verified
+
+- No model consumes a fold and no result is ever recorded, so the registry is
+  proven to refuse what it should and never proven against a real research run.
+- The walk-forward is time based. It does not consult an exchange calendar, so
+  a horizon expressed in sessions has to be converted by the caller. UNIT-025
+  should decide whether that conversion belongs here.
+- Nothing computes the multiple-testing warning section 7 asks for. This unit
+  provides the count it needs and stops there.
+
