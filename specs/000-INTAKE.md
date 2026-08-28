@@ -113,6 +113,13 @@ present and verified to fire inside a worktree.
 | UNIT-020 | research | Record point-in-time observations with the timestamp contract | G3 |
 | UNIT-021 | research | Generate the lagged frozen universe | G3 |
 | UNIT-022 | research | Build residual price and volume features | G3 |
+
+Rows with an intake file in `specs/units/` are claimable today: UNIT-001
+(merged), UNIT-010, UNIT-020, UNIT-021, and UNIT-022. The rest are backlog
+rows; promoting one means writing its intake from `specs/TEMPLATE.md`.
+
+`UNIT-022` additionally depends on `UNIT-021`, since features are built over a
+frozen universe.
 | UNIT-023 | research | Label news against the fixed schema | G3 |
 | UNIT-024 | research | Fit and calibrate the forecast on chronological folds | G3 |
 | UNIT-025 | research | Run the required baselines and the trial registry | G3 |
