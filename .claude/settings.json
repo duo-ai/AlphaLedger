@@ -13,15 +13,17 @@
       "Bash(uv run ruff check *)",
       "Bash(uv run ruff format --check *)",
       "Bash(uv run mypy *)",
-      "Bash(python3 .claude/hooks/guard.py --self-test)",
+      "Bash(bash scripts/hook_python.sh .claude/hooks/guard.py --self-test)",
       "Bash(claude plugin validate .claude/agents)",
       "Bash(claude mcp list)",
-      "Bash(python3 scripts/coord.py *)",
-      "Bash(python3 scripts/coord.py --self-test)",
+      "Bash(bash scripts/hook_python.sh scripts/coord.py *)",
+      "Bash(bash scripts/hook_python.sh scripts/coord.py --self-test)",
       "Bash(bash scripts/gitflow-init.sh)",
-      "Bash(python3 scripts/social_check.py)",
+      "Bash(bash scripts/hook_python.sh scripts/social_check.py)",
       "Bash(git worktree list)",
-      "Bash(git branch --show-current)"
+      "Bash(git branch --show-current)",
+      "Bash(bash scripts/hook_python.sh *)",
+      "Bash(bash scripts/verify_harness.sh)"
     ],
     "ask": [
       "Bash(uv add *)",
@@ -59,7 +61,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.py\"",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/scripts/hook_python.sh\" \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.py\"",
             "timeout": 5
           }
         ]
@@ -70,7 +72,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PROJECT_DIR}/scripts/social_check.py\"",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/scripts/hook_python.sh\" \"${CLAUDE_PROJECT_DIR}/scripts/social_check.py\"",
             "timeout": 5
           }
         ]

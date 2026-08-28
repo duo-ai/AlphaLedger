@@ -9,6 +9,12 @@ set -uo pipefail
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
 fail=0
+
+# Every interpreter call goes through the resolver so a stale system python3
+# cannot make a check pass or fail for the wrong reason. See
+# scripts/hook_python.sh for why a bare system interpreter is not safe here.
+py() { bash scripts/hook_python.sh "$@"; }
+
 check() {
     if [ "$1" -eq 0 ]; then
         echo "  PASS  $2"
@@ -19,36 +25,44 @@ check() {
 }
 
 echo "== self-tests =="
-out=$(python3 .claude/hooks/guard.py --self-test 2>&1); check $? "claude guard: $out"
-out=$(python3 .codex/hooks/guard.py --self-test 2>&1); check $? "codex guard: $out"
-out=$(python3 scripts/coord.py --self-test 2>&1 | tail -1); check $? "coord: $out"
+out=$(py .claude/hooks/guard.py --self-test 2>&1); check $? "claude guard: $out"
+out=$(py .codex/hooks/guard.py --self-test 2>&1); check $? "codex guard: $out"
+out=$(py scripts/coord.py --self-test 2>&1 | tail -1); check $? "coord: $out"
 
 echo "== configuration parses =="
-python3 -c "import json;json.load(open('.claude/settings.json'))" 2>/dev/null
+py -c "import json;json.load(open('.claude/settings.json'))" 2>/dev/null
 check $? ".claude/settings.json"
-python3 -c "import json;json.load(open('.codex/hooks.json'))" 2>/dev/null
+py -c "import json;json.load(open('.codex/hooks.json'))" 2>/dev/null
 check $? ".codex/hooks.json"
-python3 -c "import json;json.load(open('.mcp.json'))" 2>/dev/null
+py -c "import json;json.load(open('.mcp.json'))" 2>/dev/null
 check $? ".mcp.json"
 
+# Portable in-place edit. GNU sed and BSD sed disagree about `sed -i`, and
+# the BSD reading silently left the probe fixture untouched.
+rewrite_state() {
+    _file=$1; _from=$2; _to=$3
+    sed "s/^state: ${_from}\$/state: ${_to}/" "$_file" > "${_file}.new" \
+        && mv "${_file}.new" "$_file"
+}
+
 echo "== unit registry =="
-python3 scripts/coord.py list >/dev/null 2>&1
+py scripts/coord.py list >/dev/null 2>&1
 check $? "coord list runs"
 
 # Probe a throwaway copy. A verification script must never mutate the registry.
 probe_units=$(mktemp -d)
 cp specs/units/*.md "$probe_units/"
-sed -i 's/^state: merged$/state: available/' "$probe_units"/001-*.md
-python3 scripts/coord.py --units-dir "$probe_units" claim UNIT-010 --owner probe/codex \
+rewrite_state "$probe_units"/001-*.md 'merged' 'available'
+py scripts/coord.py --units-dir "$probe_units" claim UNIT-010 --owner probe/codex \
     >/dev/null 2>&1
 [ $? -ne 0 ]; check $? "dependency gate refuses a unit whose dependency is unmerged"
 
-sed -i 's/^state: available$/state: merged/' "$probe_units"/001-*.md
-python3 scripts/coord.py --units-dir "$probe_units" claim UNIT-010 --owner probe/codex \
+rewrite_state "$probe_units"/001-*.md 'available' 'merged'
+py scripts/coord.py --units-dir "$probe_units" claim UNIT-010 --owner probe/codex \
     >/dev/null 2>&1
 check $? "the same unit is claimable once its dependency is merged"
 
-python3 scripts/coord.py --units-dir "$probe_units" claim UNIT-010 --owner other/claude \
+py scripts/coord.py --units-dir "$probe_units" claim UNIT-010 --owner other/claude \
     >/dev/null 2>&1
 [ $? -ne 0 ]; check $? "a second owner cannot claim a held unit"
 
@@ -120,11 +134,11 @@ git worktree remove --force "$probe" >/dev/null 2>&1
 git branch -D feature/harness-probe >/dev/null 2>&1
 git worktree add "$probe" -b feature/harness-probe >/dev/null 2>&1
 check $? "probe worktree created"
-( cd "$probe" && python3 .claude/hooks/guard.py --self-test >/dev/null 2>&1 )
+( cd "$probe" && py .claude/hooks/guard.py --self-test >/dev/null 2>&1 )
 check $? "claude guard self-test inside the worktree"
-( cd "$probe" && python3 .codex/hooks/guard.py --self-test >/dev/null 2>&1 )
+( cd "$probe" && py .codex/hooks/guard.py --self-test >/dev/null 2>&1 )
 check $? "codex guard self-test inside the worktree"
-( cd "$probe" && python3 scripts/coord.py list >/dev/null 2>&1 )
+( cd "$probe" && py scripts/coord.py list >/dev/null 2>&1 )
 check $? "coord runs inside the worktree"
 [ ! -f "$probe/.claude/settings.local.json" ]
 check $? "settings.local.json absent in the worktree, as documented"
