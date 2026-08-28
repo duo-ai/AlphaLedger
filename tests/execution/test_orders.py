@@ -136,8 +136,8 @@ print(order_payload_hash(payload))
     assert first == second
     assert bytes.fromhex(first[0]) == expected_bytes
     assert first[1] == hashlib.sha256(expected_bytes).hexdigest()
-    assert b"1.25" in expected_bytes
-    assert b"1.25," not in expected_bytes
+    assert b'"limit_price":"1.2500"' in expected_bytes
+    assert b'"limit_price":1.25' not in expected_bytes
 
 
 def test_realistic_filled_order_parses_status_quantity_and_utc_timestamps() -> None:
@@ -219,8 +219,12 @@ def test_mutating_one_leg_after_hashing_changes_the_risk_binding() -> None:
     mutated = copy.deepcopy(payload)
     legs = cast(list[dict[str, object]], mutated["legs"])
     legs[0]["symbol"] = "SPY260918C00501000"
+    reordered = copy.deepcopy(payload)
+    reordered_legs = cast(list[dict[str, object]], reordered["legs"])
+    reordered_legs.reverse()
 
     assert order_payload_hash(mutated) != before
+    assert order_payload_hash(reordered) != before
 
 
 def test_order_hash_survives_restart_when_plan_and_approval_inputs_are_unchanged() -> None:
@@ -242,8 +246,18 @@ plan = StructurePlan(
     plan_id="plan-debit-001",
     candidate_id="candidate-spy-001",
     legs=(
-        {"symbol": "SPY260918C00500000", "ratio_qty": 1, "side": "buy", "position_intent": "buy_to_open"},
-        {"symbol": "SPY260918C00505000", "ratio_qty": 1, "side": "sell", "position_intent": "sell_to_open"},
+        {
+            "symbol": "SPY260918C00500000",
+            "ratio_qty": 1,
+            "side": "buy",
+            "position_intent": "buy_to_open",
+        },
+        {
+            "symbol": "SPY260918C00505000",
+            "ratio_qty": 1,
+            "side": "sell",
+            "position_intent": "sell_to_open",
+        },
     ),
     quantity=1,
     entry_limit_bound=Decimal("1.5000"),
