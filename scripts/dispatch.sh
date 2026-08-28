@@ -1,36 +1,50 @@
 #!/usr/bin/env bash
-# Dispatch one claimed unit to Codex in its own worktree.
+# Dispatch one or more claimed units to Codex, each in its own worktree.
 #
 #   scripts/dispatch.sh UNIT-010 pablo/codex
-#   scripts/dispatch.sh UNIT-010 pablo/codex --dry-run
+#   scripts/dispatch.sh UNIT-010 UNIT-020 UNIT-021 pablo/codex
+#   scripts/dispatch.sh UNIT-010 UNIT-020 pablo/codex --dry-run
 #
-# Claims the unit, pushes the claim, cuts a worktree off develop, builds the
-# prompt from the unit's own intake, and launches `codex exec` in the
-# background. Prints how to watch it.
+# For each unit: claims it, cuts a worktree off develop, builds the prompt from
+# the unit's own intake, and launches `codex exec` in the background. Claims are
+# pushed together once every unit has been taken.
 #
-# Codex carries the larger budget, so implementation-heavy units belong here.
-# See the parallel work protocol in AGENTS.md.
+# Units dispatched together must declare disjoint path globs. That is checked
+# before anything is claimed, because two agents writing one file is discovered
+# at merge time otherwise. See D-010.
+#
+# Codex is the standing default runtime for implementation work. See the
+# parallel work protocol in AGENTS.md.
 set -euo pipefail
 
 die() { echo "dispatch: $*" >&2; exit 1; }
 
-[ $# -ge 2 ] || die "usage: scripts/dispatch.sh <UNIT-ID> <handle>/codex [--dry-run]"
-UNIT="$1"
-OWNER="$2"
+UNITS=()
+OWNER=""
 DRY_RUN=false
-[ "${3:-}" = "--dry-run" ] && DRY_RUN=true
+for arg in "$@"; do
+    case "$arg" in
+        --dry-run) DRY_RUN=true ;;
+        */codex|*/claude) OWNER="$arg" ;;
+        UNIT-*) UNITS+=("$arg") ;;
+        *) die "unrecognised argument '$arg'. Usage: scripts/dispatch.sh <UNIT-ID>... <handle>/codex [--dry-run]" ;;
+    esac
+done
 
+[ ${#UNITS[@]} -gt 0 ] || die "name at least one unit"
+[ -n "$OWNER" ] || die "name an owner, for example pablo/codex"
 case "$OWNER" in
-    */codex) ;;
     */claude) die "$OWNER is a Claude owner. Dispatch a Claude session with the Agent tool and worktree isolation, not this script." ;;
-    *) die "owner must look like handle/codex" ;;
 esac
 
 command -v codex >/dev/null || die "codex CLI not on PATH"
 ROOT=$(git rev-parse --show-toplevel) || die "not a git repository"
 cd "$ROOT"
 
-SLUG=$(python3 - "$UNIT" <<'PY'
+# resolve each unit to its intake file
+SLUGS=()
+for unit in "${UNITS[@]}"; do
+    slug=$(python3 - "$unit" <<'PY'
 import sys, pathlib
 unit = sys.argv[1]
 for p in sorted(pathlib.Path("specs/units").glob("*.md")):
@@ -40,28 +54,56 @@ for p in sorted(pathlib.Path("specs/units").glob("*.md")):
 else:
     sys.exit(1)
 PY
-) || die "no intake file declares $UNIT"
+    ) || die "no intake file declares $unit"
+    SLUGS+=("$slug")
+done
 
-BRANCH="feature/$SLUG"
-WORKTREE="$ROOT/../AlphaLedger-wt/$SLUG"
+# refuse a batch that would put two agents in the same files
+if [ ${#UNITS[@]} -gt 1 ]; then
+    python3 - "${UNITS[@]}" <<'PY' || exit 1
+import sys
+sys.path.insert(0, "scripts")
+import coord
+
+wanted = sys.argv[1:]
+units = coord.load_all(coord.units_dir())
+bad = []
+for i, a in enumerate(wanted):
+    for b in wanted[i + 1 :]:
+        pa = str(units[a][0].get("paths", ""))
+        pb = str(units[b][0].get("paths", ""))
+        if coord.paths_overlap(pa, pb):
+            bad.append(f"{a} and {b} both reach {pa} / {pb}")
+if bad:
+    print("dispatch: these units cannot run in parallel:", file=sys.stderr)
+    for line in bad:
+        print(f"  {line}", file=sys.stderr)
+    print("  Narrow the globs or dispatch them one after another.", file=sys.stderr)
+    sys.exit(1)
+PY
+fi
+
 LOGDIR="$ROOT/.dispatch"
 mkdir -p "$LOGDIR"
-LOG="$LOGDIR/$SLUG.jsonl"
-RESULT="$LOGDIR/$SLUG.result.md"
-PROMPT="$LOGDIR/$SLUG.prompt.txt"
 
-cat > "$PROMPT" <<EOF
-You are implementing $UNIT in the AlphaLedger repository, as owner $OWNER.
+build_prompt() {
+    local unit="$1" slug="$2" branch="$3" out="$4"
+    cat > "$out" <<EOF
+You are implementing $unit in the AlphaLedger repository, as owner $OWNER.
 
-You are already inside an isolated git worktree on branch $BRANCH, cut from
+You are already inside an isolated git worktree on branch $branch, cut from
 develop. The unit is already claimed for you. Do not claim anything, do not
 switch branches, and do not merge or push. Your job ends with a green quality
 gate and a summary.
 
+Other agents are working other units in parallel worktrees right now. Stay
+strictly inside the path globs named in your unit's frontmatter. Touching
+another unit's files is the one thing that breaks parallel work.
+
 Read these first, in order:
   1. ONBOARDING.md
   2. AGENTS.md, especially the safety boundary and the definition of done
-  3. specs/units/$SLUG.md, which is your specification
+  3. specs/units/$slug.md, which is your specification
   4. the file in .claude/rules/ whose path globs match the code you will touch
 
 The unit intake contains a "## Test list" written before the unit became
@@ -80,10 +122,8 @@ Then run the gate and do not stop until it is clean:
   uv run mypy src
   uv run pytest
 
-Hard constraints. These are enforced by a PreToolUse hook, so violating one
-fails loudly rather than silently:
-  - Write only inside the path globs named in your unit's frontmatter. Never
-    touch another lane's files.
+Hard constraints, enforced by a PreToolUse hook so violating one fails loudly:
+  - Write only inside your unit's declared path globs.
   - Paper trading only. Never introduce the live Alpaca host, a --live path, or
     a way to disable paper mode.
   - Never read, print, log, or commit credentials, .env files, or keys.
@@ -99,17 +139,20 @@ When done, summarise: what you implemented, the exact commands you ran and
 their output, which acceptance criteria you believe are met, and what remains
 unverified. Never call a path verified when it was only inspected.
 EOF
+}
 
-echo "unit      $UNIT"
 echo "owner     $OWNER"
-echo "branch    $BRANCH"
-echo "worktree  $WORKTREE"
-echo "log       $LOG"
+echo "units     ${UNITS[*]}"
+echo
 
 if [ "$DRY_RUN" = true ]; then
+    for i in "${!UNITS[@]}"; do
+        slug="${SLUGS[$i]}"
+        build_prompt "${UNITS[$i]}" "$slug" "feature/$slug" "$LOGDIR/$slug.prompt.txt"
+        echo "  ${UNITS[$i]}  ->  feature/$slug  ($LOGDIR/$slug.prompt.txt)"
+    done
     echo
-    echo "dry run: nothing claimed, no worktree, no dispatch."
-    echo "prompt written to $PROMPT"
+    echo "dry run: nothing claimed, no worktrees, no dispatch."
     exit 0
 fi
 
@@ -118,31 +161,43 @@ fi
 git diff --quiet && git diff --cached --quiet \
     || die "working tree is dirty. Commit or stash before dispatching."
 
-python3 scripts/coord.py claim "$UNIT" --owner "$OWNER" >/dev/null \
-    || die "claim refused. Run 'python3 scripts/coord.py list' and pick another unit."
+# take every unit first, so a refusal midway does not leave a half-dispatched batch
+for i in "${!UNITS[@]}"; do
+    unit="${UNITS[$i]}"
+    python3 scripts/coord.py claim "$unit" --owner "$OWNER" >/dev/null \
+        || die "claim refused for $unit. Nothing after it was claimed. Run 'python3 scripts/coord.py list'."
+    git add "specs/units/${SLUGS[$i]}.md"
+    git commit -q -m "chore(registry): claim $unit for $OWNER"
+done
+git push -q origin develop \
+    || die "claim push rejected. Run: git pull --rebase origin develop, then re-check the registry."
 
-UNIT_FILE=$(git status --porcelain specs/units | awk '{print $2}' | head -1)
-git add "$UNIT_FILE"
-git commit -q -m "chore(registry): claim $UNIT for $OWNER"
-git push -q origin develop || die "claim push rejected. Someone claimed first. Run: git pull --rebase origin develop"
+GIT_COMMON=$(cd "$(git rev-parse --git-common-dir)" && pwd)
 
-git worktree add "$WORKTREE" -b "$BRANCH" develop >/dev/null
-[ -f .claude/settings.local.json ] && cp .claude/settings.local.json "$WORKTREE/.claude/" || true
+for i in "${!UNITS[@]}"; do
+    unit="${UNITS[$i]}"
+    slug="${SLUGS[$i]}"
+    branch="feature/$slug"
+    worktree="$ROOT/../AlphaLedger-wt/$slug"
+    log="$LOGDIR/$slug.jsonl"
+    result="$LOGDIR/$slug.result.md"
 
-# git metadata for a worktree lives in the primary clone, so it must be writable
-GIT_COMMON=$(git rev-parse --git-common-dir)
-GIT_COMMON=$(cd "$GIT_COMMON" && pwd)
+    build_prompt "$unit" "$slug" "$branch" "$LOGDIR/$slug.prompt.txt"
+    git worktree add "$worktree" -b "$branch" develop >/dev/null
+    [ -f .claude/settings.local.json ] && cp .claude/settings.local.json "$worktree/.claude/" || true
 
-nohup codex exec \
-    -C "$WORKTREE" \
-    -s workspace-write \
-    --add-dir "$GIT_COMMON" \
-    --json \
-    -o "$RESULT" \
-    - < "$PROMPT" > "$LOG" 2>&1 &
+    nohup codex exec \
+        -C "$worktree" \
+        -s workspace-write \
+        --add-dir "$GIT_COMMON" \
+        --json \
+        -o "$result" \
+        - < "$LOGDIR/$slug.prompt.txt" > "$log" 2>&1 &
 
-echo "pid       $!"
+    echo "  $unit  pid $!  $log"
+done
+
 echo
-echo "watch:    tail -f $LOG"
-echo "result:   cat $RESULT"
-echo "finish:   cd $WORKTREE && bash scripts/verify_harness.sh"
+echo "watch all:  tail -f $LOGDIR/*.jsonl"
+echo "results:    cat $LOGDIR/*.result.md"
+echo "status:     python3 scripts/coord.py list"

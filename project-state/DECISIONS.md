@@ -119,6 +119,11 @@ belong in the trial registry or status file.
   each worktree or the Alpaca MCP server is silently absent.
 - D-004 otherwise stands: a session still owns its checkout alone, and the
   specialists remain read-only.
+- Amended 2026-08-28: the disjoint-globs condition is now enforced, not merely
+  stated. `coord.py claim` refuses a unit whose declared paths overlap a unit
+  already `claimed` or `in_review`, and `scripts/dispatch.sh` checks a whole
+  batch before claiming any of it. The first real overlap this caught was
+  UNIT-020's `src/alphaledger/data/**` swallowing UNIT-021's `universe.py`.
 - Revisit only if: two units are found to need the same files, which means the
   decomposition is wrong and the units should be merged, not the isolation
   relaxed.
