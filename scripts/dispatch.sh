@@ -232,11 +232,27 @@ for i in "${!UNITS[@]}"; do
 
     build_prompt "$unit" "$slug" "$branch" "$LOGDIR/$slug.prompt.txt"
     if [ "$CONTINUE" = true ]; then
-        cat >> "$LOGDIR/$slug.prompt.txt" <<'FOLLOWUP'
+        # A branch with no non-merge commits was never implemented, so this is a
+        # retry after something blocked the first run, not a post-review pass.
+        prior=$(git -C "$worktree" log --no-merges --oneline develop..HEAD 2>/dev/null | wc -l)
+        if [ "$prior" -eq 0 ]; then
+            cat >> "$LOGDIR/$slug.prompt.txt" <<'RETRY'
+
+THIS IS A RETRY, NOT A SECOND PASS. An earlier run of this unit stopped before
+writing anything, because the harness was failing for a reason that had nothing
+to do with the unit. That cause is fixed. The branch is deliberately empty and
+the intake carries no review findings, so do not go looking for either.
+
+Treat this as a first implementation, exactly as the instructions above
+describe. You were right to stop last time; nothing about that stop should
+change how you approach the work now.
+RETRY
+        else
+            cat >> "$LOGDIR/$slug.prompt.txt" <<'FOLLOWUP'
 
 THIS IS A SECOND PASS. Your earlier implementation of this unit is already on
-this branch and has been through an independent safety review. The review
-returned findings, and the unit intake has been updated: read it again in full,
+this branch and has been through an independent review. The review returned
+findings, and the unit intake has been updated: read it again in full,
 including the acceptance criteria you have not seen and the section recording
 the review findings.
 
@@ -247,6 +263,7 @@ implement the corrected one and do not try to satisfy the old wording.
 
 Keep the existing commits. Add new ones on top.
 FOLLOWUP
+        fi
     fi
     if [ "$CONTINUE" = false ]; then
         git worktree add "$worktree" -b "$branch" develop >/dev/null
