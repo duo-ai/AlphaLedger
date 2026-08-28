@@ -8,7 +8,7 @@ branch: feature/022-price-volume-features
 reviewer: backtest-auditor
 preferred_runtime: claude
 depends_on: [UNIT-001, UNIT-021]
-paths: src/alphaledger/evidence/price_volume.py, tests/research/test_price_volume.py
+paths: src/alphaledger/evidence/__init__.py, src/alphaledger/evidence/price_volume.py, tests/research/test_price_volume.py
 claimed_at: 2026-08-28T19:56:15Z
 ---
 
@@ -46,6 +46,28 @@ Out:
 - News features (UNIT-023) and the model itself (UNIT-024).
 - Any feature that requires an options quote. That is capability-gated and
   belongs to a later unit.
+
+## Resolved conflicts
+
+Two, both recorded before any code was written.
+
+The declared `paths` did not name `src/alphaledger/evidence/__init__.py`, which
+the module needs to be importable and which no other unit claims. It is added
+here, following UNIT-011 and UNIT-020.
+
+The contract line says `build(...) -> Mapping[str, float]`, but AC-3 requires a
+missing marker and a quality flag, AC-4 requires the winsorization limits to be
+recorded in the output, and AC-5 requires a `feature_version`. A mapping of
+floats cannot carry any of those. `build` therefore returns a `FeatureBlock`
+whose `.features` is exactly the `Mapping[str, float]` that populates
+`EvidenceCard.price_volume_features`, with the flags, the limits, and the
+version alongside it. The contract's own phrase, "the feature block", is read
+as naming that object. The alternative, encoding flags as float sentinels,
+would put a marker inside the number and is the more permissive reading.
+
+A missing feature is absent from the mapping rather than present as NaN,
+because `EvidenceCard` rejects NaN outright. Absence plus a named flag is the
+missing marker AC-3 asks for.
 
 ## Contract
 
