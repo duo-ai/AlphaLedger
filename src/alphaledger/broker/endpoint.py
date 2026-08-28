@@ -14,6 +14,18 @@ _BASE_URL_ENVIRONMENT_VARIABLES = (
 _ENDPOINT_REJECTION_REASON = "endpoint_not_paper"
 _PATH_REJECTION_REASON = "request_path_invalid"
 _REDIRECT_REJECTION_REASON = "redirect_invalid"
+_INDETERMINATE_RESPONSE_REASON = "response_indeterminate"
+_REDIRECT_STATUS_CODES = frozenset({301, 302, 303, 307, 308})
+
+
+class IndeterminateResponseError(RuntimeError):
+    """The broker's answer does not say whether the request was accepted.
+
+    Every 3xx is one of these, whatever its target. A same-origin redirect is
+    not success: the request may or may not have been taken. Design section 11
+    step 5 forbids blindly retrying an unknown result, so this is raised rather
+    than returned, and the caller must resolve by broker lookup.
+    """
 
 
 class LiveEndpointError(RuntimeError):
@@ -105,8 +117,17 @@ def send_paper_request(
         body,
         follow_redirects=False,
     )
-    if response.status_code in {301, 302, 303, 307, 308}:
+    if response.status_code in _REDIRECT_STATUS_CODES:
+        # A cross-host target is the more alarming case and gets its own reason,
+        # but no redirect is a determinate answer. Returning a same-origin 3xx
+        # would let a caller checking status_code < 400 record an order the
+        # broker may never have created.
         _assert_safe_redirect(response.location, recorder)
+        recorder.no_trade(_INDETERMINATE_RESPONSE_REASON)
+        raise IndeterminateResponseError(
+            f"broker returned {response.status_code}; the outcome is unknown "
+            "and must be resolved by broker lookup, never by resending"
+        )
     return response
 
 

@@ -10,6 +10,7 @@ import pytest
 from alphaledger.broker.endpoint import (
     PAPER_BASE_URL,
     EndpointConfiguration,
+    IndeterminateResponseError,
     LiveEndpointError,
     PaperTransport,
     TransportResponse,
@@ -228,3 +229,56 @@ def test_malformed_redirect_is_redacted_and_sends_no_replay(location: str) -> No
     assert "sensitive-marker" not in formatted_error
     assert recorder.no_trade_reasons == ["redirect_invalid"]
     assert len(transport.requests) == 1
+
+
+# AC-10, from the second safety review
+
+
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+@pytest.mark.parametrize(
+    ("location", "expected"),
+    [
+        ("/v2/orders/", IndeterminateResponseError),
+        (f"{PAPER_BASE_URL}/v2/orders/", IndeterminateResponseError),
+        # a cross-host target is the graver case: someone is steering us away
+        ("https://example.invalid/v2/orders/", LiveEndpointError),
+    ],
+)
+def test_no_redirect_is_ever_treated_as_success(
+    status: int, location: str, expected: type[Exception]
+) -> None:
+    """A same-origin redirect is not success. The broker may not have accepted
+    the request, and a caller checking status_code < 400 would record an order
+    that was never created."""
+    events = RecordingEndpointEvents()
+    transport = RecordingTransport(TransportResponse(status_code=status, location=location))
+    configuration = EndpointConfiguration.from_resolver(events)
+    with pytest.raises(expected):
+        send_paper_request(configuration, "/v2/orders", b"payload", transport, events)
+    assert events.no_trade_reasons, "an indeterminate outcome must reach the ledger"
+    assert len(transport.requests) == 1, "no replay is permitted"
+
+
+def test_a_same_origin_redirect_records_its_own_reason() -> None:
+    events = RecordingEndpointEvents()
+    transport = RecordingTransport(
+        TransportResponse(status_code=307, location=f"{PAPER_BASE_URL}/v2/orders/")
+    )
+    configuration = EndpointConfiguration.from_resolver(events)
+    with pytest.raises(IndeterminateResponseError):
+        send_paper_request(configuration, "/v2/orders", b"payload", transport, events)
+    assert events.no_trade_reasons[-1] not in {
+        "endpoint_not_paper",
+        "request_path_invalid",
+    }, "an indeterminate response is a distinct cause from a rejected endpoint"
+
+
+def test_resolver_rejects_a_live_host_set_after_a_first_clean_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A subprocess restart test cannot see an in-process cache."""
+    events = RecordingEndpointEvents()
+    assert resolve_paper_base_url(events) == PAPER_BASE_URL
+    monkeypatch.setenv("APCA_API_BASE_URL", "https://" + "api.alpaca.markets")
+    with pytest.raises(LiveEndpointError):
+        resolve_paper_base_url(events)
