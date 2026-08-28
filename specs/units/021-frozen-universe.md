@@ -134,6 +134,46 @@ larger value rather than trusting a caller.
   catches that. Both mechanisms are kept because relying on the coupling would
   be a trap for the next change.
 
+### Review round one, backtest-auditor
+
+One blocking finding, two medium, and the fallback interpretation confirmed as
+defensible and correctly implemented.
+
+- Blocking, and correct. `_latest_per_symbol` resolved a tied `first_seen_time`
+  with `>=`, so two observations of one symbol stamped identically were decided
+  by whichever the source returned last. The reviewer showed this flipping
+  membership between two arrival orders of the same two facts. It is not an
+  edge case: the UNIT-020 recorder derives `first_seen_time` as `source_time`
+  plus a fixed lag for any feed that cannot prove delivery, so every
+  observation sharing a source time collides exactly. Changing `>=` to `>`
+  would not have fixed it, only moved the arbitrariness to the first row.
+  Tied observations that disagree now raise `AmbiguousObservationError` naming
+  the symbol and the timestamp. Tied observations that agree are one fact and
+  are accepted.
+- Medium. `SymbolObservation` carried no feed, so a universe built from
+  consolidated volumes and one built from a single venue were
+  indistinguishable by hash, against design section 4's requirement to store
+  the feed on every record. `feed` is now required, and the sorted feeds behind
+  the kept symbols are recorded and hashed. Adding this after the first frozen
+  run would have invalidated every recorded hash.
+- Medium. The exclusion record kept only the first failed condition, and the
+  corporate-action screen ran last, so a symbol with a pending split and a
+  stale close was recorded as `below_price_floor` alone. That reads as routine
+  exactly when the number is the untrustworthy part, because an unadjusted
+  close is what a pending split leaves behind. `Exclusion` now records every
+  failed condition, identity first, then optionability, then the floors.
+- Low, accepted as stated. The universe hash addresses the decided set, not the
+  evidence behind it, so two different bodies of evidence that rank to the same
+  members under the same floors share an address. That is what AC-5 asks for.
+  The docstring said "the inputs that decide membership", which claimed more,
+  and now says what it does.
+- Confirmed rather than changed: the exact-equality boundary at `as_of` was
+  already correct and is now pinned by a test, and the reviewer independently
+  checked the two equivalent mutants and agreed with that judgement.
+
+Twenty-four defects were injected one at a time after these fixes. All but the
+two known equivalent mutants were caught by a named test.
+
 ### Not verified
 
 - No adapter connects a real feed to `UniverseSource`. Every screening fact in
