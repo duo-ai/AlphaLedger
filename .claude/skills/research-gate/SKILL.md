@@ -1,6 +1,7 @@
 ---
 name: research-gate
 description: Evaluate whether the current alpha candidate may be frozen for autonomous paper trading under Gate G3.
+origin: AlphaLedger
 disable-model-invocation: true
 ---
 

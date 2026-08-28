@@ -1,0 +1,7 @@
+interface:
+  display_name: "Bootstrap"
+  short_description: "Validate the local AlphaLedger environment"
+  brand_color: "#6366F1"
+  default_prompt: "Use $bootstrap to validate the local AlphaLedger environment."
+policy:
+  allow_implicit_invocation: false

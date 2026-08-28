@@ -1,6 +1,7 @@
 ---
 name: bootstrap
 description: Inspect and validate the local AlphaLedger development environment after clone or toolchain changes.
+origin: AlphaLedger
 disable-model-invocation: true
 ---
 

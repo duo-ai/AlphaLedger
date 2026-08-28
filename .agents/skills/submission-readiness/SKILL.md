@@ -1,6 +1,7 @@
 ---
 name: submission-readiness
 description: Use only when the user explicitly invokes $submission-readiness to audit the frozen AlphaLedger repository and competition artifacts before final submission and wind-down.
+origin: AlphaLedger
 ---
 
 # Audit submission readiness

@@ -1,6 +1,7 @@
 ---
 name: handoff
 description: Use only when the user explicitly invokes $handoff to create an evidence-based AlphaLedger checkpoint for the next development session.
+origin: AlphaLedger
 ---
 
 # Create a session handoff

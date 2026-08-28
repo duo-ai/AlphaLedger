@@ -1,0 +1,7 @@
+interface:
+  display_name: "Paper Smoke Test"
+  short_description: "Human-controlled one-contract paper order lifecycle"
+  brand_color: "#EF4444"
+  default_prompt: "Use $paper-smoke for the human-controlled one-contract paper lifecycle."
+policy:
+  allow_implicit_invocation: false

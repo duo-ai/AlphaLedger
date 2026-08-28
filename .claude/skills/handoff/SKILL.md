@@ -1,6 +1,7 @@
 ---
 name: handoff
 description: Create a concise, evidence-based development checkpoint for the next AlphaLedger session.
+origin: AlphaLedger
 disable-model-invocation: true
 ---
 
