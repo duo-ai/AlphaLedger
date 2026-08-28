@@ -120,6 +120,28 @@ def test_a_tie_on_dollar_volume_is_broken_by_symbol_so_the_set_is_reproducible()
     assert universe.symbols == ("AAAA", "MMMM")
 
 
+def test_the_set_order_does_not_depend_on_the_order_the_source_returned_rows() -> None:
+    """Two determinism mechanisms guard this, and each masks the other alone.
+
+    Symbols are collected in sorted order, and ranking breaks a volume tie by
+    symbol. Removing either one leaves this passing, which is why the assertion
+    is written against the pair: a frozen run has to be reproducible whatever
+    order the rows arrived in.
+    """
+    reversed_arrival = source(
+        *(observed(symbol, median_dollar_volume="50000000") for symbol in ("ZZZZ", "MMMM", "AAAA"))
+    )
+    alphabetical_arrival = source(
+        *(observed(symbol, median_dollar_volume="50000000") for symbol in ("AAAA", "MMMM", "ZZZZ"))
+    )
+
+    first = build(PRIOR_CLOSE, reversed_arrival)
+    second = build(PRIOR_CLOSE, alphabetical_arrival)
+
+    assert first.symbols == ("AAAA", "MMMM", "ZZZZ")
+    assert first.universe_hash == second.universe_hash
+
+
 def test_a_symbol_delisted_after_as_of_is_still_a_member_at_as_of() -> None:
     """AC-3. Survivorship is not applied backwards: the set is what was
     investable then, not what still exists now."""
