@@ -2,7 +2,7 @@
 id: UNIT-020
 title: Record point-in-time observations with the timestamp contract
 lane: research
-state: in_review
+state: merged
 owner: mazwy/claude
 branch: feature/020-data-recorder
 reviewer: backtest-auditor
