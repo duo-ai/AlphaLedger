@@ -176,6 +176,12 @@ scripts/watch.sh --replay        what already happened, then stop
 
 Ctrl-C stops watching, not the run.
 
+Two things watch for you rather than the other way round. `scripts/notable.py`
+stays silent while an agent works and speaks only when a run stops, finishes,
+or dies, which is what a monitor should feed. And a SessionStart hook reports
+any dispatch in flight when you open the repository, because `codex exec` is
+detached and outlives the session that started it.
+
 This is worth doing rather than waiting for the result file. An agent that is
 about to stop on a source-of-truth conflict says so several turns before it
 exits, and that is exactly the moment a human can decide whether the
