@@ -4,11 +4,13 @@ Last updated: 2026-08-28
 
 ## Current phase
 
-Released as v0.1.0, and `develop` has moved well past it. The research lane
-delegated in `RESEARCH-LANE.md` is complete: UNIT-020, UNIT-021, and UNIT-022
-are merged, so point-in-time recording, the lagged frozen universe, and the
-residual price and volume baseline all exist and are reviewed. The execution
-lane has the paper endpoint assertion and nothing after it. No news, forecast,
+Released as v0.1.0, and `develop` has moved well past it. Seven units are
+merged. The research lane delegated in `RESEARCH-LANE.md` is complete, and the
+validation discipline that has to exist before any model is fit is in place:
+point-in-time recording, the lagged frozen universe, the residual price and
+volume baseline, chronological purged splits, and the trial registry. The
+frozen label contract now holds what the labeler emits. The execution lane
+still has the paper endpoint assertion and nothing after it. No news, model,
 structure, risk, order, or ledger code exists.
 
 Every number in the research lane comes from a fixture. Nothing has touched
@@ -27,14 +29,15 @@ environment.
 
 ## Verified artifacts
 
-- `specs/`: the SDD intake, the unit template, and seven unit intakes. Five
-  merged; UNIT-011 and UNIT-012 claimable and both in the execution lane.
+- `specs/`: the SDD intake, the unit template, and eleven unit intakes. Seven
+  merged. UNIT-003 and UNIT-023 are the research queue, UNIT-011 and UNIT-012
+  the execution one.
 - `src/alphaledger/domain/`: the five records from design section 14 plus
   `ObservationTimestamps`. Money is `Decimal`, not the `float` the design
   sketched; the conflict and its resolution are recorded in the UNIT-001
   intake.
 - Quality gate passes end to end on 3.14: `uv sync --frozen`, `ruff check`,
-  `ruff format --check`, `mypy src` under strict, and 176 tests. The gate now
+  `ruff format --check`, `mypy src` under strict, and 221 tests. The gate now
   runs inside `verify_harness.sh` too, so the script cannot be green while
   the repository gate is red.
 - `src/alphaledger/data/recorder.py` and `storage.py`, UNIT-020. Six
@@ -53,6 +56,16 @@ environment.
   missing feature is absent and named in a flag, never an imputed zero. The
   event window admits a session only when its whole return period follows the
   event.
+- `src/alphaledger/domain/contracts.py`, UNIT-002. `NewsLabel` holds the entity
+  match, the ticker, and the labeler's stated limitations, and novelty and
+  relevance may say `unknown`. Every enumerated field is checked at run time,
+  because a Literal stops nothing where the value came out of a model's JSON.
+  Prompt B's consistency rules stay with the adapter, per D-016 and D-014.
+- `src/alphaledger/forecast/`, UNIT-024. An expanding walk-forward whose windows
+  are purged by at least the horizon, where a label is usable only when both its
+  prediction and its outcome fall inside one window, and an append-only trial
+  registry that refuses a result for an unregistered trial and refuses a second
+  result over the first, on write and again on read.
 - Every research unit went through two `backtest-auditor` rounds. Across the
   three, the reviews produced fifteen findings, including one that blocked a
   merge and one same-bar leak. Two of those were regressions introduced by an
@@ -111,9 +124,13 @@ environment.
   already-open recorder can still duplicate a fact the first committed.
 - Nothing compares the price family against news or combined baselines, which
   is the comparison the whole lane exists to make.
-- The news label amendment accepted in D-016 is specified as UNIT-002 but not
-  implemented. Until it merges, `NewsLabel` cannot hold what Prompt B emits and
-  `coord.py` refuses a claim on UNIT-023.
+- `category` is the one enumerated label field still unchecked at run time.
+  UNIT-003 closes it and UNIT-023 depends on that.
+- The trial registry detects a duplicate result written by two racing processes
+  and fails closed on the next read, but does not prevent the race. The
+  reasoning for not adding an untested lock is in the UNIT-024 intake.
+- No model consumes a fold and no result is ever recorded, so the registry is
+  proven to refuse what it should and never proven against a real research run.
 - No news, forecast, structure, risk, order, or ledger code exists. Every G1 to
   G6 artifact is open.
 
