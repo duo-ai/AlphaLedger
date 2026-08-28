@@ -2,13 +2,14 @@
 id: UNIT-002
 title: Amend the news label contract to hold what the labeler emits
 lane: shared
-state: available
-owner: -
-branch: -
+state: claimed
+owner: mazwy/claude
+branch: feature/002-news-label-contract
 reviewer: code-reviewer
 preferred_runtime: claude
 depends_on: [UNIT-001]
 paths: src/alphaledger/domain/contracts.py, src/alphaledger/domain/__init__.py, tests/domain/test_contracts.py
+claimed_at: 2026-08-28T20:53:56Z
 ---
 
 ## Problem

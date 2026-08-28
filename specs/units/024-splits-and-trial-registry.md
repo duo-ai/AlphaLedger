@@ -2,13 +2,14 @@
 id: UNIT-024
 title: Split chronologically and register every trial
 lane: research
-state: available
-owner: -
-branch: -
+state: claimed
+owner: mazwy/claude
+branch: feature/024-splits-and-trial-registry
 reviewer: backtest-auditor
 preferred_runtime: claude
 depends_on: [UNIT-001]
 paths: src/alphaledger/forecast/__init__.py, src/alphaledger/forecast/splits.py, src/alphaledger/forecast/registry.py, tests/research/test_splits.py, tests/research/test_registry.py
+claimed_at: 2026-08-28T20:53:56Z
 ---
 
 ## Problem
