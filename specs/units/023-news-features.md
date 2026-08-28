@@ -7,7 +7,7 @@ owner: -
 branch: -
 reviewer: backtest-auditor
 preferred_runtime: claude
-depends_on: [UNIT-001, UNIT-002, UNIT-020]
+depends_on: [UNIT-001, UNIT-002, UNIT-003, UNIT-020]
 paths: src/alphaledger/evidence/labeler.py, src/alphaledger/evidence/news.py, tests/research/test_news.py
 ---
 
@@ -24,8 +24,9 @@ result stops being reproducible and the comparison stops being falsifiable.
 
 Two sources of truth disagreed about the label schema. The conflict is
 recorded here because it shaped this unit, and it is resolved by D-016 and
-UNIT-002. This unit depends on UNIT-002, so `coord.py` refuses a claim until
-the amendment merges; the dependency does the enforcing rather than a note.
+UNIT-002. This unit depends on UNIT-002 and on UNIT-003, which closes the one
+enumerated field UNIT-002 left unvalidated, so `coord.py` refuses a claim until
+both merge; the dependency does the enforcing rather than a note.
 
 `options-alpha-agent-design.md` section 14, frozen in
 `src/alphaledger/domain/contracts.py` by UNIT-001, defines `NewsLabel` with
