@@ -148,10 +148,18 @@ def _git_violation(command: str) -> str | None:
                 f"a commit subject outside conventional commits: {messages[0]!r}. "
                 f"Use 'type(scope): subject' with one of: {allowed}"
             )
-        if _current_branch() == "main":
+        branch_now = _current_branch()
+        if branch_now == "main":
             return (
                 "a direct commit to main; main takes only --no-ff merges from release/ or hotfix/"
             )
+        if branch_now == "develop" and messages:
+            # a registry claim is the one direct commit develop permits
+            if not messages[0].startswith("chore(registry):"):
+                return (
+                    "a direct commit to develop; only a registry claim may land here "
+                    "directly. Cut a feature/ or bugfix/ branch for anything else"
+                )
 
     for pattern in BRANCH_CREATION_PATTERNS:
         for name in pattern.findall(command):
@@ -472,6 +480,15 @@ def _self_test() -> int:
             {
                 "tool_name": "Bash",
                 "tool_input": {"command": "git merge --no-ff feature/x -m 'Merge x'"},
+            },
+            False,
+        ),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": "git commit -m 'chore(registry): claim UNIT-011 for a/codex'"
+                },
             },
             False,
         ),
