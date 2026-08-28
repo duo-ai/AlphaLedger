@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(git status --short)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git log --oneline)",
+      "Bash(git log --oneline *)",
+      "Bash(uv sync --frozen)",
+      "Bash(uv run pytest)",
+      "Bash(uv run pytest *)",
+      "Bash(uv run ruff check *)",
+      "Bash(uv run ruff format --check *)",
+      "Bash(uv run mypy *)",
+      "Bash(python3 .claude/hooks/guard.py --self-test)",
+      "Bash(claude plugin validate .claude/agents)",
+      "Bash(claude mcp list)"
+    ],
+    "ask": [
+      "Bash(uv add *)",
+      "Bash(uv lock *)",
+      "Bash(uv run alphaledger paper-smoke *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)",
+      "Bash(rm -rf *)",
+      "Bash(rm -fr *)",
+      "Bash(git reset --hard *)",
+      "Bash(git clean -f*)",
+      "mcp__alpaca__place_stock_order",
+      "mcp__alpaca__place_crypto_order",
+      "mcp__alpaca__place_option_order",
+      "mcp__alpaca__replace_order_by_id",
+      "mcp__alpaca__cancel_order_by_id",
+      "mcp__alpaca__cancel_all_orders",
+      "mcp__alpaca__close_position",
+      "mcp__alpaca__close_all_positions",
+      "mcp__alpaca__exercise_options_position",
+      "mcp__alpaca__do_not_exercise_options_position",
+      "mcp__alpaca__update_account_config"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(Bash|PowerShell|Read|Edit|Write|mcp__alpaca__.*)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

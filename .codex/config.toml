@@ -1,0 +1,27 @@
+# Shared Codex project configuration. Personal model choices remain outside the
+# repository; these settings define only the project safety and coordination
+# baseline. Project configuration is loaded only for trusted projects.
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+[features]
+hooks = true
+
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 4
+default_subagent_reasoning_effort = "medium"
+interrupt_message = true
+
+[mcp_servers.alpaca]
+command = "uvx"
+args = ["alpaca-mcp-server==2.3.0"]
+env_vars = ["ALPACA_API_KEY", "ALPACA_SECRET_KEY"]
+required = false
+startup_timeout_sec = 20
+tool_timeout_sec = 60
+default_tools_approval_mode = "auto"
+
+[mcp_servers.alpaca.env]
+ALPACA_PAPER_TRADE = "true"
+ALPACA_TOOLSETS = "assets,stock-data,options-data,corporate-actions,news"

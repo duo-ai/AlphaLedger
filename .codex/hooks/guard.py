@@ -1,0 +1,256 @@
+#!/usr/bin/env python3
+"""Fail-closed Codex hook for secrets, destructive actions, and live trading."""
+
+from __future__ import annotations
+
+import json
+import re
+import sys
+from typing import Any
+
+
+MUTATING_ALPACA_PREFIXES = (
+    "place_",
+    "replace_",
+    "cancel_",
+    "close_",
+    "exercise_",
+    "do_not_exercise_",
+    "update_",
+    "create_",
+    "delete_",
+    "add_",
+    "remove_",
+)
+
+SENSITIVE_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
+FORBIDDEN_TOOLSETS = {"account", "trading", "watchlists"}
+
+DESTRUCTIVE_COMMANDS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(r"\brm\s+-(?:[^\s]*r[^\s]*f|[^\s]*f[^\s]*r)\b", re.I),
+        "recursive forced deletion",
+    ),
+    (re.compile(r"\bgit\s+reset\s+--hard\b", re.I), "destructive git reset"),
+    (re.compile(r"\bgit\s+clean\s+-[^\s]*f", re.I), "destructive git clean"),
+    (re.compile(r"\bfind\b[^\n;&|]*\s-delete\b", re.I), "recursive find deletion"),
+    (
+        re.compile(r"\b(?:mkfs(?:\.[a-z0-9]+)?|shutdown|reboot)\b", re.I),
+        "system-destructive command",
+    ),
+    (re.compile(r"\bdd\s+[^\n;&|]*\bif=", re.I), "raw device copy"),
+    (re.compile(r"\bchmod\s+-R\s+777\b", re.I), "unsafe recursive permissions"),
+)
+
+
+def _normalized_path(value: str) -> str:
+    return value.replace("\\", "/").lower()
+
+
+def _sensitive_path(path: str) -> str | None:
+    normalized = _normalized_path(path)
+    parts = [part for part in normalized.split("/") if part]
+    basename = parts[-1] if parts else ""
+
+    if basename == ".env" or basename.startswith(".env."):
+        return "environment file"
+    if any(part in {"secret", "secrets", "credentials"} for part in parts):
+        return "secret or credentials directory"
+    if basename in {"id_rsa", "id_ed25519"} or basename.endswith(SENSITIVE_SUFFIXES):
+        return "private key or credential file"
+    if "credential" in basename or "secret_key" in basename:
+        return "credential-like filename"
+    return None
+
+
+def _bash_violation(command: str) -> str | None:
+    for pattern, reason in DESTRUCTIVE_COMMANDS:
+        if pattern.search(command):
+            return reason
+
+    if re.search(r"https?://api\.alpaca\.markets\b", command, re.I):
+        return "live Alpaca trading endpoint"
+    if re.search(
+        r"\bALPACA_PAPER_TRADE\s*=\s*(?:false|0|no|off)\b", command, re.I
+    ):
+        return "paper-trading mode disabled"
+    if re.search(r"\balphaledger\b[^\n;&|]*\s--live\b", command, re.I):
+        return "live application mode"
+    if re.search(r"\$\{?ALPACA_(?:API_KEY|SECRET_KEY)\}?", command, re.I):
+        return "credential expansion in a shell command"
+    if re.search(r"(?:^|[\s/])\.env(?:[.\s/]|$)", command, re.I):
+        return "shell access to an environment file"
+    return None
+
+
+def _patch_paths(patch: str) -> list[str]:
+    paths: list[str] = []
+    for line in patch.splitlines():
+        match = re.match(r"\*\*\* (?:Add|Update|Delete|Move to) File: (.+)$", line)
+        if match:
+            paths.append(match.group(1).strip())
+            continue
+        match = re.match(r"\+\+\+ (?:[ab]/)?(.+)$", line)
+        if match and match.group(1) != "/dev/null":
+            paths.append(match.group(1).strip())
+    return paths
+
+
+def _added_patch_text(patch: str) -> str:
+    return "\n".join(
+        line[1:]
+        for line in patch.splitlines()
+        if line.startswith("+") and not line.startswith("+++")
+    )
+
+
+def _patch_violation(patch: str) -> str | None:
+    for path in _patch_paths(patch):
+        reason = _sensitive_path(path)
+        if reason:
+            return f"patch access to {reason}"
+
+    additions = _added_patch_text(patch)
+    if re.search(r"https?://api\.alpaca\.markets\b", additions, re.I):
+        return "live Alpaca trading endpoint added by patch"
+    if re.search(
+        r"\bALPACA_PAPER_TRADE\s*=\s*[\"']?(?:false|0|no|off)\b",
+        additions,
+        re.I,
+    ):
+        return "paper-trading mode disabled by patch"
+
+    for line in additions.splitlines():
+        if "ALPACA_TOOLSETS" not in line:
+            continue
+        tokens = {
+            token.lower()
+            for token in re.findall(r"[a-z][a-z-]*", line, flags=re.I)
+        }
+        forbidden = sorted(tokens & FORBIDDEN_TOOLSETS)
+        if forbidden:
+            return f"forbidden Alpaca MCP toolset added: {', '.join(forbidden)}"
+    return None
+
+
+def violation(payload: dict[str, Any]) -> str | None:
+    tool_name = str(payload.get("tool_name", ""))
+    tool_input = payload.get("tool_input")
+    if not isinstance(tool_input, dict):
+        tool_input = {}
+
+    if tool_name in {"Read", "Edit", "Write"}:
+        path = tool_input.get("file_path") or tool_input.get("path")
+        if isinstance(path, str):
+            reason = _sensitive_path(path)
+            if reason:
+                return f"{tool_name} of {reason} is forbidden"
+
+    if tool_name in {"Bash", "PowerShell"}:
+        command = tool_input.get("command")
+        if isinstance(command, str):
+            reason = _bash_violation(command)
+            if reason:
+                return f"{reason} is forbidden"
+
+    if tool_name == "apply_patch":
+        patch = tool_input.get("command") or tool_input.get("patch")
+        if isinstance(patch, str):
+            reason = _patch_violation(patch)
+            if reason:
+                return f"{reason} is forbidden"
+
+    if tool_name.startswith("mcp__alpaca__"):
+        operation = tool_name.rsplit("__", maxsplit=1)[-1].lower()
+        if operation.startswith(MUTATING_ALPACA_PREFIXES):
+            return f"mutating Alpaca MCP operation '{operation}' is forbidden"
+
+    return None
+
+
+def _self_test() -> int:
+    cases = (
+        ({"tool_name": "Read", "tool_input": {"path": "/repo/.env"}}, True),
+        ({"tool_name": "Bash", "tool_input": {"command": "git reset --hard HEAD"}}, True),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "curl https://api.alpaca.markets/v2/account"},
+            },
+            True,
+        ),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "curl https://paper-api.alpaca.markets/v2/account"},
+            },
+            False,
+        ),
+        ({"tool_name": "mcp__alpaca__place_option_order", "tool_input": {}}, True),
+        ({"tool_name": "mcp__alpaca__get_option_chain", "tool_input": {}}, False),
+        (
+            {
+                "tool_name": "apply_patch",
+                "tool_input": {
+                    "command": "*** Begin Patch\n*** Add File: .env\n+TOKEN=x\n*** End Patch"
+                },
+            },
+            True,
+        ),
+        (
+            {
+                "tool_name": "apply_patch",
+                "tool_input": {
+                    "command": (
+                        "*** Begin Patch\n*** Update File: .codex/config.toml\n"
+                        "+ALPACA_TOOLSETS = \"assets,trading\"\n*** End Patch"
+                    )
+                },
+            },
+            True,
+        ),
+        (
+            {
+                "tool_name": "apply_patch",
+                "tool_input": {
+                    "command": "*** Begin Patch\n*** Add File: src/app.py\n+SAFE = True\n*** End Patch"
+                },
+            },
+            False,
+        ),
+    )
+    failures = [
+        index
+        for index, (payload, expected_block) in enumerate(cases, start=1)
+        if bool(violation(payload)) is not expected_block
+    ]
+    if failures:
+        print(f"guard self-test failed: cases {failures}", file=sys.stderr)
+        return 1
+    print(f"guard self-test passed: {len(cases)} cases")
+    return 0
+
+
+def main() -> int:
+    if sys.argv[1:] == ["--self-test"]:
+        return _self_test()
+
+    try:
+        payload = json.load(sys.stdin)
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"[AlphaLedger guard] blocked: invalid hook input ({exc})", file=sys.stderr)
+        return 2
+
+    if not isinstance(payload, dict):
+        print("[AlphaLedger guard] blocked: hook input must be an object", file=sys.stderr)
+        return 2
+
+    reason = violation(payload)
+    if reason:
+        print(f"[AlphaLedger guard] blocked: {reason}", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

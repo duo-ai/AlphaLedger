@@ -1,0 +1,19 @@
+{
+  "description": "AlphaLedger project safety hooks",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(Bash|PowerShell|apply_patch|Read|Edit|Write|mcp__alpaca__.*)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "project_root=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; python3 \"$project_root/.codex/hooks/guard.py\"",
+            "commandWindows": "$projectRoot = git rev-parse --show-toplevel 2>$null; if (-not $?) { $projectRoot = (Get-Location).Path }; py -3 \"$projectRoot\\.codex\\hooks\\guard.py\"",
+            "timeout": 5,
+            "statusMessage": "Checking AlphaLedger safety boundaries"
+          }
+        ]
+      }
+    ]
+  }
+}

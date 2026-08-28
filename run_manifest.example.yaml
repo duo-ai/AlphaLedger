@@ -1,0 +1,90 @@
+schema_version: 1
+created_at_utc: "2026-08-27T00:00:00Z"
+
+competition:
+  event_name: "Alpaca AI Trading Agents Hackathon"
+  track: "Options Alpha Agents"
+  kickoff_utc: "2026-08-28T15:00:00Z"
+  submission_deadline_utc: "2026-09-04T15:00:00Z"
+  official_rules_url: "https://lablab.ai/ai-hackathons/alpaca-ai-trading-agents-hackathon"
+  pre_kickoff_code_allowed: null
+  judging_weights: null
+  required_artifacts: []
+
+broker:
+  mode: "paper"
+  trading_base_url: "https://paper-api.alpaca.markets"
+  account_id_hash: null
+  expected_starting_equity_usd: null
+  options_level: null
+  multi_leg_enabled: null
+  verified_at_utc: null
+
+integrations:
+  alpaca_mcp_package: "alpaca-mcp-server==2.3.0"
+  alpaca_mcp_toolsets:
+    - "assets"
+    - "stock-data"
+    - "options-data"
+    - "corporate-actions"
+    - "news"
+  execution_adapter: null
+  execution_sdk_or_api_version: null
+  mleg_contract_test_artifact: null
+
+data:
+  equities_feed: null
+  options_feed: null
+  opra_entitled: null
+  historical_news_first_seen_policy: null
+  exchange_calendar: "XNYS"
+  timestamps_internal: "UTC"
+
+universe:
+  construction: "lagged_liquid_optionable"
+  maximum_symbols: 30
+  fallback_list_hash: null
+  frozen_at_utc: null
+
+schedule:
+  timezone: "America/New_York"
+  scheduled_scans:
+    - "10:00"
+    - "12:30"
+    - "15:00"
+  no_new_entry_first_minutes: 10
+  no_new_entry_final_minutes: 45
+
+strategy:
+  allowlist:
+    - "bull_call_debit_vertical"
+    - "bear_put_debit_vertical"
+  dte_min: 7
+  dte_max: 21
+  alpha_enabled: false
+
+risk:
+  maximum_loss_fraction_per_new_trade: 0.00375
+  maximum_concurrent_positions: 2
+  smoke_test_max_contracts: 1
+  require_defined_risk: true
+  require_risk_token: true
+  require_human_paper_arm: true
+  frozen_config_hash: null
+
+versions:
+  source_commit: null
+  model_version: null
+  feature_version: null
+  prompt_version: null
+  risk_config_hash: null
+  run_manifest_hash: null
+
+gates:
+  G0_rules_account_data: "not_run"
+  G1_order_round_trip: "not_run"
+  G2_full_dry_lifecycle: "not_run"
+  G3_frozen_alpha_v1: "not_run"
+  G4_autonomous_session: "not_run"
+  G5_submission_freeze: "not_run"
+  G6_flat_and_submitted: "not_run"
