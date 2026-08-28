@@ -183,23 +183,15 @@ if bad:
 INNER
 check $? "every unit may write its own tests"
 
-# Codex records hook trust as a hash in ~/.codex/config.toml. Editing
-# .codex/hooks.json invalidates it, and Codex then SKIPS the hook silently: a
-# dispatched agent runs with no guard and nothing says so. Verified on
-# 2026-08-28, when a command carrying the live trading host ran at exit 0
-# inside codex exec while the same command was blocked under Claude Code.
-codex_trust=~/.codex/config.toml
-if [ -f "$codex_trust" ] && grep -q "hooks.state" "$codex_trust" 2>/dev/null; then
-    if [ .codex/hooks.json -nt "$codex_trust" ]; then
-        check 1 "codex hook trust is current (hooks.json is newer, re-approve with: codex, then /hooks)"
-    else
-        check 0 "codex hook trust is current"
-    fi
-elif [ -f "$codex_trust" ]; then
-    check 1 "codex hook trust recorded (none found, run codex then /hooks in this repo)"
-else
-    skip "codex hook trust (no codex config on this machine)"
-fi
+# Codex can skip the guard two ways: a changed hook definition invalidates the
+# recorded hash, or the entry carries enabled = false. Both are silent, and the
+# earlier mtime check only saw the first. See scripts/check_codex_hooks.py.
+py scripts/check_codex_hooks.py >/dev/null 2>&1
+case $? in
+    0) check 0 "codex guard is trusted and enabled" ;;
+    1) check 1 "codex guard is trusted and enabled ($(py scripts/check_codex_hooks.py 2>&1 | head -1))" ;;
+    *) skip "codex guard trust (no readable codex config on this machine)" ;;
+esac
 
 echo "== git flow =="
 git show-ref --verify --quiet refs/heads/develop; check $? "develop exists"
