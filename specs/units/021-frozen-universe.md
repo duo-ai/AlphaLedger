@@ -174,6 +174,38 @@ defensible and correctly implemented.
 Twenty-four defects were injected one at a time after these fixes. All but the
 two known equivalent mutants were caught by a named test.
 
+### Review round two, backtest-auditor
+
+No new blocking findings. The three round one fixes were confirmed correct and
+their tests confirmed non-vacuous. One gap was found and closed, and two of my
+choices were challenged and upheld.
+
+- Low to medium, now fixed. `feeds` was collected from the surviving symbols
+  only, so a build mixing two feed definitions was invisible to the hash
+  whenever the odd feed sat among the screened out or capped away names, which
+  is most of them. Design section 4 wants a change of feed to be impossible to
+  miss, not impossible to miss only in the top cohort. `feeds` now covers every
+  observation considered.
+- Upheld, halting rather than excluding. An ambiguous tie raises and no
+  `FrozenUniverse` is produced for that instant, rather than the one symbol
+  being excluded with a reason. `.claude/rules/01-safety.md` requires a
+  fail-closed halt on exactly this kind of uncertainty, and `LeakedObservation`
+  already halts a whole build for one bad row. Splitting the two would be an
+  unprincipled asymmetry between two symptoms of the same broken source. The
+  reviewer states the opposite choice would have been the defect.
+- Upheld, full dataclass equality for the ambiguity check. There is no field on
+  `SymbolObservation` that could be excluded from the comparison without
+  reopening the same order dependence one field later, because every field
+  either decides membership or reaches the hash through `feeds`.
+
+### Obligation this unit hands to its caller
+
+Neither `LeakedObservationError` nor `AmbiguousObservationError` is caught
+anywhere in this module, so both propagate out of `build` and no universe is
+returned for that instant. Whatever schedules a build must treat them as
+fail-closed halts. Retrying with a relaxed source, or falling back to the last
+good universe, would reintroduce exactly what they exist to stop.
+
 ### Not verified
 
 - No adapter connects a real feed to `UniverseSource`. Every screening fact in
