@@ -30,10 +30,38 @@ import sys
 import time
 from pathlib import Path
 
-STOP_WORDS = re.compile(
-    r"\b(blocked|blocking|stopped|stopping|cannot|conflict|refus|contradict|halt)",
+# A stop is the agent refusing to go on. It is not the agent talking about one.
+# The first version of this matched bare topic words, and on the messages this
+# repository has actually produced it fired six times for one real stop: an
+# agent describing contradictory position signs, or a scope that contradicts
+# itself, or a test proving values cannot collide, all read as refusals. A
+# monitor that is wrong five times out of six is one nobody reads, so these are
+# phrases rather than words.
+#
+# Precision is the right trade here because completeness does not depend on this
+# filter. Every run also emits FINISHED when its turn completes and GONE when
+# the process disappears without one, so a stop phrased in a way this misses is
+# late news, never missing news.
+STOP_PHRASES = re.compile(
+    r"(?:am|is|are|was|were)\s+blocked\b"
+    r"|\bblocked\s+by\b"
+    r"|\bcannot\s+(?:proceed|continue|complete|be\s+resolved|be\s+satisfied)"
+    r"|\bunable\s+to\s+(?:proceed|continue|complete)"
+    r"|\bstopping\s+(?:here|now|because)"
+    r"|\brefus(?:e|ing)\s+to\b"
+    r"|\brequires?\s+(?:approval|a\s+human)"
+    r"|\bneeds?\s+(?:a\s+)?(?:human|decision)\b"
+    r"|\bhalting\b"
+    r"|source[- ]of[- ]truth\s+conflict",
     re.I,
 )
+
+
+def is_a_stop(text: str) -> bool:
+    """True when the agent is saying it will not go on without a person."""
+    return bool(STOP_PHRASES.search(text))
+
+
 LOGDIR = Path(".dispatch")
 POLL_SECONDS = 2.0
 
@@ -159,9 +187,7 @@ def main() -> int:
                         graded.add(unit)
                         say(unit, "VERDICT", f"{scored.group(1)} (no VERDICT line; grade it)")
                         continue
-                # only the opening matters: a summary often mentions what it did
-                # not do, and that is not the agent stopping
-                if STOP_WORDS.search(text[:200]):
+                if is_a_stop(text):
                     say(unit, "STOPPED", text)
 
         # a run that vanishes without completing a turn has crashed, and that
@@ -177,5 +203,37 @@ def main() -> int:
         time.sleep(POLL_SECONDS)
 
 
+# Every sentence here was said by a real agent in this repository. The first is
+# the only one that was a stop.
+STOPS = (
+    "Both direct staging and direct committing are blocked by the managed command"
+    " policy, which requires approval while this session is configured never to ask.",
+    "I cannot proceed: the unit contract names records that do not exist.",
+    "Stopping here because the intake and the merged code disagree.",
+)
+NOT_STOPS = (
+    "The corrected scope is narrow: add a regression that proves distinct"
+    " high-precision Decimal values cannot collide in the frozen hash.",
+    "I found one stale test-list phrase that conflicts with the corrected criterion.",
+    "The revised scope is narrow and internally consistent: preserve"
+    " activity-to-order correlation, reject position quantity/side contradictions.",
+    "The TDD red phase is decisive: 5 failures, all for the intended defects."
+    " Both contradictory position variants are accepted.",
+    "AC-1 through AC-10 are supported, but AC-5 fails for contradictory positions"
+    " and restart recovery loses activity-to-order identity.",
+)
+
+
+def self_test() -> int:
+    for text in STOPS:
+        assert is_a_stop(text), f"a real stop must be announced: {text[:60]!r}"
+    for text in NOT_STOPS:
+        assert not is_a_stop(text), f"talking about a topic is not stopping: {text[:60]!r}"
+    print(f"notable self-test passed: {len(STOPS) + len(NOT_STOPS)} cases")
+    return 0
+
+
 if __name__ == "__main__":
+    if "--self-test" in sys.argv:
+        sys.exit(self_test())
     sys.exit(main())
