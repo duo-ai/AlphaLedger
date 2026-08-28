@@ -33,9 +33,9 @@ environment.
 - `scripts/coord.py`: claiming across runtimes. Self-test passes with 11 cases.
   The dependency gate was exercised on the real files in both directions:
   refused while UNIT-001 was unmerged, allowed once it merged.
-- `scripts/verify_harness.sh`: 22 checks, all passing, including both guards
+- `scripts/verify_harness.sh`: 25 checks, all passing, including both guards
   firing inside a worktree.
-- `.claude/hooks/guard.py` and `.codex/hooks/guard.py`: 17 and 19 cases.
+- `.claude/hooks/guard.py` and `.codex/hooks/guard.py`: 23 and 25 cases.
 - Eight skills across both runtimes, each with `origin` and, on the Codex side,
   an `agents/openai.yaml` binding. `tdd-workflow` and `verification-loop` were
   ported from ECC and adapted; the six lifecycle skills stay manual-only.
