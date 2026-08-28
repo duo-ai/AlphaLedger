@@ -7,6 +7,7 @@ as a terminal result.
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -44,6 +45,13 @@ _SIDE_BY_POSITION_INTENT = MappingProxyType(
         "sell_to_open": "sell",
         "sell_to_close": "sell",
     }
+)
+_POSITIVE_INTEGER_PATTERN = re.compile(r"[1-9][0-9]*")
+_NONNEGATIVE_DECIMAL_PATTERN = re.compile(r"(?:0|[1-9][0-9]*)(?:\.[0-9]+)?")
+_RFC3339_PATTERN = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T"
+    r"[0-9]{2}:[0-9]{2}:[0-9]{2}"
+    r"(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})"
 )
 
 
@@ -96,6 +104,13 @@ def build_mleg_order(
     if not isinstance(client_order_id, str) or not client_order_id:
         raise OrderAdapterError("client_order_id must be a non-empty string")
     _require_decimal(limit_price, "limit_price")
+    if not 2 <= len(plan.legs) <= 4:
+        raise OrderAdapterError("mleg orders must contain between 2 and 4 legs")
+
+    legs = [_map_leg(leg, index) for index, leg in enumerate(plan.legs)]
+    symbols = [leg["symbol"] for leg in legs]
+    if len(set(symbols)) != len(symbols):
+        raise OrderAdapterError("mleg order symbols must be unique")
 
     return {
         "order_class": "mleg",
@@ -104,7 +119,7 @@ def build_mleg_order(
         "limit_price": limit_price,
         "time_in_force": "day",
         "client_order_id": client_order_id,
-        "legs": [_map_leg(leg, index) for index, leg in enumerate(plan.legs)],
+        "legs": legs,
     }
 
 
@@ -183,6 +198,8 @@ def _ratio_quantity(value: object, field: str) -> str:
         raise OrderAdapterError(f"{field} must never be float")
     if not isinstance(value, str | int | Decimal):
         raise OrderAdapterError(f"{field} must be a positive integer")
+    if isinstance(value, str) and _POSITIVE_INTEGER_PATTERN.fullmatch(value) is None:
+        raise OrderAdapterError(f"{field} must be a positive integer")
     try:
         quantity = Decimal(value)
     except InvalidOperation:
@@ -249,6 +266,8 @@ def _required_quantity(raw: Mapping[str, object], field: str) -> Decimal:
     value = _required(raw, field)
     if isinstance(value, bool | float) or not isinstance(value, str | int | Decimal):
         raise OrderAdapterError(f"broker order field '{field}' must be an exact quantity")
+    if isinstance(value, str) and _NONNEGATIVE_DECIMAL_PATTERN.fullmatch(value) is None:
+        raise OrderAdapterError(f"broker order field '{field}' must be an exact quantity")
     try:
         quantity = Decimal(value)
     except InvalidOperation:
@@ -264,7 +283,7 @@ def _required_timestamp(raw: Mapping[str, object], field: str) -> datetime:
 
 
 def _optional_timestamp(raw: Mapping[str, object], field: str) -> datetime | None:
-    value = raw.get(field)
+    value = _required(raw, field)
     if value is None:
         return None
     return _parse_timestamp(value, field)
@@ -272,6 +291,8 @@ def _optional_timestamp(raw: Mapping[str, object], field: str) -> datetime | Non
 
 def _parse_timestamp(value: object, field: str) -> datetime:
     if not isinstance(value, str) or not value:
+        raise OrderAdapterError(f"broker order field '{field}' must be an RFC3339 timestamp")
+    if _RFC3339_PATTERN.fullmatch(value) is None:
         raise OrderAdapterError(f"broker order field '{field}' must be an RFC3339 timestamp")
     normalized = f"{value[:-1]}+00:00" if value.endswith("Z") else value
     try:

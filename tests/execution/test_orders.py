@@ -149,7 +149,7 @@ def test_realistic_filled_order_parses_status_quantity_and_utc_timestamps() -> N
         "status": "filled",
         "filled_qty": "2",
         "created_at": "2026-08-28T15:31:02.123456789Z",
-        "updated_at": "2026-08-28T15:31:05.987654321Z",
+        "updated_at": "2026-08-28T17:31:05.987654321+02:00",
         "submitted_at": "2026-08-28T15:31:02.223456789Z",
         "filled_at": "2026-08-28T15:31:05.887654321Z",
         "order_class": "mleg",
@@ -186,6 +186,14 @@ def test_float_price_or_nested_leg_value_is_rejected_and_names_the_field() -> No
     with pytest.raises(OrderAdapterError, match=r"legs\[0\]\.ratio_qty.*float"):
         canonical_bytes({"legs": [{"ratio_qty": 1.0}]})
 
+    for malformed_ratio in ("1_0", " 1", "1 ", "+1", "1.0"):
+        plan = _debit_vertical()
+        malformed_ratio_leg = dict(plan.legs[0])
+        malformed_ratio_leg["ratio_qty"] = malformed_ratio
+        object.__setattr__(plan, "legs", (malformed_ratio_leg, plan.legs[1]))
+        with pytest.raises(OrderAdapterError, match=r"legs\[0\]\.ratio_qty"):
+            build_mleg_order(plan, 1, Decimal("1.2500"), "client-debit-001")
+
 
 def test_leg_key_outside_declared_vocabulary_is_rejected_and_names_the_key() -> None:
     plan = _debit_vertical()
@@ -202,20 +210,63 @@ def test_leg_key_outside_declared_vocabulary_is_rejected_and_names_the_key() -> 
         )
 
 
+def test_invalid_mleg_cardinality_or_duplicate_symbols_is_rejected_before_mapping() -> None:
+    plan = _debit_vertical()
+    long_leg = dict(plan.legs[0])
+    five_distinct_legs = tuple(
+        {**long_leg, "symbol": f"SPY260918C{strike:08d}"}
+        for strike in (500000, 501000, 502000, 503000, 504000)
+    )
+    duplicate_leg = {**dict(plan.legs[1]), "symbol": long_leg["symbol"]}
+
+    for legs, message in (
+        ((plan.legs[0],), "between 2 and 4"),
+        (five_distinct_legs, "between 2 and 4"),
+        ((plan.legs[0], duplicate_leg), "unique"),
+    ):
+        object.__setattr__(plan, "legs", legs)
+        with pytest.raises(OrderAdapterError, match=message):
+            build_mleg_order(plan, 1, Decimal("1.2500"), "client-debit-001")
+
+
 def test_truncated_broker_payload_raises_redacted_typed_adapter_error() -> None:
     credential_shaped_value = "credential-shaped-value"
+    complete_payload = {
+        "id": "4c51a4ba-53f9-4bf2-88a5-6d1c17b8e108",
+        "client_order_id": "client-debit-001",
+        "status": "new",
+        "filled_qty": "0",
+        "created_at": "2026-08-28T15:31:02Z",
+        "updated_at": None,
+        "submitted_at": "2026-08-28T15:31:02Z",
+        "filled_at": None,
+    }
+    malformed_timestamp = {**complete_payload, "created_at": credential_shaped_value}
+    non_rfc3339_timestamps = tuple(
+        {**complete_payload, "created_at": value}
+        for value in (
+            "2026-08-28 15:31:02Z",
+            "2026-W35-5T15:31:02Z",
+            "2026-08-28T15:31:02+00:00:30",
+        )
+    )
+    malformed_quantities = tuple(
+        {**complete_payload, "filled_qty": value} for value in ("1_0", " 1", "1 ", "+1", "1e1")
+    )
+    missing_nullable_timestamps: list[dict[str, object]] = []
+    for field in ("updated_at", "submitted_at", "filled_at"):
+        truncated = dict(complete_payload)
+        del truncated[field]
+        missing_nullable_timestamps.append(truncated)
     payloads = (
         {
             "id": "4c51a4ba-53f9-4bf2-88a5-6d1c17b8e108",
             "authorization": credential_shaped_value,
         },
-        {
-            "id": "4c51a4ba-53f9-4bf2-88a5-6d1c17b8e108",
-            "client_order_id": "client-debit-001",
-            "status": "new",
-            "filled_qty": "0",
-            "created_at": credential_shaped_value,
-        },
+        malformed_timestamp,
+        *non_rfc3339_timestamps,
+        *malformed_quantities,
+        *missing_nullable_timestamps,
     )
 
     for raw in payloads:
