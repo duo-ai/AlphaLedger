@@ -2,13 +2,14 @@
 id: UNIT-020
 title: Record point-in-time observations with the timestamp contract
 lane: research
-state: available
-owner: -
-branch: -
+state: claimed
+owner: mazwy/claude
+branch: feature/020-data-recorder
 reviewer: backtest-auditor
 preferred_runtime: claude
 depends_on: [UNIT-001]
 paths: src/alphaledger/data/recorder.py, src/alphaledger/data/storage.py, tests/research/test_recorder.py
+claimed_at: 2026-08-28T19:04:14Z
 ---
 
 ## Problem
