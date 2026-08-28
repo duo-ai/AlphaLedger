@@ -162,6 +162,35 @@ relaxation.
   plausible under the current design but unproven, and nothing yet needs it.
 - Store size, rotation, and retention are untouched.
 
+### Review round one, backtest-auditor
+
+No critical or high findings. Three gaps, all addressed on this branch:
+
+- Medium, corruption paths untested. `storage.py` raises rather than skips a
+  line it cannot parse, and nothing exercised that, so turning any of those
+  raises into a `continue` would have left the suite green. Eight tests now
+  write a blank line, truncated JSON, a JSON array, a bare JSON string, and
+  records missing each required field, and assert the raise. A recorder now
+  reads the store when it opens, so a damaged store fails closed at open
+  rather than on the first read that happens to touch the damaged line.
+- Medium, no idempotency on `record`. A retried write after an ambiguous
+  outcome appended a second copy of one fact, silently doubling its weight
+  downstream. `record` now returns the existing address instead of appending
+  when the content address is already present. The index is rebuilt from the
+  file at construction, not held across a call, so it survives a restart; a
+  test proves that across a real process boundary. A revision differs in at
+  least one field, so it still gets its own address and its own record.
+- Low, asymmetric read filter. An unregistered `feed` on a read returned an
+  empty result, which is indistinguishable from a legitimate nothing yet. The
+  read now rejects it exactly as the write path does.
+
+The dedupe index is a snapshot taken at construction. A second process
+appending to the same store afterwards is not seen by the first, which is the
+concurrent-writer case this unit still does not claim to support.
+
+Nineteen defects were injected one at a time after these fixes and every one
+was caught by a named test.
+
 ### Hazard for the next session
 
 Mutation testing rewrote a source file to the same byte length within the same
