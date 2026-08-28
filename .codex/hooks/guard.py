@@ -132,7 +132,7 @@ def _git_violation(command: str) -> str | None:
     if not re.search(r"\bgit\b", command):
         return None
 
-    if re.search(r"\bgit\s+commit\b", command, re.I):
+    if re.search(r"\bgit\s+commit(?=\s|$)", command, re.I):
         messages = [_message_text(m) for m in COMMIT_MESSAGE_ARGUMENT.findall(command)]
         message = " ".join(messages)
         for pattern, reason in COMMIT_TELLS:
@@ -169,7 +169,8 @@ def _git_violation(command: str) -> str | None:
         return "a force push; use --force-with-lease on your own branch only"
 
     if (
-        re.search(r"\bgit\s+merge\b", command, re.I)
+        re.search(r"\bgit\s+merge(?=\s|$)", command, re.I)
+        and not re.search(r"--(?:abort|continue|quit)\b", command)
         and "--no-ff" not in command
         and "--squash" not in command
         and _current_branch() in GIT_FLOW_BASE_BRANCHES
@@ -426,6 +427,25 @@ def _self_test() -> int:
                 "tool_name": "Bash",
                 "tool_input": {"command": "git commit -m 'Merge branch develop into feature/x'"},
             },
+            False,
+        ),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git merge-base --is-ancestor develop HEAD"},
+            },
+            False,
+        ),
+        (
+            {"tool_name": "Bash", "tool_input": {"command": "git commit-graph write"}},
+            False,
+        ),
+        (
+            {"tool_name": "Bash", "tool_input": {"command": "git merge --abort"}},
+            False,
+        ),
+        (
+            {"tool_name": "Bash", "tool_input": {"command": "git merge --continue"}},
             False,
         ),
     )
