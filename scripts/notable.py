@@ -115,6 +115,12 @@ def main() -> int:
                 if item.get("type") != "agent_message":
                     continue
                 text = item.get("text", "")
+                # a review exists to produce a verdict, so say it the moment it
+                # appears rather than waiting for the run to end
+                verdict = re.search(r"VERDICT:\s*(clear|conditional|block)", text, re.I)
+                if verdict and unit.endswith(".review"):
+                    say(unit, "VERDICT", verdict.group(1).lower())
+                    continue
                 # only the opening matters: a summary often mentions what it did
                 # not do, and that is not the agent stopping
                 if STOP_WORDS.search(text[:200]):
