@@ -534,7 +534,9 @@ def _self_test() -> int:
             print(f"guard self-test failed: branch case {branch} {command!r}", file=sys.stderr)
             _current_branch = real_current_branch
             return 1
-    _current_branch = real_current_branch
+    # back to the neutral stub, not the real lookup: the general cases below
+    # must not depend on which branch happens to be checked out
+    _current_branch = lambda: "feature/self-test"  # noqa: E731
 
     failures = [
         index
