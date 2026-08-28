@@ -204,6 +204,9 @@ else
     check 1 "AGENTS.md is $agents_bytes bytes, near the silent 32768 cap; split it"
 fi
 
+bash scripts/watch.sh --self-test >/dev/null 2>&1
+check $? "watch follows a log across a dispatch rotation"
+
 echo "== git flow =="
 git show-ref --verify --quiet refs/heads/develop; check $? "develop exists"
 git show-ref --verify --quiet refs/heads/main; check $? "main exists"

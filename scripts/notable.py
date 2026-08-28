@@ -64,8 +64,16 @@ def main() -> int:
         return 1
 
     handles: dict[Path, object] = {}
+    inodes: dict[Path, int] = {}
     finished: set[str] = set()
     seen_activity = False
+
+    def adopt(path: Path, *, from_end: bool) -> None:
+        handle = path.open(encoding="utf-8", errors="replace")
+        if from_end:
+            handle.seek(0, 2)
+        handles[path] = handle
+        inodes[path] = path.stat().st_ino
 
     def already_finished(path: Path) -> bool:
         """A run that completed before this watch started is not missing.
@@ -85,9 +93,20 @@ def main() -> int:
             if path not in handles:
                 if already_finished(path):
                     finished.add(path.stem)
-                handle = path.open(encoding="utf-8", errors="replace")
-                handle.seek(0, 2)
-                handles[path] = handle
+                adopt(path, from_end=True)
+                continue
+            # A second dispatch of the same unit rotates the old stream aside
+            # and writes a new one at this same path. Reading on through the
+            # moved file would stay silent for the whole run, which is the one
+            # thing this watch exists to prevent.
+            try:
+                if path.stat().st_ino == inodes[path]:
+                    continue
+            except OSError:
+                continue
+            handles[path].close()
+            finished.discard(path.stem)
+            adopt(path, from_end=False)
 
         for path, handle in handles.items():
             unit = path.stem
