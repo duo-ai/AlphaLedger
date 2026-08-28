@@ -4,10 +4,10 @@ Last updated: 2026-08-28
 
 ## Current phase
 
-Development harness complete; application scaffolding has not started. The
-spec-driven operating model, the branching model, the coordination tool, and
-the first three unit intakes exist. There is no `pyproject.toml`, no `src/`,
-and no application tests.
+The development harness and the first vertical unit are done. The Python
+project exists on 3.14 with a committed lockfile, and the frozen domain
+contracts are merged, which unblocks both lanes. No broker, data, or research
+code exists yet.
 
 The dates in `hackathon-build-plan.md` are stale, confirmed by the user on
 2026-08-28. Treat the G0 to G6 sequence as binding and the calendar attached to
@@ -22,21 +22,22 @@ environment.
 
 ## Verified artifacts
 
-- `options-alpha-agent-design.md`, `hackathon-build-plan.md`, and
-  `orchestrator-system-prompt.md`: canonical design, sequence, and runtime
-  orchestration.
-- `specs/000-INTAKE.md`, `specs/TEMPLATE.md`, `specs/units/`: the SDD intake,
-  the unit template, and UNIT-001, UNIT-010, UNIT-020.
-- `scripts/coord.py`: unit claiming across runtimes. Self-test passes with 11
-  cases. The dependency gate and owner validation were exercised against the
-  real unit files, and refused claims leave the tree untouched.
-- `scripts/gitflow-init.sh`: configures `main` as production and `develop` as
-  integration. Both branches exist locally; only `main` exists on `origin`.
-- `.claude/hooks/guard.py` and `.codex/hooks/guard.py`: self-tests pass with 17
-  and 19 cases. Both were verified to fire inside a git worktree.
-- Python 3.14: the full stack was installed into a real cp314 venv and
-  imported, including the XNYS exchange calendar. See D-012 for the versions.
-- All six Claude specialists run on sonnet at high effort.
+- `specs/`: the SDD intake, the unit template, and five unit intakes. UNIT-001
+  merged; UNIT-010, UNIT-020, UNIT-021, UNIT-022 claimable.
+- `src/alphaledger/domain/`: the five records from design section 14 plus
+  `ObservationTimestamps`. Money is `Decimal`, not the `float` the design
+  sketched; the conflict and its resolution are recorded in the UNIT-001
+  intake.
+- Quality gate passes end to end on 3.14: `uv sync --frozen`, `ruff check`,
+  `ruff format --check`, `mypy src` under strict, and 16 tests.
+- `scripts/coord.py`: claiming across runtimes. Self-test passes with 11 cases.
+  The dependency gate was exercised on the real files in both directions:
+  refused while UNIT-001 was unmerged, allowed once it merged.
+- `scripts/verify_harness.sh`: 22 checks, all passing, including both guards
+  firing inside a worktree.
+- `.claude/hooks/guard.py` and `.codex/hooks/guard.py`: 17 and 19 cases.
+- Git flow is live. `develop` is on `origin` and is the GitHub default branch,
+  so a fresh clone lands on the work rather than on stale `main`.
 
 ## Not yet verified
 
@@ -44,18 +45,24 @@ environment.
 - OPRA versus indicative options entitlement and equity feed mode;
 - current MLeg request behavior in the competition environment;
 - event rules on pre-kickoff code and required submission artifacts;
-- Python project, lockfile, application tests, and every G1 to G6 artifact;
 - the real submission deadline, which the build plan no longer supplies;
-- whether `develop` should be pushed to `origin` and made the default branch.
+- every G1 to G6 artifact.
+
+## Known gaps
+
+- UNIT-001 merged without the `code-reviewer` specialist having run. The
+  protocol requires that review; it is outstanding, not waived.
+- `main` is thirteen commits behind `develop` and holds none of the harness.
+  It needs a `release/` branch when the first version is cut.
+- `.idea/` is untracked and absent from `.gitignore`.
 
 ## Next three tasks
 
-1. Claim and implement UNIT-001, which freezes the domain contracts and blocks
-   every other unit. Scaffold `pyproject.toml` on 3.14 as part of it.
-2. Record the real competition dates and account facts in the run manifest,
+1. Run `code-reviewer` over the merged UNIT-001 diff and act on the findings.
+2. Claim UNIT-010, the paper endpoint assertion, which is the first execution
+   unit and the gate every later order path depends on.
+3. Record the real competition dates and account facts in the run manifest,
    then pass or block G0.
-3. Write the intakes for UNIT-011 and UNIT-012 so the execution lane has a
-   queue deeper than one unit.
 
 ## Read first next session
 
