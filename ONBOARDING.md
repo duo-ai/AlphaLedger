@@ -164,6 +164,23 @@ Re-approve after any change to `.codex/hooks.json`. Do not use
 `--dangerously-bypass-hook-trust` as a routine workaround; it skips the review
 step that makes trust meaningful.
 
+## Watching a dispatched run
+
+A Codex dispatch writes a JSONL event stream. Follow it live:
+
+```bash
+scripts/watch.sh                 every active dispatch
+scripts/watch.sh UNIT-011        one of them
+scripts/watch.sh --replay        what already happened, then stop
+```
+
+Ctrl-C stops watching, not the run.
+
+This is worth doing rather than waiting for the result file. An agent that is
+about to stop on a source-of-truth conflict says so several turns before it
+exits, and that is exactly the moment a human can decide whether the
+specification is wrong rather than the agent.
+
 ## When to stop and ask
 
 - Two sources of truth disagree. Surface the conflict; do not pick the more

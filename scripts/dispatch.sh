@@ -283,6 +283,7 @@ FOLLOWUP
     # personal config happens to be loaded, so a dispatch is reproducible.
     nohup env UV_CACHE_DIR="$worktree/.uv-cache" codex exec \
         -c model_reasoning_effort=xhigh \
+        --approve-for-me \
         -C "$worktree" \
         -s workspace-write \
         --add-dir "$GIT_COMMON" \
