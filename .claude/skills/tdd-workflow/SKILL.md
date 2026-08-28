@@ -23,7 +23,9 @@ This skill turns that list into failing tests, then into passing code.
 python3 scripts/coord.py show UNIT-0NN
 ```
 
-Confirm you hold the unit and that you are inside its worktree. Read
+If the unit is unclaimed, claim it. `coord.py` already refuses a unit
+someone else holds and one whose dependencies are unmerged, so the lock is
+real. Then work inside its worktree, never in the primary clone. Read
 `## Contract`, `## Acceptance criteria`, and `## Test list`. If the test list is
 thin, fix the intake first and commit that separately. Implementing against a
 vague spec is how a unit ends up untestable.
@@ -90,6 +92,5 @@ not edit files.
 
 ## What this skill will not do
 
-- Claim a unit for you. Claiming is deliberate and belongs to a human.
 - Merge anything. A `feature/` branch merges after its named reviewer reports.
 - Lower a coverage or quality bar to finish faster.
