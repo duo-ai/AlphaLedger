@@ -2,13 +2,14 @@
 id: UNIT-011
 title: Map Alpaca order schemas behind a typed adapter
 lane: execution
-state: available
-owner: -
-branch: -
+state: claimed
+owner: pablo/codex
+branch: feature/011-order-schema-adapter
 reviewer: execution-safety-reviewer
 preferred_runtime: codex
 depends_on: [UNIT-001, UNIT-010]
 paths: src/alphaledger/execution/__init__.py, src/alphaledger/execution/orders.py, tests/execution/test_orders.py
+claimed_at: 2026-08-28T22:06:35Z
 ---
 
 ## Problem
