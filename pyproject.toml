@@ -49,7 +49,7 @@ disallow_any_explicit = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --strict-markers"
+addopts = "-q --strict-markers -m 'not paper_integration'"
 markers = [
     "paper_integration: opt-in tests that reach the Alpaca paper API. Never in the default run.",
 ]
