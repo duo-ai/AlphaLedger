@@ -63,6 +63,12 @@ ledger.
 Paper trading only. This is a competition engineering plan, not investment
 advice or a claim of future profitability.
 
+## Joining the project
+
+New to this repository, human or agent: read `ONBOARDING.md` first. It is the
+shortest path from a clone to a merged unit and it names the rules that are
+enforced by hooks rather than by convention.
+
 ## Development jump-start
 
 Start Claude Code or Codex at the repository root and review the committed
