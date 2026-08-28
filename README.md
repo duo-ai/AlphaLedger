@@ -65,7 +65,8 @@ advice or a claim of future profitability.
 
 ## Joining the project
 
-New to this repository, human or agent: read `ONBOARDING.md` first. It is the
+New to this repository, human or agent: read `ONBOARDING.md` first, then the
+brief for your lane. `RESEARCH-LANE.md` covers data, evidence, and forecast. It is the
 shortest path from a clone to a merged unit and it names the rules that are
 enforced by hooks rather than by convention.
 

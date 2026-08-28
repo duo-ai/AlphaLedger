@@ -105,6 +105,14 @@ Then request the reviewer named in your unit's frontmatter. Reviewers report;
 they do not edit files. Address the findings, then merge into `develop` with
 `--no-ff` and set the unit to `merged`.
 
+## Lane briefs
+
+If you are working the research lane, read `RESEARCH-LANE.md` after this file.
+It is the delegation brief for that lane: what the three units are, why the
+point-in-time discipline is shaped the way it is, what a real test looks like
+there as opposed to one that passes against the defect, and the hazards already
+hit on this repository so you do not rediscover them.
+
 ## Lanes
 
 Path globs are disjoint so two people never write the same file.
