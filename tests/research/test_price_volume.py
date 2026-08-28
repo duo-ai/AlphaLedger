@@ -209,8 +209,15 @@ def test_one_wild_peer_does_not_move_the_residual_because_the_centre_is_a_median
     the whole cross-section, and the residual would then measure that peer.
     """
     wild = [
-        bar("PEER3", index, open_="50.00", high="61.00", low="49.00",
-            close="50.00" if index < SESSIONS - 1 else "60.00", volume=1_000_000)
+        bar(
+            "PEER3",
+            index,
+            open_="50.00",
+            high="61.00",
+            low="49.00",
+            close="50.00" if index < SESSIONS - 1 else "60.00",
+            volume=1_000_000,
+        )
         for index in range(SESSIONS)
     ]
     sectors = {**SECTORS, "PEER3": "tech"}
@@ -237,9 +244,15 @@ def test_the_abnormal_return_window_starts_after_the_event_not_on_it() -> None:
     """The event session's own move belongs to the event, not to the reaction
     the feature is meant to measure."""
     moved = [
-        bar("TARGET", index, open_="100.00", high="103.00", low="99.00",
+        bar(
+            "TARGET",
+            index,
+            open_="100.00",
+            high="103.00",
+            low="99.00",
             close={SESSIONS - 2: "101.00", SESSIONS - 1: "102.00"}.get(index, "100.00"),
-            volume=1_000_000)
+            volume=1_000_000,
+        )
         for index in range(SESSIONS)
     ]
     bars = tuple(moved) + tuple(flat_peer("PEER1")) + tuple(flat_peer("PEER2"))
@@ -248,9 +261,7 @@ def test_the_abnormal_return_window_starts_after_the_event_not_on_it() -> None:
 
     # 102.00 against 101.00 only. Including the event session would add its own
     # one percent move on top.
-    assert block.features["cumulative_abnormal_return"] == pytest.approx(
-        102 / 101 - 1, abs=1e-12
-    )
+    assert block.features["cumulative_abnormal_return"] == pytest.approx(102 / 101 - 1, abs=1e-12)
 
 
 # --- point in time ------------------------------------------------------
