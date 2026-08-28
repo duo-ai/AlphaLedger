@@ -2,7 +2,7 @@
 id: UNIT-002
 title: Amend the news label contract to hold what the labeler emits
 lane: shared
-state: claimed
+state: in_review
 owner: mazwy/claude
 branch: feature/002-news-label-contract
 reviewer: code-reviewer
@@ -107,3 +107,45 @@ uv run mypy src
 ```
 
 ## Handoff notes
+
+`NewsLabel` gains `ticker`, `entity_match`, and `limitations`, all required.
+`Novelty` and `Relevance` gain `unknown`. `EntityMatch` and the allowed-value
+tuples are exported from `alphaledger.domain`.
+
+### One decision beyond a strictly additive amendment
+
+The enumerated fields are now checked at run time, not only the new one. A
+`Literal` is a static annotation and stops nothing at run time, and these
+records are built from JSON parsed out of a model's reply, which is exactly
+where the annotation does not hold. Validating only `entity_match` and leaving
+`direction`, `novelty`, `relevance`, `surprise`, and `ambiguity` unchecked
+would have been an inconsistency a reviewer should reject.
+
+This exceeds the strictest reading of AC-6, which asked for an additive change.
+Nothing constructs a `NewsLabel` outside the domain package and its tests, so
+the blast radius is nil and no existing test changed meaning. The alternative,
+leaving a typo from a model to reach the evidence ledger unchallenged, is worse
+than the scope cost.
+
+Prompt B's consistency rules are still not enforced here, per D-016 and D-014.
+A `not_matched` label with any relevance constructs, and a test asserts that,
+because Prompt B qualifies its own rules and the adapter is the designated
+validator.
+
+### Verified
+
+- `uv run pytest tests/domain/test_contracts.py -q`: 47 passed.
+- `uv sync --frozen`, `ruff check`, `ruff format --check`, `mypy src`,
+  `pytest`: all pass, 191 tests.
+- Seven defects were injected one at a time and each was caught by a named
+  test, including a record that enforced a Prompt B consistency rule, which is
+  the failure this unit is deliberately not supposed to have.
+
+### Not verified, and a gap worth a later unit
+
+`category` is still `str` on the frozen record while design section 5.2 and
+Prompt B both enumerate nine values. It accepts any string today. That is the
+same class of gap this unit just closed for the other fields, and closing it
+was outside the scope D-016 accepted. It should be its own small unit before
+UNIT-023 encodes a category into a feature.
+
