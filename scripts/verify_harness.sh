@@ -161,6 +161,25 @@ for i, a in enumerate(ids):
 INNER
 check $? "no two units declare overlapping path globs"
 
+# A unit is told to write its own tests, so its globs must reach tests/.
+# Without this every unit stops at the first test file it needs to create.
+py - <<'INNER' >/dev/null 2>&1
+import pathlib
+import sys
+
+bad = []
+for path in sorted(pathlib.Path("specs/units").glob("*.md")):
+    for line in path.read_text().splitlines():
+        if line.startswith("paths:"):
+            if "tests/" not in line:
+                bad.append(path.stem)
+            break
+if bad:
+    print("units whose globs cannot reach tests/:", ", ".join(bad), file=sys.stderr)
+    sys.exit(1)
+INNER
+check $? "every unit may write its own tests"
+
 echo "== git flow =="
 git show-ref --verify --quiet refs/heads/develop; check $? "develop exists"
 git show-ref --verify --quiet refs/heads/main; check $? "main exists"

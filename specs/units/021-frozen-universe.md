@@ -8,7 +8,7 @@ branch: -
 reviewer: backtest-auditor
 preferred_runtime: claude
 depends_on: [UNIT-001]
-paths: src/alphaledger/data/universe.py
+paths: src/alphaledger/data/universe.py, tests/research/test_universe.py
 ---
 
 ## Problem
