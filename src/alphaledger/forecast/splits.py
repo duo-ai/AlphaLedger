@@ -28,6 +28,7 @@ from datetime import datetime, timedelta
 from alphaledger.domain.contracts import require_utc
 
 __all__ = [
+    "EMPTY_CALIBRATION_WINDOW",
     "EMPTY_TEST_WINDOW",
     "IN_PURGE_GAP",
     "OUTCOME_CROSSES_BOUNDARY",
@@ -45,6 +46,7 @@ __all__ = [
 OUTCOME_CROSSES_BOUNDARY = "outcome_crosses_boundary"
 IN_PURGE_GAP = "in_purge_gap"
 EMPTY_TEST_WINDOW = "empty_test_window"
+EMPTY_CALIBRATION_WINDOW = "empty_calibration_window"
 
 
 class SplitConfigurationError(ValueError):
@@ -113,6 +115,14 @@ class SplitConfig:
                 raise SplitConfigurationError(f"{field} must be a positive duration; got {value!r}")
         if not isinstance(self.folds, int) or isinstance(self.folds, bool) or self.folds <= 0:
             raise SplitConfigurationError(f"folds must be a positive count; got {self.folds!r}")
+        for field in ("calibration", "test"):
+            value = getattr(self, field)
+            if value <= self.horizon:
+                raise SplitConfigurationError(
+                    f"{field} {value} is no longer than horizon {self.horizon}. Such a window "
+                    "can only hold a label predicted at its very first instant, so every "
+                    "other candidate is purged and the fold still looks like a fold"
+                )
         if self.purge < self.horizon:
             raise SplitConfigurationError(
                 f"purge {self.purge} is shorter than horizon {self.horizon}. The purge exists "
@@ -255,11 +265,29 @@ def walk_forward(
     # geometry is still true, but it does not get to look like the others.
     if ordered:
         for fold in folds:
-            if not fold.test_labels:
+            for name, window, assigned, flag in (
+                (
+                    "calibration",
+                    fold.calibration,
+                    fold.calibration_labels,
+                    EMPTY_CALIBRATION_WINDOW,
+                ),
+                ("test", fold.test, fold.test_labels, EMPTY_TEST_WINDOW),
+            ):
+                if assigned:
+                    continue
+                candidates = sum(1 for label in ordered if window.holds(label.prediction_time))
+                # A window nothing was predicted in is a data gap. A window whose
+                # candidates were all purged is a geometry problem, and the two
+                # call for different fixes, so the reason has to say which.
+                detail = (
+                    f"{candidates} predicted in it, every one purged"
+                    if candidates
+                    else "nothing was predicted in it"
+                )
                 reasons.append(
-                    f"{EMPTY_TEST_WINDOW}: fold {fold.index} tests "
-                    f"{fold.test.start.isoformat()} to {fold.test.end.isoformat()}, "
-                    "where no label resolves"
+                    f"{flag}: fold {fold.index} {name} window "
+                    f"{window.start.isoformat()} to {window.end.isoformat()}, {detail}"
                 )
     return WalkForward(folds=tuple(folds), reasons=tuple(reasons))
 

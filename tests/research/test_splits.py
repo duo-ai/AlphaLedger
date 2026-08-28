@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from alphaledger.forecast.splits import (
+    EMPTY_CALIBRATION_WINDOW,
     EMPTY_TEST_WINDOW,
     IN_PURGE_GAP,
     OUTCOME_CROSSES_BOUNDARY,
@@ -245,6 +246,18 @@ def test_a_label_predicted_in_the_calibration_gap_is_excluded_too() -> None:
     ]
 
 
+@pytest.mark.parametrize("field", ["calibration", "test"])
+def test_a_window_no_longer_than_the_horizon_is_refused_at_construction(field: str) -> None:
+    """Such a window can only hold a label predicted at its very first instant,
+    so every other candidate is purged and the fold still looks like a fold. It
+    is refused before any fold exists, not reported after one does."""
+    with pytest.raises(SplitConfigurationError) as raised:
+        config(**{field: 5 * DAY, "horizon": 5 * DAY})
+
+    assert field in str(raised.value)
+    assert "horizon" in str(raised.value)
+
+
 # --- no trade -----------------------------------------------------------
 
 
@@ -305,3 +318,42 @@ def test_a_fold_with_no_labels_at_all_is_still_a_fold() -> None:
     # Flagging every fold here would bury the case the flag is for, where data
     # exists and some folds cannot reach it.
     assert not [r for r in result.reasons if r.startswith(EMPTY_TEST_WINDOW)]
+
+
+def test_a_fold_whose_calibration_window_holds_no_label_is_reported_too() -> None:
+    """A fold with a populated test set and an empty calibration window has no
+    way to have chosen a threshold, which design section 7 names as its own
+    required step. Reporting only the test window would call that fold clean."""
+    labels = (labelled("in-train", 10), labelled("in-test", 135))
+
+    result = walk_forward(ORIGIN, labels, config(), available_until=FAR)
+
+    calibration_reasons = [
+        reason for reason in result.reasons if reason.startswith(EMPTY_CALIBRATION_WINDOW)
+    ]
+    assert any("fold 0" in reason for reason in calibration_reasons)
+
+
+def test_the_reason_says_whether_candidates_were_purged_or_simply_absent() -> None:
+    """A data gap and a geometry problem call for different fixes, so one
+    message for both would send a reader looking in the wrong place."""
+    absent = walk_forward(ORIGIN, (labelled("far", 10),), config(), available_until=FAR)
+    purged = walk_forward(
+        ORIGIN, (labelled("straddles", 148, resolves_in=5),), config(), available_until=FAR
+    )
+
+    assert any("nothing was predicted in it" in reason for reason in absent.reasons)
+    assert any("every one purged" in reason for reason in purged.reasons)
+
+
+def test_every_fold_being_empty_is_still_reported_fold_by_fold() -> None:
+    """The middle case between the two extremes already pinned: labels exist,
+    but none of them reach any test window. Suppressing the reason when every
+    fold is empty would silence it exactly where the configuration is most
+    wrong for the data supplied."""
+    labels = (labelled("early", 10), labelled("also-early", 20))
+
+    result = walk_forward(ORIGIN, labels, config(), available_until=FAR)
+
+    empty = [reason for reason in result.reasons if reason.startswith(EMPTY_TEST_WINDOW)]
+    assert len(empty) == 3

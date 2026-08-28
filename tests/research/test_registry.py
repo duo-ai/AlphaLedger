@@ -157,11 +157,13 @@ def test_a_float_in_a_result_is_refused_because_a_metric_is_recorded_verbatim(
     assert "0.21" in str(raised.value)
 
 
-def test_a_float_in_a_configuration_is_refused_the_same_way_a_metric_is() -> None:
+def test_a_float_in_a_configuration_is_refused_the_same_way_a_metric_is(
+    tmp_path: Path,
+) -> None:
     """One validator serves both arguments. Testing only the result path would
     let a change that bypassed validation on the configuration path pass."""
     with pytest.raises(TypeError) as raised:
-        TrialRegistry(AppendOnlyStore(Path("unused.jsonl"))).register(
+        TrialRegistry(AppendOnlyStore(tmp_path / "trials.jsonl")).register(
             {"winsor": 0.05},  # type: ignore[dict-item]
             "widen the winsor",
             T0,
