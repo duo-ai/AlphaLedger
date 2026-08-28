@@ -131,26 +131,40 @@ STREAM="$ROOT/.dispatch/$SLUG.review.jsonl"
 ( cd "$WORKTREE" && codex exec review --json -c model_reasoning_effort=xhigh \
     - < "$PROMPT" ) > "$STREAM" 2>&1 || true
 
-# the verdict is in the final message, so lift it into a readable artifact
+# Lift the review out of the stream into a readable artifact. Keep every
+# message, not the last one: the UNIT-011 review carried its summary and its
+# findings, and an extractor that overwrote on each message would have kept
+# whichever came last and silently dropped the other.
 bash scripts/hook_python.sh - "$STREAM" > "$OUT" <<'EXTRACT'
 import json
 import sys
 from pathlib import Path
 
-last = ""
-for line in Path(sys.argv[1]).read_text(encoding='utf-8', errors='replace').splitlines():
+said = []
+for line in Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace").splitlines():
     line = line.strip()
-    if not line.startswith('{'):
+    if not line.startswith("{"):
         continue
     try:
         event = json.loads(line)
     except json.JSONDecodeError:
         continue
-    item = event.get('item', {})
-    if event.get('type') == 'item.completed' and item.get('type') == 'agent_message':
-        last = item.get('text', '')
-print(last)
+    item = event.get("item", {})
+    if event.get("type") == "item.completed" and item.get("type") == "agent_message":
+        text = item.get("text", "").strip()
+        if text:
+            said.append(text)
+print("\n\n".join(said))
 EXTRACT
+
+# An empty artifact reads exactly like a review that found nothing, which is the
+# most dangerous thing this script could say. Refuse instead, and point at the
+# stream so the reason is one command away.
+if [ ! -s "$OUT" ]; then
+    rm -f "$OUT"
+    die "the review produced no readable output. The raw stream is $STREAM; its first lines are:
+$(head -3 "$STREAM")"
+fi
 tail -40 "$OUT"
 
 echo
