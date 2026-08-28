@@ -2,13 +2,14 @@
 id: UNIT-004
 title: Load the frozen configuration and hash it
 lane: shared
-state: available
-owner: -
-branch: -
+state: claimed
+owner: pablo/codex
+branch: feature/004-frozen-config
 reviewer: execution-safety-reviewer
 preferred_runtime: codex
 depends_on: [UNIT-001]
 paths: src/alphaledger/config/**, tests/config/**
+claimed_at: 2026-08-28T22:06:36Z
 ---
 
 ## Problem
