@@ -218,3 +218,28 @@ belong in the trial registry or status file.
 - Revisit only if: UNIT-020 finds a real feed where `first_seen_time` precedes
   `source_time` for a legitimate reason. Record the feed and the mechanism
   before relaxing anything.
+
+## D-015: Store integrity is checked when the recorder opens
+
+- Date: 2026-08-28
+- Origin: the UNIT-020 round two review, which asked what the round one fixes
+  could have broken.
+- Decision: `alphaledger.data.recorder.Recorder` reads the whole store when it
+  is constructed, to rebuild the content-address index that makes `record`
+  idempotent across a restart. A store holding a line that cannot be parsed
+  therefore cannot be opened at all, so corruption blocks writes as well as
+  reads. There is no recovery that truncates to the last readable record.
+- Rationale: a torn final line, the shape an unclean kill leaves, is not
+  distinguishable from a deliberate truncation. Recovering from one would
+  recover from both, which reopens the hole the raise exists to close: a store
+  that skipped what it could not parse would report a shorter history than the
+  file holds, and no later audit could tell that from a session that simply
+  recorded less.
+- Cost accepted: a crash mid-append can wedge the writer until a human inspects
+  the file. That is the intended failure direction. This is a change in blast
+  radius from the first implementation, where corruption stopped reads only,
+  and it is pinned by `test_a_corrupted_store_refuses_new_writes_and_not_only_reads`.
+- Revisit only if: the store gains per-record framing, a length prefix or a
+  checksum, that makes a torn final line provably distinguishable from a
+  deliberate truncation. Recovery may then truncate to the last provably
+  complete record, and to nothing else.
