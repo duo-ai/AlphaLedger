@@ -2,7 +2,7 @@
 id: UNIT-004
 title: Load the frozen configuration and hash it
 lane: shared
-state: in_review
+state: claimed
 owner: pablo/codex
 branch: feature/004-frozen-config
 reviewer: execution-safety-reviewer
@@ -12,7 +12,8 @@ paths: src/alphaledger/config/**, tests/config/**, config/**
 claimed_at: 2026-08-28T22:06:36Z
 reviewed_by: execution-safety-reviewer
 review_verdict: block
-reviewed_at: 2026-08-28T23:11:20Z
+reviewed_at: 2026-08-28T23:42:34Z
+review_log: [block, block]
 ---
 
 ## Problem
@@ -175,4 +176,32 @@ them honest.
   which is what D-018 puts on the session anyway. `scripts/notable.py` only
   announces a verdict it can see, so a review that omits the line is silent on
   the monitor.
+
+- 2026-08-29 code review round two, `execution-safety-reviewer`, verdict block.
+  Two P1 findings. Unlike round one, the first is a defect in production code.
+  1. P1, `src/alphaledger/config/__init__.py` around line 391. Canonicalisation
+     calls `Decimal.normalize()`, which rounds to the active decimal context
+     precision before hashing. Two values of
+     `maximum_loss_fraction_per_new_trade` that differ beyond that precision
+     load as unequal and hash identically, so a session could keep an arm hash
+     while its sizing fraction changed. That is AC-2 and the frozen config hash
+     requirement in `AGENTS.md`. Canonicalise every digit without context
+     rounding, and add a collision test that fails before the fix.
+  2. P1, `tests/config/test_frozen_config.py` around line 232. The assertion
+     builds its expected value through the same production class it is
+     checking, so if `RiskConfig.__post_init__` turned a cap of 3 into 4, both
+     sides would become 4 and the suite would stay green while the runtime cap
+     exceeded the committed one. Compare loaded primitive fields against
+     independent literals.
+- 2026-08-29 pablo/claude, on spending a third round. `coord.py` refused to
+  reopen without `--another-pass`, per D-022. The round is justified: both
+  findings sit inside the declared globs, and the first is a real hash collision
+  on the value the whole config hash exists to pin. Round one produced no
+  production change; this one does, and it is a two line change with a test that
+  fails without it.
+- 2026-08-29 pablo/claude, scope for round three. These two findings are the
+  whole of it. The reviewer's pre-gate execution matrix, paper host isolation,
+  arm and risk binding, sizing caps, idempotent retries, reconciliation,
+  staleness, flattening, and ledger transitions, belongs to UNIT-010 and
+  UNIT-012 onward and must not be implemented here.
 
