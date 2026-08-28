@@ -27,6 +27,9 @@ Winsorization limits, lookbacks, and the sector map are configuration, not
 judgment. They are versioned, and `feature_version` changes whenever any of
 them changes.
 
+The z-score divides by the sample standard deviation, the n minus one form,
+of the residual returns in the volatility window.
+
 Nothing reads a clock. Rebuilding a past `as_of` from cached bars has to give
 the same numbers a year later, which it cannot do if anything inside depends
 on when it ran.
@@ -50,6 +53,7 @@ __all__ = [
     "ABNORMAL_VOLUME_DAILY_BASELINE",
     "INSUFFICIENT_HISTORY",
     "NO_EVENT_TIME",
+    "NO_PEER_DATA",
     "NO_QUALIFYING_DATA",
     "SECTOR_FALLBACK_MARKET",
     "WINSORIZED",
@@ -68,10 +72,15 @@ WINSORIZED = "winsorized"
 SECTOR_FALLBACK_MARKET = "sector_fallback_market"
 ABNORMAL_VOLUME_DAILY_BASELINE = "abnormal_volume_daily_baseline"
 NO_EVENT_TIME = "no_event_time"
+NO_PEER_DATA = "no_peer_data"
 NO_QUALIFYING_DATA = "no_qualifying_data"
 
 # Proximity is a position inside its own window, already bounded to [0, 1], so
-# clipping it to a return-shaped limit would distort rather than protect.
+# clipping it to a return-shaped limit would distort rather than protect. Its
+# window deliberately includes the session being measured, unlike the volume
+# baseline and the ATR window: excluding the current bar would let the close sit
+# outside its own window and the ratio would no longer be bounded at all. The
+# boundedness also rests on `Bar` refusing a close outside its own range.
 UNWINSORIZED_FEATURES = frozenset({"proximity_to_extreme"})
 
 
@@ -118,6 +127,21 @@ class Bar:
             raise ValueError(
                 f"high {self.high} is below low {self.low} for {self.symbol}; the bar is malformed"
             )
+        for name in ("open", "high", "low", "close"):
+            price = getattr(self, name)
+            if price <= 0:
+                raise ValueError(
+                    f"{name} must be positive; got {price} for {self.symbol}. A zero price "
+                    "would make the next session's return undefined"
+                )
+        for name in ("open", "close"):
+            price = getattr(self, name)
+            if not self.low <= price <= self.high:
+                raise ValueError(
+                    f"{name} {price} lies outside the range {self.low} to {self.high} for "
+                    f"{self.symbol}; a close outside its own range would make "
+                    "proximity_to_extreme unbounded"
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,6 +178,14 @@ class FeatureConfig:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int | float):
                 raise ValueError(f"{name} must be a real number; got {value!r}")
+        needed = max(self.residual_volatility_sessions, 5)
+        if self.lookback_sessions < needed:
+            raise ValueError(
+                f"lookback_sessions {self.lookback_sessions} is shorter than the "
+                f"{needed} residual sessions the features derived from it need. The "
+                "block would report insufficient history and blame the data for a "
+                "configuration choice"
+            )
         if not self.winsor_lower < self.winsor_upper:
             raise ValueError(
                 f"winsor_lower {self.winsor_lower} must be below winsor_upper "
@@ -215,12 +247,13 @@ def build(
         return _empty(symbol, cutoff, config, (NO_QUALIFYING_DATA,))
 
     peers = _peers(symbol, series, config, flags)
-    residuals = _residuals(own, peers, config)
+    residuals = _residuals(own, peers, config, flags)
+    values = [value for _, value in residuals]
     features: dict[str, float] = {}
 
-    _returns_features(features, residuals, flags)
-    _gap_feature(features, symbol, own, peers, flags)
-    _volatility_feature(features, residuals, config, flags)
+    _returns_features(features, values, flags)
+    _gap_feature(features, own, peers, flags)
+    _volatility_feature(features, values, config, flags)
     _volume_feature(features, own, config, flags)
     _range_feature(features, own, config, flags)
     _extreme_feature(features, own, config, flags)
@@ -300,8 +333,6 @@ def _return_by_session(bars: Sequence[Bar]) -> dict[datetime, float]:
     """Close to close returns, keyed by the session they belong to."""
     out: dict[datetime, float] = {}
     for previous, current in itertools.pairwise(bars):
-        if previous.close == 0:
-            continue
         out[current.session] = float(current.close / previous.close) - 1.0
     return out
 
@@ -310,31 +341,48 @@ def _gap_by_session(bars: Sequence[Bar]) -> dict[datetime, float]:
     """Opening gaps against the prior close, keyed by session."""
     out: dict[datetime, float] = {}
     for previous, current in itertools.pairwise(bars):
-        if previous.close == 0:
-            continue
         out[current.session] = float(current.open / previous.close) - 1.0
     return out
 
 
 def _demeaned(
-    own: Mapping[datetime, float], peers: Iterable[Mapping[datetime, float]]
+    own: Mapping[datetime, float],
+    peers: Iterable[Mapping[datetime, float]],
+    flags: list[str],
 ) -> list[tuple[datetime, float]]:
-    """Own value minus the peer median, session by session, in time order."""
+    """Own value minus the peer median, session by session, in time order.
+
+    A session with no peer observation is not demeaned at all, so the value is
+    the raw return. That is recorded, because `sector_fallback_market` means a
+    broad median was used and a consumer cannot otherwise tell the two apart.
+    """
     peer_values = list(peers)
     out: list[tuple[datetime, float]] = []
     for session in sorted(own):
         cross_section = [values[session] for values in peer_values if session in values]
-        centre = statistics.median(cross_section) if cross_section else 0.0
-        out.append((session, own[session] - centre))
+        if not cross_section:
+            flags.append(NO_PEER_DATA)
+            out.append((session, own[session]))
+            continue
+        out.append((session, own[session] - statistics.median(cross_section)))
     return out
 
 
 def _residuals(
-    own: Sequence[Bar], peers: Sequence[Sequence[Bar]], config: FeatureConfig
-) -> list[float]:
-    """Residual returns in time order, capped at the model lookback."""
-    demeaned = _demeaned(_return_by_session(own), [_return_by_session(peer) for peer in peers])
-    return [value for _, value in demeaned][-config.lookback_sessions :]
+    own: Sequence[Bar],
+    peers: Sequence[Sequence[Bar]],
+    config: FeatureConfig,
+    flags: list[str],
+) -> list[tuple[datetime, float]]:
+    """Residual returns with their sessions, capped at the model lookback.
+
+    The session travels with the value. Reconstructing it positionally from the
+    bar list would misattribute every residual before any gap in the series.
+    """
+    demeaned = _demeaned(
+        _return_by_session(own), [_return_by_session(peer) for peer in peers], flags
+    )
+    return demeaned[-config.lookback_sessions :]
 
 
 def _returns_features(
@@ -352,12 +400,11 @@ def _returns_features(
 
 def _gap_feature(
     features: dict[str, float],
-    symbol: str,
     own: Sequence[Bar],
     peers: Sequence[Sequence[Bar]],
     flags: list[str],
 ) -> None:
-    demeaned = _demeaned(_gap_by_session(own), [_gap_by_session(peer) for peer in peers])
+    demeaned = _demeaned(_gap_by_session(own), [_gap_by_session(peer) for peer in peers], flags)
     if demeaned:
         features["opening_gap_residual"] = demeaned[-1][1]
     else:
@@ -440,16 +487,27 @@ def _extreme_feature(
 def _event_feature(
     features: dict[str, float],
     own: Sequence[Bar],
-    residuals: Sequence[float],
+    residuals: Sequence[tuple[datetime, float]],
     event_time: datetime | None,
     flags: list[str],
 ) -> None:
+    """Sum the residuals of the sessions that fall entirely after the event.
+
+    A session's return runs from the previous close to its own close, so a
+    session is only post-event once that whole span is. Comparing the event
+    against the session's own close stamp would include the session the event
+    happened in, whose return covers the hours before it: an intraday news item
+    is stamped earlier than the close of the day it lands on. That is same-bar
+    contamination in the one feature whose purpose is what happened after.
+    """
     if event_time is None:
         flags.append(NO_EVENT_TIME)
         return
     event = require_utc(event_time, "event_time")
-    sessions = [item.session for item in own][-len(residuals) :] if residuals else []
-    window = [value for session, value in zip(sessions, residuals, strict=True) if session > event]
+    opens_after = {
+        current.session: previous.session >= event for previous, current in itertools.pairwise(own)
+    }
+    window = [value for session, value in residuals if opens_after.get(session, False)]
     if not window:
         flags.append(f"{INSUFFICIENT_HISTORY}:cumulative_abnormal_return")
         return

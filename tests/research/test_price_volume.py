@@ -20,6 +20,7 @@ from alphaledger.evidence.price_volume import (
     ABNORMAL_VOLUME_DAILY_BASELINE,
     INSUFFICIENT_HISTORY,
     NO_EVENT_TIME,
+    NO_PEER_DATA,
     NO_QUALIFYING_DATA,
     SECTOR_FALLBACK_MARKET,
     WINSORIZED,
@@ -335,7 +336,7 @@ def test_two_bars_for_one_session_that_disagree_are_ambiguous_not_ordered() -> N
         open_="101.00",
         high="103.00",
         low="99.00",
-        close="105.00",
+        close="100.00",
         volume=2_000_000,
     )
 
@@ -363,13 +364,13 @@ def test_a_short_history_yields_missing_markers_and_flags_not_zeroes() -> None:
     assert "residual_return_5s" not in block.features
     assert "residual_return_zscore" not in block.features
     assert f"{INSUFFICIENT_HISTORY}:residual_return_5s" in block.quality_flags
-    assert 0.0 not in set(block.features.values()) or "residual_return_1s" in block.features
+    # exactly the features three sessions can support, and nothing filled in
+    assert set(block.features) == {"residual_return_1s", "opening_gap_residual"}
 
 
 def test_a_flat_price_gives_a_missing_marker_rather_than_a_zero_denominator() -> None:
     """A zero denominator is routine here. RESEARCH-LANE.md names it: the
     domain type rejects NaN, so it has to be handled rather than produced."""
-    flat = tuple(flat_peer("TARGET") + flat_peer("PEER1") + flat_peer("PEER2"))
     still = [
         bar(
             symbol, index, open_="50.00", high="50.00", low="50.00", close="50.00", volume=1_000_000
@@ -383,13 +384,98 @@ def test_a_flat_price_gives_a_missing_marker_rather_than_a_zero_denominator() ->
     assert "range_over_atr" not in block.features
     assert "proximity_to_extreme" not in block.features
     assert f"{ZERO_DENOMINATOR}:range_over_atr" in block.quality_flags
-    assert flat  # the flat panel is built to prove the helper is not the cause
+    assert f"{ZERO_DENOMINATOR}:proximity_to_extreme" in block.quality_flags
 
 
 def test_the_volume_baseline_is_daily_and_says_so_because_intraday_is_absent() -> None:
     block = build("TARGET", AS_OF, panel(), config())
 
     assert ABNORMAL_VOLUME_DAILY_BASELINE in block.quality_flags
+
+
+def test_an_intraday_event_still_excludes_the_session_it_happened_in() -> None:
+    """A news item is stamped mid-session, earlier than that session's close.
+
+    A window keyed on the close stamp alone would then include the event
+    session, whose close to close return spans the morning before the event.
+    That is same-bar contamination in the one feature whose whole purpose is to
+    measure what happened after.
+    """
+    moved = [
+        bar(
+            "TARGET",
+            index,
+            open_="100.00",
+            high="103.00",
+            low="99.00",
+            close={SESSIONS - 2: "101.00", SESSIONS - 1: "102.00"}.get(index, "100.00"),
+            volume=1_000_000,
+        )
+        for index in range(SESSIONS)
+    ]
+    bars = tuple(moved) + tuple(flat_peer("PEER1")) + tuple(flat_peer("PEER2"))
+    intraday = session_at(SESSIONS - 2) - timedelta(hours=6)
+
+    block = build("TARGET", AS_OF, bars, config(), event_time=intraday)
+
+    assert block.features["cumulative_abnormal_return"] == pytest.approx(102 / 101 - 1, abs=1e-12)
+
+
+def test_the_five_session_sum_is_a_sum_and_not_the_latest_move() -> None:
+    """Two moves of different sizes inside the window, so a builder returning
+    only the last one cannot pass."""
+    closes = {SESSIONS - 3: "104.00", SESSIONS - 2: "104.00", SESSIONS - 1: "105.00"}
+    moved = [
+        bar(
+            "TARGET",
+            index,
+            open_="100.00",
+            high="106.00",
+            low="99.00",
+            close=closes.get(index, "100.00"),
+            volume=1_000_000,
+        )
+        for index in range(SESSIONS)
+    ]
+    bars = tuple(moved) + tuple(flat_peer("PEER1")) + tuple(flat_peer("PEER2"))
+
+    block = build("TARGET", AS_OF, bars, config())
+
+    assert block.features["residual_return_1s"] == pytest.approx(105 / 104 - 1, abs=1e-12)
+    assert block.features["residual_return_5s"] == pytest.approx(
+        (104 / 100 - 1) + (105 / 104 - 1), abs=1e-12
+    )
+
+
+def test_a_bar_whose_close_sits_outside_its_own_range_is_refused() -> None:
+    """`proximity_to_extreme` is exempt from winsorization because it is bounded
+    by construction. That holds only while a close lies inside its own range,
+    so the bar type enforces it rather than the feature assuming it."""
+    with pytest.raises(ValueError, match="close"):
+        bar("TARGET", 0, open_="100.00", high="101.00", low="99.00", close="150.00", volume=1_000)
+
+
+def test_a_bar_priced_at_zero_is_refused_rather_than_skipped_silently() -> None:
+    """A zero close makes the next session's return undefined, and skipping it
+    would drop a session out of the middle of a series with nothing said."""
+    with pytest.raises(ValueError, match="positive"):
+        bar("TARGET", 0, open_="100.00", high="101.00", low="0.00", close="0.00", volume=1_000)
+
+
+def test_a_symbol_with_no_peers_at_all_says_so_rather_than_claiming_a_market() -> None:
+    """`sector_fallback_market` means a broad median was used. With no peers
+    there is no median and the return is raw, which a consumer has to be able
+    to tell apart."""
+    block = build("TARGET", AS_OF, tuple(target()), config())
+
+    assert NO_PEER_DATA in block.quality_flags
+    assert block.features["residual_return_1s"] == pytest.approx(0.02, abs=1e-12)
+
+
+def test_a_full_sector_never_sets_the_no_peer_flag() -> None:
+    block = build("TARGET", AS_OF, panel(), config())
+
+    assert NO_PEER_DATA not in block.quality_flags
 
 
 # --- configuration ------------------------------------------------------
@@ -424,6 +510,13 @@ def test_the_feature_version_changes_when_any_config_value_changes() -> None:
 
     assert len(versions) == 5
     assert build("TARGET", AS_OF, panel(), baseline).feature_version == baseline.feature_version
+
+
+def test_a_lookback_shorter_than_the_volatility_window_is_rejected_at_load() -> None:
+    """Otherwise the z-score is starved by configuration while the block
+    reports insufficient history, which blames the data for a config mistake."""
+    with pytest.raises(ValueError, match="lookback_sessions"):
+        config(lookback_sessions=10, residual_volatility_sessions=20)
 
 
 def test_a_non_positive_lookback_is_rejected() -> None:
@@ -461,7 +554,8 @@ for index in range(SESSIONS):
         bars.append(make(peer, index, "50.00", "51.00", "49.00", "50.00", 1_000_000))
 
 config = FeatureConfig(sector_by_symbol={"TARGET": "tech", "PEER1": "tech", "PEER2": "tech"})
-block = build("TARGET", AS_OF, tuple(bars), config)
+event = FIRST + timedelta(days=SESSIONS - 2, hours=-6)
+block = build("TARGET", AS_OF, tuple(bars), config, event_time=event)
 print(config.feature_version)
 for name in sorted(block.features):
     print(f"{name}={block.features[name]!r}")
