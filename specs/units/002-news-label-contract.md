@@ -2,7 +2,7 @@
 id: UNIT-002
 title: Amend the news label contract to hold what the labeler emits
 lane: shared
-state: in_review
+state: merged
 owner: mazwy/claude
 branch: feature/002-news-label-contract
 reviewer: code-reviewer
