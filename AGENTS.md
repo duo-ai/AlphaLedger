@@ -53,6 +53,17 @@ Keep deterministic responsibilities separated:
 - ledger code is append-only and records every decision, including no-trades;
 - presentation code reads projections and never changes trading state.
 
+Prefer a well established package to bespoke code. Before writing a parser, a
+state machine, a retry policy, a scheduler, a config loader, or a validation
+layer, name the package that already solves it and say why it is or is not a
+fit. Prefer something already in the dependency set to a new dependency, and
+pin whatever you add.
+
+The exception is code that must run before the environment exists. Both guard
+hooks and `scripts/coord.py` are standard library only on purpose: a hook that
+needed `uv sync` to have run could not protect a fresh clone. Say so when that
+constraint applies, so it does not read as reinvention.
+
 Use Python 3.14, `uv`, strict typing at domain boundaries, UTC internally, and
 the exchange calendar for sessions. Keep broker and LLM clients behind small
 interfaces so unit tests never require network access.
