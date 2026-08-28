@@ -162,6 +162,46 @@ each pinned by a test that fails if the window is widened by one.
   move made the inclusive and exclusive windows identical. All three now have
   fixtures that separate them.
 
+### Review round one, backtest-auditor
+
+Seven findings, all addressed. The first two are the ones that mattered.
+
+- Same-bar contamination in the event feature. The cumulative abnormal return
+  window compared `event_time` against each session's own close stamp. A news
+  item is stamped mid-session, earlier than that day's close, so the event
+  session was included and its close to close return, which spans the hours
+  before the event, was counted as reaction. That is the exact leak this family
+  exists to be clean of. The window now includes a session only when the whole
+  return period, previous close to close, falls after the event. A test with an
+  intraday event pins it, and another spans two sessions so a builder returning
+  only the last residual cannot pass.
+- Silent drop and positional misattribution. A zero prior close was skipped
+  with no flag, and residual values were then paired back to sessions by
+  position, so every residual before such a gap was attributed to the wrong
+  session. `Bar` now refuses a non-positive price outright, which removes the
+  skip, and residuals carry their session rather than being realigned by index.
+- A close outside its own high and low was accepted, which made
+  `proximity_to_extreme` unbounded in the one feature deliberately exempt from
+  winsorization. `Bar` now refuses it, so the exemption rests on an enforced
+  invariant rather than an assumed one.
+- `sector_fallback_market` was set even when the panel held no peers at all, so
+  a raw return looked like one demeaned against a broad median. A separate
+  `no_peer_data` flag now says which happened.
+- `FeatureConfig` allowed a `lookback_sessions` shorter than the volatility
+  window, which starved the z-score and then reported insufficient history,
+  blaming the data for a configuration mistake. Rejected at load.
+- Three test-quality defects, all real. One assertion was a tautology, one was
+  a no-op on an unused local, and the determinism script never passed an
+  `event_time`, so the byte-identical claim covered a subset of the output and
+  specifically excluded the code path both findings above lived in.
+- The sample standard deviation convention behind the z-score was disclosed
+  only in a test comment. It is now in the module docstring, where a consumer
+  of the feature block will see it.
+
+Twenty-seven defects were injected one at a time after these fixes and every
+one is caught by a named test. Two were additionally checked by hand after the
+harness returned an inconsistent verdict on one of them; both are caught.
+
 ### Not verified
 
 - No adapter produces `Bar` records from Alpaca. Every bar here is a fixture.
