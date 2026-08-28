@@ -17,7 +17,7 @@ import os
 import re
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 STATES = ("available", "claimed", "in_review", "merged", "blocked")
@@ -162,14 +162,16 @@ def cmd_claim(units: dict, unit_id: str, owner: str, branch: str | None) -> int:
         raise UnitError(
             f"{unit_id} is {meta['state']} (owner {meta['owner']}); pull --rebase and pick another unit"
         )
-    unmet = [dep for dep in meta.get("depends_on", []) if str(get(units, dep)[0]["state"]) != "merged"]
+    unmet = [
+        dep for dep in meta.get("depends_on", []) if str(get(units, dep)[0]["state"]) != "merged"
+    ]
     if unmet:
         raise UnitError(f"{unit_id} depends on unmerged units: {', '.join(unmet)}")
     slug = path.stem
     meta["state"] = "claimed"
     meta["owner"] = owner
     meta["branch"] = branch or f"feature/{slug}"
-    meta["claimed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    meta["claimed_at"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     for key in ("branch", "claimed_at"):
         if key not in order:
             order.append(key)
@@ -177,11 +179,15 @@ def cmd_claim(units: dict, unit_id: str, owner: str, branch: str | None) -> int:
     worktree = f"../AlphaLedger-wt/{slug}"
     print(f"claimed {unit_id} for {owner} on branch {meta['branch']}")
     print("\nCommit and push the claim to develop before you start work:")
-    print(f"  git add {path.as_posix()} && git commit -m 'claim: {unit_id} ({owner})' && git push origin develop")
+    print(
+        f"  git add {path.as_posix()} && git commit -m 'claim: {unit_id} ({owner})' && git push origin develop"
+    )
     print("\nThen create the isolated worktree:")
     print(f"  git worktree add {worktree} -b {meta['branch']} develop")
     if str(meta.get("preferred_runtime", "")) == "claude":
-        print(f"  cp .claude/settings.local.json {worktree}/.claude/   # untracked: does NOT carry into a worktree")
+        print(
+            f"  cp .claude/settings.local.json {worktree}/.claude/   # untracked: does NOT carry into a worktree"
+        )
     return 0
 
 
@@ -227,7 +233,9 @@ def self_test() -> int:
     try:
         directory = root / "units"
         directory.mkdir()
-        (directory / "001-domain.md").write_text(_sample("UNIT-001", "shared", "available", UNCLAIMED))
+        (directory / "001-domain.md").write_text(
+            _sample("UNIT-001", "shared", "available", UNCLAIMED)
+        )
         (directory / "010-adapter.md").write_text(
             _sample("UNIT-010", "execution", "available", UNCLAIMED, "[UNIT-001]")
         )
@@ -248,7 +256,9 @@ def self_test() -> int:
         # 3. claiming an available unit sets owner, state, branch
         assert cmd_claim(load_all(directory), "UNIT-001", "pablo/codex", None) == 0
         meta = load_all(directory)["UNIT-001"][0]
-        assert meta["state"] == "claimed" and meta["owner"] == "pablo/codex", "claim must record owner"
+        assert meta["state"] == "claimed" and meta["owner"] == "pablo/codex", (
+            "claim must record owner"
+        )
         assert meta["branch"] == "feature/001-domain", "claim must derive a branch"
         cases += 1
 
@@ -272,7 +282,9 @@ def self_test() -> int:
         cmd_state(load_all(directory), "UNIT-001", "in_review")
         cmd_state(load_all(directory), "UNIT-001", "merged")
         assert cmd_claim(load_all(directory), "UNIT-010", "ada/claude", None) == 0
-        assert load_all(directory)["UNIT-010"][0]["owner"] == "ada/claude", "dependency gate must open"
+        assert load_all(directory)["UNIT-010"][0]["owner"] == "ada/claude", (
+            "dependency gate must open"
+        )
         cases += 1
 
         # 7. a merged unit is terminal
@@ -286,7 +298,9 @@ def self_test() -> int:
         # 8. releasing a claim clears the owner and branch
         cmd_state(load_all(directory), "UNIT-020", "available")
         released = load_all(directory)["UNIT-020"][0]
-        assert released["owner"] == UNCLAIMED and released["branch"] == UNCLAIMED, "release must clear owner"
+        assert released["owner"] == UNCLAIMED and released["branch"] == UNCLAIMED, (
+            "release must clear owner"
+        )
         cases += 1
 
         # 9. owner strings must identify both a person and a runtime
@@ -307,7 +321,9 @@ def self_test() -> int:
         cases += 1
 
         # 11. two files declaring one id is a registry corruption, not a merge
-        (directory / "099-dupe.md").write_text(_sample("UNIT-001", "shared", "available", UNCLAIMED))
+        (directory / "099-dupe.md").write_text(
+            _sample("UNIT-001", "shared", "available", UNCLAIMED)
+        )
         try:
             load_all(directory)
             raise AssertionError("duplicate unit id must be refused")
