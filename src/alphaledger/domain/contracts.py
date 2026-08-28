@@ -24,6 +24,7 @@ from typing import Literal
 
 __all__ = [
     "AMBIGUITIES",
+    "CATEGORIES",
     "DIRECTIONS",
     "ENTITY_MATCHES",
     "MONEY_EXPONENT",
@@ -56,6 +57,17 @@ Relevance = Literal["direct", "industry_linked", "incidental", "unknown"]
 Surprise = Literal["unexpected", "partly_expected", "expected", "unknown"]
 Ambiguity = Literal["low", "medium", "high"]
 EntityMatch = Literal["matched", "not_matched", "uncertain"]
+Category = Literal[
+    "earnings",
+    "guidance",
+    "analyst",
+    "regulatory_legal",
+    "product",
+    "financing_ma",
+    "management",
+    "macro_industry",
+    "other",
+]
 
 # A Literal is a static annotation and stops nothing at run time. These labels
 # arrive as JSON parsed out of a model's reply, which is precisely where the
@@ -66,6 +78,17 @@ RELEVANCES = ("direct", "industry_linked", "incidental", "unknown")
 SURPRISES = ("unexpected", "partly_expected", "expected", "unknown")
 AMBIGUITIES = ("low", "medium", "high")
 ENTITY_MATCHES = ("matched", "not_matched", "uncertain")
+CATEGORIES = (
+    "earnings",
+    "guidance",
+    "analyst",
+    "regulatory_legal",
+    "product",
+    "financing_ma",
+    "management",
+    "macro_industry",
+    "other",
+)
 DataMode = Literal["opra", "indicative_no_option_alpha"]
 
 
@@ -223,7 +246,7 @@ class NewsLabel:
     source_time: datetime
     first_seen_time: datetime
     direction: Direction
-    category: str
+    category: Category
     novelty: Novelty
     relevance: Relevance
     surprise: Surprise
@@ -238,6 +261,7 @@ class NewsLabel:
         for field, allowed in (
             ("entity_match", ENTITY_MATCHES),
             ("direction", DIRECTIONS),
+            ("category", CATEGORIES),
             ("novelty", NOVELTIES),
             ("relevance", RELEVANCES),
             ("surprise", SURPRISES),
