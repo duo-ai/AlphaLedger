@@ -1,6 +1,7 @@
 ---
 name: bootstrap
 description: Use only when the user explicitly invokes $bootstrap to inspect and validate the local AlphaLedger environment after clone or toolchain changes.
+origin: AlphaLedger
 ---
 
 # Bootstrap AlphaLedger in Codex
@@ -11,7 +12,7 @@ credentials, mutate git, or create application code.
 1. Read `AGENTS.md`, `project-state/STATUS.md`, and
    `project-state/DECISIONS.md`.
 2. Report `codex --version`, `uv --version`, and `python3 --version`. Python
-   3.12 is the application target; a different interpreter blocks application
+   3.14 is the application target; a different interpreter blocks application
    setup but not inspection of this planning package.
 3. Parse every committed TOML and JSON configuration without expanding or
    printing environment values.

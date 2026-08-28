@@ -1,6 +1,7 @@
 ---
 name: research-gate
 description: Use only when the user explicitly invokes $research-gate to audit whether an AlphaLedger candidate may be frozen under Gate G3.
+origin: AlphaLedger
 ---
 
 # Evaluate research Gate G3

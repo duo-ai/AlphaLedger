@@ -1,6 +1,7 @@
 ---
 name: submission-readiness
 description: Audit the frozen AlphaLedger repository and competition artifacts before final submission and wind-down.
+origin: AlphaLedger
 disable-model-invocation: true
 ---
 

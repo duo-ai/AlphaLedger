@@ -43,7 +43,7 @@ submission audit.
 
 1. Install a current Claude Code release. Version 2.1.233 or later is required
    for `claude plugin validate .claude/agents`.
-2. Install Python 3.12 and `uv`/`uvx`.
+2. Install Python 3.14 and `uv`/`uvx`.
 3. Start from the repository root. Project settings are read from the directory
    where Claude Code starts:
 
@@ -148,6 +148,13 @@ test.
 | `/paper-smoke submit` | one-contract G1 test | exact human acknowledgement plus app-only order path |
 | `/handoff` | useful session checkpoint | edits committed state files, no git mutation |
 | `/submission-readiness` | G5/G6 | audit only; no submission or broker mutation without a separate request |
+| `/social-update` | daily progress post | writes a draft to `social/`; never posts |
+
+Two further skills are model-invocable because they touch no trading state:
+`/tdd-workflow` drives a claimed unit from its test list, and
+`/verification-loop` runs the quality gate and reports. Every skill above
+them stays manual-only.
+
 
 ## Official references used
 

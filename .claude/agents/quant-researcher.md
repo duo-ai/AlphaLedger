@@ -2,7 +2,7 @@
 name: quant-researcher
 description: Use this agent when proposing or challenging an alpha hypothesis, feature family, label, validation design, or empirical claim before implementation or freeze.
 tools: Read, Grep, Glob, WebSearch, WebFetch
-model: opus
+model: sonnet
 effort: high
 permissionMode: plan
 color: blue

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Handoff"
+  short_description: "Write an evidence-based session checkpoint"
+  brand_color: "#0EA5E9"
+  default_prompt: "Use $handoff to write an evidence-based checkpoint for the next session."
+policy:
+  allow_implicit_invocation: false

@@ -27,7 +27,7 @@ holds project configuration, hooks, rules, and custom-agent TOML files.
 ## First use
 
 1. Install a current Codex CLI or open the project in the Codex app. Install
-   Python 3.12 and `uv`/`uvx`.
+   Python 3.14 and `uv`/`uvx`.
 2. Start at the repository root so root instructions, project skills, and
    project configuration resolve as intended:
 
@@ -148,6 +148,13 @@ decision and contract-test evidence.
 | `$paper-smoke submit` | one-contract G1 test | exact acknowledgement and app-only order path |
 | `$handoff` | useful session checkpoint | edits shared state, no git mutation |
 | `$submission-readiness` | G5/G6 | audit only; no submission or broker mutation without a separate request |
+| `$social-update` | daily progress post | writes a draft to `social/`; never posts |
+
+Each skill carries `agents/openai.yaml`, the Codex interface binding, with
+`allow_implicit_invocation: false` on every lifecycle skill. Only
+`$tdd-workflow` and `$verification-loop` may be selected implicitly, because
+neither touches trading state.
+
 
 Descriptions explicitly require user invocation because Codex discovers and
 may otherwise select skills by their descriptions. The exact acknowledgement
