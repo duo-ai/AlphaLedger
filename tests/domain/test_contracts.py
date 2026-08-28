@@ -15,6 +15,7 @@ from decimal import Decimal
 import pytest
 
 from alphaledger.domain import (
+    ENTITY_MATCHES,
     EvidenceCard,
     Forecast,
     NewsLabel,
@@ -40,6 +41,9 @@ def a_news_label(**overrides: object) -> NewsLabel:
         "ambiguity": "low",
         "evidence_spans": ("beat consensus",),
         "labeler_version": "v1",
+        "ticker": "AAPL",
+        "entity_match": "matched",
+        "limitations": (),
     }
     fields.update(overrides)
     return NewsLabel(**fields)  # type: ignore[arg-type]
@@ -393,3 +397,90 @@ def test_a_float_leg_value_is_rejected() -> None:
     """A strike is money. rules/01-safety.md forbids float for it."""
     with pytest.raises(TypeError, match="legs"):
         a_structure_plan(legs=({"symbol": "AAPL", "strike": 200.0},))
+
+
+# --- UNIT-002: the label holds what the labeler emits --------------------
+
+
+def test_a_label_carries_the_ticker_the_entity_match_and_its_limitations() -> None:
+    """Prompt B emits all three. Without them a label cannot say which company
+    it is about, whether it matched at all, or what it could not determine."""
+    label = a_news_label(
+        ticker="MSFT",
+        entity_match="uncertain",
+        limitations=("body was empty", "no expectation stated"),
+    )
+
+    assert label.ticker == "MSFT"
+    assert label.entity_match == "uncertain"
+    assert label.limitations == ("body was empty", "no expectation stated")
+
+
+def test_a_labeler_may_say_it_does_not_know_the_novelty_or_the_relevance() -> None:
+    """Prompt B's consistency rules require `unknown` when republication is not
+    established. The frozen record previously made that impossible to store, so
+    the label had to claim a certainty the model refused to claim."""
+    label = a_news_label(novelty="unknown", relevance="unknown")
+
+    assert label.novelty == "unknown"
+    assert label.relevance == "unknown"
+
+
+def test_a_not_matched_label_constructs_whatever_its_relevance_says() -> None:
+    """Prompt B's consistency rules belong to the adapter that validates model
+    output, per D-014 and D-016. A record that enforced them here would reject
+    labels the contract itself permits, because Prompt B qualifies its own
+    rules."""
+    label = a_news_label(entity_match="not_matched", relevance="direct", ambiguity="low")
+
+    assert label.entity_match == "not_matched"
+    assert label.relevance == "direct"
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_a_label_without_a_ticker_is_refused_rather_than_defaulted(blank: str) -> None:
+    with pytest.raises(ValueError, match="ticker"):
+        a_news_label(ticker=blank)
+
+
+def test_an_entity_match_outside_the_allowed_values_is_refused() -> None:
+    with pytest.raises(ValueError, match="entity_match"):
+        a_news_label(entity_match="probably")
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("direction", "bullish"),
+        ("novelty", "fresh"),
+        ("relevance", "related"),
+        ("surprise", "shocking"),
+        ("ambiguity", "none"),
+        ("entity_match", "maybe"),
+    ],
+)
+def test_every_enumerated_label_field_is_checked_at_run_time(field: str, value: str) -> None:
+    """A Literal is a static annotation and stops nothing at run time. These
+    records are built from model output parsed out of JSON, so the type
+    annotation is exactly the guarantee that does not hold where it matters."""
+    with pytest.raises(ValueError, match=field):
+        a_news_label(**{field: value})
+
+
+def test_a_bare_string_of_limitations_is_refused_rather_than_shredded() -> None:
+    """The same defect UNIT-001's review found on evidence_spans: a string is
+    iterable, so one limitation would become a tuple of characters."""
+    with pytest.raises(TypeError, match="limitations"):
+        a_news_label(limitations="body was empty")
+
+
+def test_a_label_that_states_nothing_extra_still_constructs() -> None:
+    """Saying nothing is a valid label. An empty tuple is not an error."""
+    label = a_news_label(evidence_spans=(), limitations=())
+
+    assert label.evidence_spans == ()
+    assert label.limitations == ()
+
+
+def test_the_allowed_entity_matches_are_exactly_prompt_b_s_three() -> None:
+    assert ENTITY_MATCHES == ("matched", "not_matched", "uncertain")

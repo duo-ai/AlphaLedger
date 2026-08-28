@@ -23,8 +23,14 @@ from types import MappingProxyType
 from typing import Literal
 
 __all__ = [
+    "AMBIGUITIES",
+    "DIRECTIONS",
+    "ENTITY_MATCHES",
     "MONEY_EXPONENT",
     "MONEY_ROUNDING",
+    "NOVELTIES",
+    "RELEVANCES",
+    "SURPRISES",
     "EvidenceCard",
     "Forecast",
     "NewsLabel",
@@ -40,11 +46,26 @@ __all__ = [
 MONEY_EXPONENT = Decimal("0.0001")
 MONEY_ROUNDING = ROUND_HALF_EVEN
 
+# `unknown` on novelty and relevance, and the entity match, come from
+# orchestrator-system-prompt.md Prompt B, which is the labeler's contract.
+# D-016 accepts holding what the labeler emits rather than narrowing it: a
+# label forced onto a defined value would claim a certainty the model refused.
 Direction = Literal["positive", "negative", "mixed", "neutral"]
-Novelty = Literal["new", "follow_up", "duplicate"]
-Relevance = Literal["direct", "industry_linked", "incidental"]
+Novelty = Literal["new", "follow_up", "duplicate", "unknown"]
+Relevance = Literal["direct", "industry_linked", "incidental", "unknown"]
 Surprise = Literal["unexpected", "partly_expected", "expected", "unknown"]
 Ambiguity = Literal["low", "medium", "high"]
+EntityMatch = Literal["matched", "not_matched", "uncertain"]
+
+# A Literal is a static annotation and stops nothing at run time. These labels
+# arrive as JSON parsed out of a model's reply, which is precisely where the
+# annotation does not hold, so the allowed values are also data.
+DIRECTIONS = ("positive", "negative", "mixed", "neutral")
+NOVELTIES = ("new", "follow_up", "duplicate", "unknown")
+RELEVANCES = ("direct", "industry_linked", "incidental", "unknown")
+SURPRISES = ("unexpected", "partly_expected", "expected", "unknown")
+AMBIGUITIES = ("low", "medium", "high")
+ENTITY_MATCHES = ("matched", "not_matched", "uncertain")
 DataMode = Literal["opra", "indicative_no_option_alpha"]
 
 
@@ -150,6 +171,13 @@ def _leg(value: Mapping[str, object], field: str) -> Mapping[str, object]:
     return MappingProxyType(out)
 
 
+def _one_of(value: object, allowed: tuple[str, ...], field: str) -> str:
+    """Check an enumerated field against its allowed values at run time."""
+    if value not in allowed:
+        raise ValueError(f"{field} must be one of {', '.join(allowed)}; got {value!r}")
+    return str(value)
+
+
 def _set(instance: object, field: str, value: object) -> None:
     object.__setattr__(instance, field, value)
 
@@ -185,6 +213,8 @@ class ObservationTimestamps:
 @dataclass(frozen=True, slots=True)
 class NewsLabel:
     article_id: str
+    ticker: str
+    entity_match: EntityMatch
     source_time: datetime
     first_seen_time: datetime
     direction: Direction
@@ -194,12 +224,25 @@ class NewsLabel:
     surprise: Surprise
     ambiguity: Ambiguity
     evidence_spans: tuple[str, ...]
+    limitations: tuple[str, ...]
     labeler_version: str
 
     def __post_init__(self) -> None:
+        if not self.ticker.strip():
+            raise ValueError("ticker must name the company the label is about; never defaulted")
+        for field, allowed in (
+            ("entity_match", ENTITY_MATCHES),
+            ("direction", DIRECTIONS),
+            ("novelty", NOVELTIES),
+            ("relevance", RELEVANCES),
+            ("surprise", SURPRISES),
+            ("ambiguity", AMBIGUITIES),
+        ):
+            _one_of(getattr(self, field), allowed, field)
         _set(self, "source_time", require_utc(self.source_time, "source_time"))
         _set(self, "first_seen_time", require_utc(self.first_seen_time, "first_seen_time"))
         _set(self, "evidence_spans", _strings(self.evidence_spans, "evidence_spans"))
+        _set(self, "limitations", _strings(self.limitations, "limitations"))
 
 
 @dataclass(frozen=True, slots=True)
