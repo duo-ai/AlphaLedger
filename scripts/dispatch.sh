@@ -183,8 +183,24 @@ git diff --quiet && git diff --cached --quiet \
 # claiming anything, so a retry cannot deepen the mess.
 for slug in "${SLUGS[@]}"; do
     if [ "$CONTINUE" = true ]; then
-        [ -d "$ROOT/../AlphaLedger-wt/$slug" ] \
+        wt="$ROOT/../AlphaLedger-wt/$slug"
+        [ -d "$wt" ] \
             || die "--continue needs an existing worktree at ../AlphaLedger-wt/$slug. Dispatch without it to start fresh."
+        # A second pass is told to read the intake again, because the review
+        # findings are recorded there. Those land on develop, and the agent runs
+        # with -C on this worktree, so without this the brief points at an
+        # amended specification the checkout does not have and the agent
+        # re-reads the one it already implemented. Git Flow rebases a feature
+        # branch onto develop and never merges develop into one; see
+        # .claude/rules/50-git.md.
+        git -C "$wt" diff --quiet && git -C "$wt" diff --cached --quiet \
+            || die "worktree $wt has uncommitted work. Commit it there before continuing, or the rebase loses it."
+        # A conflict stops the whole batch. Dispatching an agent into a
+        # half-rebased worktree is worse than not dispatching it at all.
+        if ! git -C "$wt" rebase develop >/dev/null 2>&1; then
+            git -C "$wt" rebase --abort >/dev/null 2>&1 || true
+            die "rebasing feature/$slug onto develop conflicts. Resolve it in $wt, then dispatch again."
+        fi
         continue
     fi
     if git show-ref --verify --quiet "refs/heads/feature/$slug"; then
