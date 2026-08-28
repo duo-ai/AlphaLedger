@@ -2,7 +2,7 @@
 id: UNIT-024
 title: Split chronologically and register every trial
 lane: research
-state: in_review
+state: merged
 owner: mazwy/claude
 branch: feature/024-splits-and-trial-registry
 reviewer: backtest-auditor
