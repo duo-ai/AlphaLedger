@@ -191,6 +191,43 @@ concurrent-writer case this unit still does not claim to support.
 Nineteen defects were injected one at a time after these fixes and every one
 was caught by a named test.
 
+### Review round two, backtest-auditor
+
+Round two audited what round one's fixes could have broken, which is where the
+one real regression was.
+
+- Medium, and a regression I introduced. Round one made a read reject an
+  unregistered `feed` filter. That also rejected a feed genuinely present in
+  the store whenever the reading instance's registry did not list it, which is
+  the normal case for an auditing reader or a retired feed. It contradicted the
+  append-only claim the unit rests on: what the ledger holds must stay
+  queryable. The check is now keyed off the registry and the feeds actually
+  present in the store, decided after the same pass the read already makes, so
+  no second read and no stale snapshot. A typo belonging to neither is still
+  rejected.
+- Medium, the construction-time read changed the blast radius of corruption. A
+  torn last line, the shape an unclean kill leaves, now blocks every future
+  write as well as every read, where before the fix a recorder could still be
+  opened and appended to. This is held deliberately: truncating to the last
+  readable record would reopen the hole the raise exists to close, because a
+  torn last line is not distinguishable from a deliberately truncated one. It
+  is now stated in the code and pinned by
+  `test_a_corrupted_store_refuses_new_writes_and_not_only_reads`. It is
+  arguably a project level decision rather than a unit note, so it may deserve
+  an entry in `project-state/DECISIONS.md`, which is outside this unit's paths.
+- No defect in the dedupe itself. The address is computed over every field
+  except itself with sorted keys, and the check sits after every validation
+  step, so a repeated call is fully revalidated before being recognised. One
+  observability limit: the return value does not distinguish a fresh write from
+  a matched duplicate.
+- The concurrent-writer gap is unchanged rather than worsened. Two already-open
+  writers still duplicate a fact, exactly as an unconditional append did. The
+  commit subject "make a retried write record one fact, not two" is about the
+  crash-and-restart case only, and does not claim the concurrent case.
+
+Twenty-two defects were injected one at a time across both rounds and every one
+was caught by a named test.
+
 ### Hazard for the next session
 
 Mutation testing rewrote a source file to the same byte length within the same
