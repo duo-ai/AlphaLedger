@@ -92,7 +92,11 @@ can be set to `False`.
 - success: the pre-submit assertion passes and the call proceeds.
 - failure: an environment variable naming the live host raises
   `LiveEndpointError` and the message does not contain any credential value.
-- failure: a 302 to another host raises before the request body is sent.
+- failure: a cross-host 302 is rejected without any replay to the redirect
+  target. Not "before the body is sent": a redirect is a response, so the body
+  has necessarily already gone. AC-3 was corrected for exactly this reason and
+  this line was left behind, which is the drift the claim-time paths and
+  clarification checks now exist to catch.
 - failure: a configuration object mutated after start to a live host is caught
   by the pre-submit assertion, not only the startup one.
 - restart: the assertion runs on every process start, so a restart cannot

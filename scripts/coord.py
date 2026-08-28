@@ -111,6 +111,51 @@ def get(units: dict, unit_id: str) -> tuple[dict[str, object], list[str], str, P
     return units[unit_id]
 
 
+OWNED_SECTIONS = ("## Contract", "## Test list", "## Verification")
+CLARIFICATION = re.compile(r"\[NEEDS CLARIFICATION:[^\]]*\]")
+PATH_TOKEN = re.compile(r"`((?:src|tests|research|config)/[A-Za-z0-9_./*-]+)`")
+COMMAND_TOKEN = re.compile(r"(?:pytest|mypy|ruff check)\s+((?:src|tests|research|config)/[^\s]+)")
+
+
+def _section(body: str, heading: str) -> str:
+    if heading not in body:
+        return ""
+    return body.split(heading, 1)[1].split("\n## ", 1)[0]
+
+
+def _covered(candidate: str, patterns: list[str]) -> bool:
+    for pattern in patterns:
+        if candidate == pattern:
+            return True
+        if pattern.endswith("**"):
+            root = pattern[:-2].rstrip("/")
+            if candidate == root or candidate.startswith(root + "/"):
+                return True
+    return False
+
+
+def undeclared_paths(meta: dict, body: str) -> list[str]:
+    """Files the unit's own body names that its declared globs do not permit.
+
+    The globs are authored before the test list is elaborated, so they drift.
+    The body is the later, more considered statement of what the unit touches.
+    """
+    patterns = [p.strip() for p in str(meta.get("paths", "")).split(",") if p.strip()]
+    if not patterns:
+        return ["<no paths declared>"]
+    named: set[str] = set()
+    for heading in OWNED_SECTIONS:
+        chunk = _section(body, heading)
+        named.update(PATH_TOKEN.findall(chunk))
+        named.update(COMMAND_TOKEN.findall(chunk))
+    return sorted(c for c in named if not _covered(c, patterns))
+
+
+def open_clarifications(body: str) -> list[str]:
+    """Questions the author deliberately left open rather than guessing."""
+    return CLARIFICATION.findall(body)
+
+
 def _glob_root(glob: str) -> str:
     """The fixed directory prefix of a path glob, before any wildcard."""
     return glob.split("*", 1)[0].rstrip("/")
@@ -211,6 +256,20 @@ def cmd_claim(units: dict, unit_id: str, owner: str, branch: str | None) -> int:
     ]
     if unmet:
         raise UnitError(f"{unit_id} depends on unmerged units: {', '.join(unmet)}")
+    open_questions = open_clarifications(body)
+    if open_questions:
+        raise UnitError(
+            f"{unit_id} still carries {len(open_questions)} open clarification(s): "
+            f"{'; '.join(q[:70] for q in open_questions)}. Resolve them in the intake "
+            "before claiming. A unit is claimable only when it is not knowingly hollow."
+        )
+    missing = undeclared_paths(meta, body)
+    if missing:
+        raise UnitError(
+            f"{unit_id} names files its declared paths forbid: {', '.join(missing)}. "
+            "Either widen paths or stop naming them. An agent that hits this mid-unit "
+            "has to stop, which is correct and expensive."
+        )
     clashes = conflicting_units(units, unit_id)
     if clashes:
         raise UnitError(
@@ -305,6 +364,7 @@ def _sample(unit_id: str, lane: str, state: str, owner: str, depends: str = "[]"
         f"state: {state}\n"
         f"owner: {owner}\n"
         "branch: -\n"
+        f"paths: src/alphaledger/{unit_id.lower()}.py\n"
         "reviewer: code-reviewer\n"
         "preferred_runtime: codex\n"
         f"depends_on: {depends}\n"
@@ -446,6 +506,36 @@ def self_test() -> int:
         assert paths_overlap("src/a/**", "src/b/**") is False, "siblings must not overlap"
         assert paths_overlap("src/data/**", "src/database/**") is False, "prefix is not containment"
         assert paths_overlap("src/a/x.py", "src/a/x.py") is True, "same file overlaps"
+        cases += 1
+
+        # 14. a unit may not be claimed while it names a file its paths forbid
+        (directory / "040-drift.md").write_text(
+            _sample("UNIT-040", "shared", "available", UNCLAIMED, "[]").replace(
+                "reviewer: code-reviewer",
+                "paths: src/alphaledger/thing.py\nreviewer: code-reviewer",
+            )
+            + "\n## Verification\n\n```bash\nuv run pytest tests/thing/test_thing.py\n```\n"
+        )
+        try:
+            cmd_claim(load_all(directory), "UNIT-040", "ada/claude", None)
+            raise AssertionError("undeclared paths must refuse the claim")
+        except UnitError as exc:
+            assert "forbid" in str(exc), "refusal must name the problem"
+        cases += 1
+
+        # 15. an open clarification blocks the claim
+        (directory / "041-open.md").write_text(
+            _sample("UNIT-041", "shared", "available", UNCLAIMED, "[]").replace(
+                "reviewer: code-reviewer",
+                "paths: src/alphaledger/other.py\nreviewer: code-reviewer",
+            )
+            + "\n## Contract\n\n[NEEDS CLARIFICATION: which feed supplies this]\n"
+        )
+        try:
+            cmd_claim(load_all(directory), "UNIT-041", "ada/claude", None)
+            raise AssertionError("an open clarification must refuse the claim")
+        except UnitError as exc:
+            assert "clarification" in str(exc), "refusal must name the clarification"
         cases += 1
         (directory / "099-dupe.md").write_text(
             _sample("UNIT-001", "shared", "available", UNCLAIMED)

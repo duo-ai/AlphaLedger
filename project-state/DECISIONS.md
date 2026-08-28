@@ -413,3 +413,55 @@ belong in the trial registry or status file.
   a different question and is the one that matters on the dispatch path.
 - Revisit only if: Codex memory becomes project-scoped, committable, and
   available to subagents. All three would have to change.
+
+## D-021: Three mechanisms from spec-kit, and the reason for skipping the rest
+
+- Date: 2026-08-29
+- Source: <https://github.com/github/spec-kit> at v1.0.0, read on 2026-08-29.
+- Adopted, because each one catches a failure this repository actually had:
+  1. Claim-time path coverage. Every `src` or `tests` file a unit's Contract,
+     Test list, or Verification names must be covered by its declared globs.
+     `coord.py claim` refuses otherwise. Validated against UNIT-010 as it was
+     originally written, where it correctly reports
+     `tests/execution/test_endpoint.py` undeclared, which is the defect that
+     stopped the first dispatch.
+  2. `[NEEDS CLARIFICATION: question]` as an intake marker, taken from
+     spec-kit's spec template. A unit carrying one is not claimable. This gives
+     an author a legal way to say "I am not guessing", which the intake
+     previously lacked: every section read as settled whether or not it was.
+  3. A measurability pass in every reviewer's brief. For each acceptance
+     criterion, name the observation that would falsify it and check that
+     observation is available. Spec-kit grades an untestable criterion HIGH,
+     and so do we now.
+- Rejected, with reasons rather than taste:
+  - The artifact split, spec plus plan plus research plus data-model plus
+    contracts plus quickstart plus tasks per unit. Eight to ten files and
+    fifteen to twenty-five model turns for a change our single intake already
+    describes.
+  - The WHAT versus HOW boundary, which is actively wrong here. UNIT-010's
+    load-bearing clause is that no `paper: bool` exists anywhere, because a
+    boolean can be set to `False`. That is a pure HOW statement and it is the
+    entire point of the unit. Spec-kit's own spec-quality checklist would fail
+    it as an implementation detail and exile it to a plan document, where it
+    would stop being a criterion anything gates on. For a project whose
+    invariants are type-shaped, that split is a liability.
+  - The user-story P1/P2/P3 organisation. Our units are infrastructure slices,
+    not user journeys.
+  - `.specify/` and its CLI. It tracks a single active feature in one gitignored
+    pointer file and has no concurrency model at all, which would fight the
+    worktree protocol rather than support it.
+  - Its parallelism marker. `[P] means different files, no dependencies`,
+    judged per task by a model, is a weaker form of what `coord.py` already
+    refuses at claim time by comparing declared globs.
+- Honest limit of what was adopted: the measurability pass is a prompt to a
+  competent reader, not a proof obligation. What actually caught the
+  unsatisfiable AC was `execution-safety-reviewer`, a different reader with
+  domain knowledge. Making the reading a named step improves the odds; it does
+  not make it mechanical.
+- Finding recorded because it was uncomfortable: UNIT-010's test list still
+  contained the corrected AC's false premise, days after the AC itself was
+  fixed. Writing tests first is not a measurability check when the same author
+  writes both the criterion and the test.
+- Revisit only if: units grow large enough that one intake stops being enough
+  to implement from, at which point the plan and tasks split earns a second
+  look.

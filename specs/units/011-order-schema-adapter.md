@@ -133,7 +133,7 @@ with the approved plan.
 ## Verification
 
 ```bash
-uv run pytest tests/execution -q
+uv run pytest tests/execution/test_orders.py -q
 uv run ruff check . && uv run ruff format --check .
 uv run mypy src
 ```
