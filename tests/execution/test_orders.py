@@ -11,6 +11,7 @@ from typing import cast
 import pytest
 
 from alphaledger.domain import StructurePlan
+from alphaledger.execution import orders as order_adapter
 from alphaledger.execution.orders import (
     DEBIT_CREDIT_SIGN_CONVENTION,
     BrokerOrderStatus,
@@ -19,6 +20,25 @@ from alphaledger.execution.orders import (
     canonical_bytes,
     order_payload_hash,
     parse_order,
+)
+
+
+_HASH_MUTATIONS: tuple[tuple[str, object], ...] = (
+    ("order_class", "simple"),
+    ("qty", "3"),
+    ("type", "market"),
+    ("limit_price", Decimal("1.2600")),
+    ("time_in_force", "gtc"),
+    ("client_order_id", "client-debit-002"),
+    ("legs", "reverse"),
+    ("legs[0].symbol", "SPY260918C00501000"),
+    ("legs[0].ratio_qty", "2"),
+    ("legs[0].side", "sell"),
+    ("legs[0].position_intent", "sell_to_open"),
+    ("legs[1].symbol", "SPY260918C00506000"),
+    ("legs[1].ratio_qty", "2"),
+    ("legs[1].side", "buy"),
+    ("legs[1].position_intent", "buy_to_open"),
 )
 
 
@@ -73,6 +93,45 @@ def _expected_payload() -> dict[str, object]:
                 "position_intent": "sell_to_open",
             },
         ],
+    }
+
+
+def _documented_trade_activity() -> dict[str, object]:
+    return {
+        "activity_type": "FILL",
+        "cum_qty": "1",
+        "id": "20190524113406977::8efc7b9a-8b2b-4000-9955-d36e7db0df74",
+        "leaves_qty": "0",
+        "price": "1.63",
+        "qty": "1",
+        "side": "buy",
+        "symbol": "LPCN",
+        "transaction_time": "2019-05-24T15:34:06.977Z",
+        "order_id": "904837e3-3b76-47ec-b432-046db621571b",
+        "type": "fill",
+    }
+
+
+def _documented_option_position() -> dict[str, object]:
+    return {
+        "asset_id": "fe4f43e5-60a4-4269-ba4c-3d304444d58b",
+        "symbol": "PTON240126C00000500",
+        "exchange": "",
+        "asset_class": "us_option",
+        "asset_marginable": True,
+        "qty": "2",
+        "avg_entry_price": "6.05",
+        "side": "long",
+        "market_value": "1068",
+        "cost_basis": "1210",
+        "unrealized_pl": "-142",
+        "unrealized_plpc": "-0.1173553719008264",
+        "unrealized_intraday_pl": "-142",
+        "unrealized_intraday_plpc": "-0.1173553719008264",
+        "current_price": "5.34",
+        "lastday_price": "5.34",
+        "change_today": "0",
+        "qty_available": "2",
     }
 
 
@@ -279,18 +338,159 @@ def test_truncated_broker_payload_raises_redacted_typed_adapter_error() -> None:
         assert "authorization" not in formatted_error
 
 
-def test_mutating_one_leg_after_hashing_changes_the_risk_binding() -> None:
+@pytest.mark.parametrize(
+    ("path", "replacement"),
+    _HASH_MUTATIONS,
+    ids=[path for path, _ in _HASH_MUTATIONS],
+)
+def test_mutating_any_top_level_or_leg_field_changes_the_risk_binding(
+    path: str,
+    replacement: object,
+) -> None:
     payload = _expected_payload()
     before = order_payload_hash(payload)
     mutated = copy.deepcopy(payload)
     legs = cast(list[dict[str, object]], mutated["legs"])
-    legs[0]["symbol"] = "SPY260918C00501000"
-    reordered = copy.deepcopy(payload)
-    reordered_legs = cast(list[dict[str, object]], reordered["legs"])
-    reordered_legs.reverse()
+    expected_paths = set(payload)
+    expected_paths.update(
+        f"legs[{index}].{field}" for index, leg in enumerate(legs) for field in leg
+    )
+    assert {mutation_path for mutation_path, _ in _HASH_MUTATIONS} == expected_paths
+
+    if path == "legs":
+        legs.reverse()
+    elif path.startswith("legs["):
+        leg_path, field = path.split(".", maxsplit=1)
+        leg_index = int(leg_path.removeprefix("legs[").removesuffix("]"))
+        legs[leg_index][field] = replacement
+    else:
+        mutated[path] = replacement
 
     assert order_payload_hash(mutated) != before
-    assert order_payload_hash(reordered) != before
+
+
+def test_documented_activity_and_position_parse_to_expected_frozen_records() -> None:
+    parse_activity = getattr(order_adapter, "parse_activity", None)
+    parse_position = getattr(order_adapter, "parse_position", None)
+    assert callable(parse_activity), "parse_activity must form the typed restart boundary"
+    assert callable(parse_position), "parse_position must form the typed restart boundary"
+
+    activity = parse_activity(_documented_trade_activity())
+    position = parse_position(_documented_option_position())
+
+    assert activity.broker_id == "20190524113406977::8efc7b9a-8b2b-4000-9955-d36e7db0df74"
+    assert activity.activity_type is order_adapter.BrokerActivityType.FILL
+    assert activity.symbol == "LPCN"
+    assert activity.signed_quantity == 1
+    assert activity.price == Decimal("1.63")
+    assert activity.transaction_time == datetime(2019, 5, 24, 15, 34, 6, 977000, tzinfo=UTC)
+    assert position.symbol == "PTON240126C00000500"
+    assert position.signed_quantity == 2
+    assert position.average_entry_price == Decimal("6.05")
+    assert position.side is order_adapter.BrokerPositionSide.LONG
+
+    with pytest.raises(FrozenInstanceError):
+        activity.price = Decimal("2.00")
+    with pytest.raises(FrozenInstanceError):
+        position.average_entry_price = Decimal("7.00")
+
+
+def test_ambiguous_submit_reconstructs_leg_quantities_from_activities_and_positions() -> None:
+    parse_activity = getattr(order_adapter, "parse_activity", None)
+    parse_position = getattr(order_adapter, "parse_position", None)
+    assert callable(parse_activity), "parse_activity must support restart reconciliation"
+    assert callable(parse_position), "parse_position must support restart reconciliation"
+
+    long_symbol = "SPY260918C00500000"
+    short_symbol = "SPY260918C00505000"
+    long_activity = {
+        **_documented_trade_activity(),
+        "id": "activity-long",
+        "symbol": long_symbol,
+        "price": "3.40",
+    }
+    short_activity = {
+        **_documented_trade_activity(),
+        "id": "activity-short",
+        "symbol": short_symbol,
+        "side": "sell",
+        "price": "2.15",
+        "type": "partial_fill",
+    }
+    long_position = {
+        **_documented_option_position(),
+        "symbol": long_symbol,
+        "qty": "1",
+        "avg_entry_price": "3.40",
+    }
+    short_position = {
+        **_documented_option_position(),
+        "symbol": short_symbol,
+        "qty": "-1",
+        "avg_entry_price": "2.15",
+        "side": "short",
+    }
+
+    activities = tuple(parse_activity(raw) for raw in (long_activity, short_activity))
+    positions = tuple(parse_position(raw) for raw in (long_position, short_position))
+
+    activity_quantities = {activity.symbol: activity.signed_quantity for activity in activities}
+    position_quantities = {position.symbol: position.signed_quantity for position in positions}
+    assert activity_quantities == {long_symbol: 1, short_symbol: -1}
+    assert position_quantities == activity_quantities
+
+
+@pytest.mark.parametrize(
+    ("parser_name", "payload_factory", "required_fields"),
+    (
+        (
+            "parse_activity",
+            _documented_trade_activity,
+            ("id", "type", "symbol", "qty", "price", "side", "transaction_time"),
+        ),
+        (
+            "parse_position",
+            _documented_option_position,
+            ("symbol", "qty", "avg_entry_price", "side"),
+        ),
+    ),
+)
+def test_truncated_activity_or_position_raises_redacted_typed_adapter_error(
+    parser_name: str,
+    payload_factory: object,
+    required_fields: tuple[str, ...],
+) -> None:
+    parser = getattr(order_adapter, parser_name, None)
+    assert callable(parser), f"{parser_name} must form the typed restart boundary"
+    assert callable(payload_factory)
+
+    for field in required_fields:
+        raw = payload_factory()
+        raw["authorization"] = "credential-shaped-value"
+        del raw[field]
+
+        with pytest.raises(OrderAdapterError) as error:
+            parser(raw)
+
+        formatted_error = "".join(traceback.format_exception(error.value))
+        assert not isinstance(error.value, (KeyError, TypeError))
+        assert "credential-shaped-value" not in formatted_error
+        assert "authorization" not in formatted_error
+
+
+def test_unrecognised_activity_type_and_position_side_remain_explicit_unknowns() -> None:
+    parse_activity = getattr(order_adapter, "parse_activity", None)
+    parse_position = getattr(order_adapter, "parse_position", None)
+    assert callable(parse_activity), "parse_activity must preserve unknown broker truth"
+    assert callable(parse_position), "parse_position must preserve unknown broker truth"
+    activity_raw = {**_documented_trade_activity(), "type": "future_fill_type"}
+    position_raw = {**_documented_option_position(), "side": "future_position_side"}
+
+    activity = parse_activity(activity_raw)
+    position = parse_position(position_raw)
+
+    assert activity.activity_type is order_adapter.BrokerActivityType.UNKNOWN
+    assert position.side is order_adapter.BrokerPositionSide.UNKNOWN
 
 
 def test_order_hash_survives_restart_when_plan_and_approval_inputs_are_unchanged() -> None:
