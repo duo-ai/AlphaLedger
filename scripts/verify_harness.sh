@@ -180,6 +180,24 @@ if bad:
 INNER
 check $? "every unit may write its own tests"
 
+# Codex records hook trust as a hash in ~/.codex/config.toml. Editing
+# .codex/hooks.json invalidates it, and Codex then SKIPS the hook silently: a
+# dispatched agent runs with no guard and nothing says so. Verified on
+# 2026-08-28, when a command carrying the live trading host ran at exit 0
+# inside codex exec while the same command was blocked under Claude Code.
+codex_trust=~/.codex/config.toml
+if [ -f "$codex_trust" ] && grep -q "hooks.state" "$codex_trust" 2>/dev/null; then
+    if [ .codex/hooks.json -nt "$codex_trust" ]; then
+        check 1 "codex hook trust is current (hooks.json is newer, re-approve with: codex, then /hooks)"
+    else
+        check 0 "codex hook trust is current"
+    fi
+elif [ -f "$codex_trust" ]; then
+    check 1 "codex hook trust recorded (none found, run codex then /hooks in this repo)"
+else
+    skip "codex hook trust (no codex config on this machine)"
+fi
+
 echo "== git flow =="
 git show-ref --verify --quiet refs/heads/develop; check $? "develop exists"
 git show-ref --verify --quiet refs/heads/main; check $? "main exists"
