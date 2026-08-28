@@ -490,9 +490,27 @@ def test_the_allowed_entity_matches_are_exactly_prompt_b_s_three() -> None:
 # UNIT-003: category is the last enumerated field left unchecked at run time
 
 
+def test_the_allowed_categories_are_exactly_prompt_b_s_nine() -> None:
+    """Pinned by literal equality, not by iterating the module's own tuple.
+
+    Iterating CATEGORIES and asserting each constructs cannot fail: _one_of
+    checks membership in that same tuple. A typo such as regulatory-legal would
+    keep the suite green while every real label was rejected at run time.
+    """
+    assert CATEGORIES == (
+        "earnings",
+        "guidance",
+        "analyst",
+        "regulatory_legal",
+        "product",
+        "financing_ma",
+        "management",
+        "macro_industry",
+        "other",
+    )
+
+
 def test_every_prompt_b_category_constructs() -> None:
-    """The nine values Prompt B allows, and no fewer."""
-    assert len(CATEGORIES) == 9, "Prompt B defines nine categories"
     for category in CATEGORIES:
         assert a_news_label(category=category).category == category
 

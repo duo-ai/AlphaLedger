@@ -99,3 +99,20 @@ uv run mypy src
   widened. Same defect class that stopped UNIT-010 on its first dispatch, so it
   is worth asking of any new intake: does the declared path set contain
   everything the contract names?
+- 2026-08-29 pablo/claude: `code-reviewer` returned conditional. The success
+  test iterated `CATEGORIES` and asserted each value constructs, which cannot
+  fail because `_one_of` checks membership in that same tuple. A typo would
+  have kept the suite green while every real label was rejected. Replaced with
+  a literal pin, matching the pattern already used for `ENTITY_MATCHES`, and
+  proved by mutation: the pin fails on a deliberate `regulatory-legal`, the old
+  test passes.
+- 2026-08-29 pablo/claude: design section 5.2 spells these in prose as
+  `regulatory/legal`, `financing/M&A` and `macro/industry`, while Prompt B's
+  schema block uses the underscore forms. The code follows Prompt B, because
+  that is the literal wire format the labeler returns. Recorded so the next
+  reader does not read the prose as a conflict.
+- 2026-08-29 pablo/claude: a unit's `paths` govern code, but every unit is also
+  expected to append here. The declared globs do not include the unit's own
+  intake, so writing a handoff note is technically outside them. Worth fixing
+  in the template rather than per unit.
+
