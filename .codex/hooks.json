@@ -14,6 +14,19 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "project_root=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; python3 \"$project_root/scripts/social_check.py\"",
+            "commandWindows": "$projectRoot = git rev-parse --show-toplevel 2>$null; if (-not $?) { $projectRoot = (Get-Location).Path }; py -3 \"$projectRoot\\scripts\\social_check.py\"",
+            "timeout": 5,
+            "statusMessage": "Checking the daily progress draft"
+          }
+        ]
+      }
     ]
   }
 }
