@@ -493,14 +493,30 @@ def test_a_symbol_with_no_peers_at_all_says_so_rather_than_claiming_a_market() -
     to tell apart."""
     block = build("TARGET", AS_OF, tuple(target()), config())
 
-    assert NO_PEER_DATA in block.quality_flags
+    # every session is raw, and the count says so
+    assert f"{NO_PEER_DATA}:{SESSIONS - 1}" in block.quality_flags
     assert block.features["residual_return_1s"] == pytest.approx(0.02, abs=1e-12)
+
+
+def test_one_session_without_peers_is_not_reported_as_a_block_without_peers() -> None:
+    """One raw return mixed into a volatility window is a different fact from a
+    block where nothing was demeaned at all, and the flag has to say which."""
+    gap = session_at(SESSIONS - 10)
+    thinned = tuple(
+        item for item in (*flat_peer("PEER1"), *flat_peer("PEER2")) if item.session != gap
+    )
+
+    partial = build("TARGET", AS_OF, (*target(), *thinned), config())
+    total = build("TARGET", AS_OF, tuple(target()), config())
+
+    assert f"{NO_PEER_DATA}:1" in partial.quality_flags
+    assert f"{NO_PEER_DATA}:{SESSIONS - 1}" in total.quality_flags
 
 
 def test_a_full_sector_never_sets_the_no_peer_flag() -> None:
     block = build("TARGET", AS_OF, panel(), config())
 
-    assert NO_PEER_DATA not in block.quality_flags
+    assert not [flag for flag in block.quality_flags if flag.startswith(NO_PEER_DATA)]
 
 
 # --- configuration ------------------------------------------------------

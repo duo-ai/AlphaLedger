@@ -353,18 +353,25 @@ def _demeaned(
     """Own value minus the peer median, session by session, in time order.
 
     A session with no peer observation is not demeaned at all, so the value is
-    the raw return. That is recorded, because `sector_fallback_market` means a
-    broad median was used and a consumer cannot otherwise tell the two apart.
+    the raw return. The number of such sessions is recorded, because
+    `sector_fallback_market` means a broad median was used and a consumer
+    cannot otherwise tell that from a return nothing was subtracted from.
     """
     peer_values = list(peers)
     out: list[tuple[datetime, float]] = []
+    undemeaned = 0
     for session in sorted(own):
         cross_section = [values[session] for values in peer_values if session in values]
         if not cross_section:
-            flags.append(NO_PEER_DATA)
+            undemeaned += 1
             out.append((session, own[session]))
             continue
         out.append((session, own[session] - statistics.median(cross_section)))
+    if undemeaned:
+        # The count, not a bare flag: one raw return mixed into a volatility
+        # window is a different fact from a block where nothing was demeaned at
+        # all, and a consumer cannot weigh the first without knowing how many.
+        flags.append(f"{NO_PEER_DATA}:{undemeaned}")
     return out
 
 
