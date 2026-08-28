@@ -2,12 +2,12 @@
 id: UNIT-023
 title: Encode point-in-time news into features
 lane: research
-state: blocked
+state: available
 owner: -
 branch: -
 reviewer: backtest-auditor
 preferred_runtime: claude
-depends_on: [UNIT-001, UNIT-020]
+depends_on: [UNIT-001, UNIT-002, UNIT-020]
 paths: src/alphaledger/evidence/labeler.py, src/alphaledger/evidence/news.py, tests/research/test_news.py
 ---
 
@@ -20,10 +20,12 @@ market signal. The family also has to be built deterministically around the
 label, because the moment feature construction depends on an LLM's judgment the
 result stops being reproducible and the comparison stops being falsifiable.
 
-## Blocked on a contract conflict
+## The contract conflict, and how it was resolved
 
-Two sources of truth disagree about the label schema. This unit is not
-claimable until the conflict is resolved, per `AGENTS.md`.
+Two sources of truth disagreed about the label schema. The conflict is
+recorded here because it shaped this unit, and it is resolved by D-016 and
+UNIT-002. This unit depends on UNIT-002, so `coord.py` refuses a claim until
+the amendment merges; the dependency does the enforcing rather than a note.
 
 `options-alpha-agent-design.md` section 14, frozen in
 `src/alphaledger/domain/contracts.py` by UNIT-001, defines `NewsLabel` with
@@ -45,10 +47,11 @@ permissive resolution, mapping `unknown` onto a defined value and dropping
 lose the one field that says an article is not about this company at all. That
 is the reading this repository forbids taking silently.
 
-Resolving it means amending the frozen contracts, which is the shared lane and
-a consequential decision, so it belongs in `project-state/DECISIONS.md` and in
-a shared unit of its own, not in this one. This unit becomes claimable when
-that lands.
+D-016 accepts the first reading: the frozen contracts are amended to hold what
+the labeler emits, rather than the labeler narrowed to fit them. UNIT-002 makes
+that change. Prompt B's consistency rules stay with the labeler adapter, per
+D-014, so this unit consumes labels that are already valid and does not
+re-judge them.
 
 ## Source of truth
 
