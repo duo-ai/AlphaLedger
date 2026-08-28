@@ -15,6 +15,7 @@ from decimal import Decimal
 import pytest
 
 from alphaledger.domain import (
+    CATEGORIES,
     ENTITY_MATCHES,
     EvidenceCard,
     Forecast,
@@ -484,3 +485,58 @@ def test_a_label_that_states_nothing_extra_still_constructs() -> None:
 
 def test_the_allowed_entity_matches_are_exactly_prompt_b_s_three() -> None:
     assert ENTITY_MATCHES == ("matched", "not_matched", "uncertain")
+
+
+# UNIT-003: category is the last enumerated field left unchecked at run time
+
+
+def test_the_allowed_categories_are_exactly_prompt_b_s_nine() -> None:
+    """Pinned by literal equality, not by iterating the module's own tuple.
+
+    Iterating CATEGORIES and asserting each constructs cannot fail: _one_of
+    checks membership in that same tuple. A typo such as regulatory-legal would
+    keep the suite green while every real label was rejected at run time.
+    """
+    assert CATEGORIES == (
+        "earnings",
+        "guidance",
+        "analyst",
+        "regulatory_legal",
+        "product",
+        "financing_ma",
+        "management",
+        "macro_industry",
+        "other",
+    )
+
+
+def test_every_prompt_b_category_constructs() -> None:
+    for category in CATEGORIES:
+        assert a_news_label(category=category).category == category
+
+
+def test_an_unknown_category_is_refused_and_the_message_lists_the_allowed_values() -> None:
+    with pytest.raises(ValueError, match="category") as excinfo:
+        a_news_label(category="lawsuit")
+    message = str(excinfo.value)
+    assert "earnings" in message, "the refusal should say what is allowed"
+
+
+def test_an_empty_category_is_refused_rather_than_defaulted() -> None:
+    """Choosing `other` on the caller's behalf is the labeler's judgment, not
+    the record's. A blank means the labeler did not answer."""
+    for blank in ("", "   ", "\t"):
+        with pytest.raises(ValueError, match="category"):
+            a_news_label(category=blank)
+
+
+def test_a_category_differing_only_in_case_is_refused() -> None:
+    """Normalising here would hide a labeler that is not following its schema."""
+    for variant in ("Earnings", "EARNINGS", "Financing_MA"):
+        with pytest.raises(ValueError, match="category"):
+            a_news_label(category=variant)
+
+
+def test_other_is_a_real_answer_and_constructs() -> None:
+    """None of these fits is a first-class result, not a missing value."""
+    assert a_news_label(category="other").category == "other"

@@ -1,9 +1,11 @@
 """Frozen domain contracts. No I/O, no broker, no model."""
 
 from alphaledger.domain.contracts import (
+    CATEGORIES,
     ENTITY_MATCHES,
     MONEY_EXPONENT,
     MONEY_ROUNDING,
+    Category,
     EntityMatch,
     EvidenceCard,
     Forecast,
@@ -16,9 +18,11 @@ from alphaledger.domain.contracts import (
 )
 
 __all__ = [
+    "CATEGORIES",
     "ENTITY_MATCHES",
     "MONEY_EXPONENT",
     "MONEY_ROUNDING",
+    "Category",
     "EntityMatch",
     "EvidenceCard",
     "Forecast",
