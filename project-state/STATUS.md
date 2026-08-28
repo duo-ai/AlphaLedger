@@ -4,11 +4,15 @@ Last updated: 2026-08-28
 
 ## Current phase
 
-Released as v0.1.0, and `develop` has moved past it. The development harness,
-the frozen domain contracts, the paper endpoint assertion, and the first
-research unit are merged. Both lanes are open and one unit of each is done. The
-Python project exists on 3.14 with a committed lockfile. No universe, feature,
-forecast, order, or ledger code exists yet.
+Released as v0.1.0, and `develop` has moved well past it. The research lane
+delegated in `RESEARCH-LANE.md` is complete: UNIT-020, UNIT-021, and UNIT-022
+are merged, so point-in-time recording, the lagged frozen universe, and the
+residual price and volume baseline all exist and are reviewed. The execution
+lane has the paper endpoint assertion and nothing after it. No news, forecast,
+structure, risk, order, or ledger code exists.
+
+Every number in the research lane comes from a fixture. Nothing has touched
+Alpaca.
 
 The dates in `hackathon-build-plan.md` are stale, confirmed by the user on
 2026-08-28. Treat the G0 to G6 sequence as binding and the calendar attached to
@@ -23,26 +27,37 @@ environment.
 
 ## Verified artifacts
 
-- `specs/`: the SDD intake, the unit template, and seven unit intakes.
-  UNIT-001, UNIT-010, and UNIT-020 merged; UNIT-011, UNIT-012, UNIT-021, and
-  UNIT-022 claimable.
+- `specs/`: the SDD intake, the unit template, and seven unit intakes. Five
+  merged; UNIT-011 and UNIT-012 claimable and both in the execution lane.
 - `src/alphaledger/domain/`: the five records from design section 14 plus
   `ObservationTimestamps`. Money is `Decimal`, not the `float` the design
   sketched; the conflict and its resolution are recorded in the UNIT-001
   intake.
 - Quality gate passes end to end on 3.14: `uv sync --frozen`, `ruff check`,
-  `ruff format --check`, `mypy src` under strict, and 108 tests. The gate now
+  `ruff format --check`, `mypy src` under strict, and 176 tests. The gate now
   runs inside `verify_harness.sh` too, so the script cannot be green while
   the repository gate is red.
-- `src/alphaledger/data/`: the point-in-time recorder and its append-only
-  store, merged as UNIT-020 by `mazwy/claude`. Six timestamps and a feed
-  identity on every record, an `as_of` read with no wall-clock alternative,
-  five orderings enforced feed by feed under the obligation D-014 hands the
-  adapter, and availability derived from a documented lag where delivery
-  cannot be proven. Two `backtest-auditor` rounds produced five findings; the
-  second round caught a regression the first round's own fix introduced, which
-  is the pattern `RESEARCH-LANE.md` predicts. Twenty-two injected defects were
-  each caught by a named test.
+- `src/alphaledger/data/recorder.py` and `storage.py`, UNIT-020. Six
+  timestamps and a feed on every record, an `as_of` read with no wall-clock
+  alternative, five orderings enforced feed by feed under the obligation D-014
+  hands the adapter, availability derived from a documented lag where delivery
+  cannot be proven, and `record` idempotent across a restart.
+- `src/alphaledger/data/universe.py`, UNIT-021. Membership decided at the prior
+  close from evidence knowable then, capped at thirty, ranked by median dollar
+  volume, hashed so a frozen run can be verified in another process. Tied
+  timestamps and unregistered feeds are refused rather than resolved. The
+  static fallback substitutes for optionability evidence alone and always
+  discloses itself.
+- `src/alphaledger/evidence/price_volume.py`, UNIT-022. All eight features from
+  design section 5.1 over a rolling median demeaning against sector peers. A
+  missing feature is absent and named in a flag, never an imputed zero. The
+  event window admits a session only when its whole return period follows the
+  event.
+- Every research unit went through two `backtest-auditor` rounds. Across the
+  three, the reviews produced fifteen findings, including one that blocked a
+  merge and one same-bar leak. Two of those were regressions introduced by an
+  earlier round's own fix, which is the pattern `RESEARCH-LANE.md` predicts.
+  Sixty-eight injected defects are each caught by a named test.
 - `scripts/coord.py`: claiming across runtimes. Self-test passes with 11 cases.
   The dependency gate was exercised on the real files in both directions:
   refused while UNIT-001 was unmerged, allowed once it merged.
@@ -78,25 +93,43 @@ environment.
 - The roster in `AGENTS.md` still names `teammate/claude` as a placeholder,
   while the research lane is in fact being worked by `mazwy/claude`. The roster
   table is stale, not the registry.
-- No real feed is connected. Every timestamp rule in the recorder is proven
-  self consistent against fixtures, not against Alpaca.
+- No real feed is connected anywhere. Every timestamp rule, screening
+  condition, and feature value is proven self consistent against fixtures, not
+  against Alpaca.
+- No threshold in the research lane has been selected on data. The universe
+  floors, the feature lookbacks, the winsorization limits, and the sector map
+  are declared defaults. Design section 4 and section 5.1 require them to be
+  chosen on development data, registered as trials, and frozen before any
+  autonomous session. That gate is untouched, and `feature_version` and the
+  universe hash exist so the selection is auditable when it happens.
+- `Bar` refuses a close outside its own high and low, which is tautologically
+  true of a well formed bar but would halt on a vendor inconsistency around a
+  corporate action. Whether Alpaca ever emits one is a question for
+  `alpaca-docs-researcher` before UNIT-020's adapter feeds UNIT-022. Recorded
+  in the UNIT-022 intake.
 - Concurrent writers on one store are unsupported and untested. A second
   already-open recorder can still duplicate a fact the first committed.
-- No universe, feature, forecast, order, or ledger code exists. Every G1 to G6
-  artifact is open.
+- Nothing compares the price family against news or combined baselines, which
+  is the comparison the whole lane exists to make.
+- No news, forecast, structure, risk, order, or ledger code exists. Every G1 to
+  G6 artifact is open.
 
 ## Next three tasks
 
-1. UNIT-021, the lagged frozen universe. Claimable now, and UNIT-022 is blocked
-   behind it.
-2. Record the real competition dates and account facts in the run manifest,
-   then pass or block G0. This is still the oldest open item.
-3. Dispatch UNIT-011 and UNIT-012 to Codex so the execution lane keeps pace
-   with the research lane.
+1. Record the real competition dates and account facts in the run manifest,
+   then pass or block G0. It is the oldest open item and now the only thing
+   holding the shape of everything after it.
+2. Dispatch UNIT-011 and UNIT-012 to Codex. The execution lane is two units
+   behind the research lane and owns the harder safety surface.
+3. Write the intakes for UNIT-023, news features, and UNIT-024, the forecast
+   and its baselines. UNIT-022 is the control in a comparison that has no other
+   side yet, so the price family cannot be judged until they exist.
 
 ## Read first next session
 
 1. `AGENTS.md`, including the parallel work protocol
 2. `specs/000-INTAKE.md`
 3. `project-state/DECISIONS.md`, D-009 through D-015
-4. `options-alpha-agent-design.md` sections 0 to 4 and 14
+4. `RESEARCH-LANE.md`, then the handoff notes in the three merged research
+   unit intakes, which carry the findings and the open questions
+5. `options-alpha-agent-design.md` sections 0 to 5 and 14
