@@ -63,7 +63,77 @@ def _sensitive_path(path: str) -> str | None:
     return None
 
 
+GIT_FLOW_PREFIXES = ("feature/", "bugfix/", "release/", "hotfix/", "support/")
+GIT_FLOW_BASE_BRANCHES = ("main", "develop")
+
+COMMIT_TELLS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(r"co-authored-by\s*:[^\n]*(claude|codex|gpt|copilot|anthropic|openai)", re.I),
+        "an AI attribution trailer",
+    ),
+    (re.compile(r"generated with\s*\[?(claude|codex|copilot)", re.I), "an AI generation marker"),
+    (re.compile("\U0001f916"), "a robot emoji"),
+    (re.compile(r"[\u2014\u2013]"), "an em or en dash"),
+)
+
+
+def _current_branch() -> str:
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def _git_violation(command: str) -> str | None:
+    if not re.search(r"\bgit\b", command):
+        return None
+
+    if re.search(r"\bgit\s+commit\b", command, re.I):
+        for pattern, reason in COMMIT_TELLS:
+            if pattern.search(command):
+                return f"{reason} in a commit message"
+        if _current_branch() == "main":
+            return "a direct commit to main; main takes only --no-ff merges from release/ or hotfix/"
+
+    for name in re.findall(r"\s-(?:b|c)\s+([^\s]+)", command):
+        if name not in GIT_FLOW_BASE_BRANCHES and not name.startswith(GIT_FLOW_PREFIXES):
+            allowed = ", ".join(GIT_FLOW_PREFIXES)
+            return f"branch name {name!r} outside the git flow prefixes ({allowed})"
+
+    for name in re.findall(r"\bgit\s+branch\s+-[mM]\s+(?:[^\s]+\s+)?([^\s]+)", command):
+        if name not in GIT_FLOW_BASE_BRANCHES and not name.startswith(GIT_FLOW_PREFIXES):
+            return f"branch rename to {name!r} outside the git flow prefixes"
+
+    if re.search(r"\bgit\s+push\b", command, re.I) and re.search(
+        r"(?:--force(?!-with-lease)|\s-f\b)", command
+    ):
+        return "a force push; use --force-with-lease on your own branch only"
+
+    if (
+        re.search(r"\bgit\s+merge\b", command, re.I)
+        and "--no-ff" not in command
+        and "--squash" not in command
+        and _current_branch() in GIT_FLOW_BASE_BRANCHES
+    ):
+        return "a fast-forward merge into a shared branch; git flow requires --no-ff"
+
+    return None
+
+
 def _bash_violation(command: str) -> str | None:
+    reason = _git_violation(command)
+    if reason:
+        return reason
+
     for pattern, reason in DESTRUCTIVE_COMMANDS:
         if pattern.search(command):
             return reason
@@ -218,6 +288,13 @@ def _self_test() -> int:
             },
             False,
         ),
+        ({"tool_name": "Bash", "tool_input": {"command": "git commit -m 'x\n\nCo-Authored-By: Claude <a@b>'"}}, True),
+        ({"tool_name": "Bash", "tool_input": {"command": "git commit -m 'fix guard \u2014 tighten regex'"}}, True),
+        ({"tool_name": "Bash", "tool_input": {"command": "git commit -m 'tighten the guard regex'"}}, False),
+        ({"tool_name": "Bash", "tool_input": {"command": "git checkout -b wip-thing"}}, True),
+        ({"tool_name": "Bash", "tool_input": {"command": "git checkout -b feature/010-order-adapter"}}, False),
+        ({"tool_name": "Bash", "tool_input": {"command": "git worktree add ../wt/x -b feature/020-recorder"}}, False),
+        ({"tool_name": "Bash", "tool_input": {"command": "git push --force origin develop"}}, True),
     )
     failures = [
         index
