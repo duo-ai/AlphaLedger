@@ -109,6 +109,48 @@ def get(units: dict, unit_id: str) -> tuple[dict[str, object], list[str], str, P
     return units[unit_id]
 
 
+def _glob_root(glob: str) -> str:
+    """The fixed directory prefix of a path glob, before any wildcard."""
+    return glob.split("*", 1)[0].rstrip("/")
+
+
+def _covers(outer: str, inner: str) -> bool:
+    return inner == outer or inner.startswith(outer + "/")
+
+
+def paths_overlap(left: str, right: str) -> bool:
+    """Do two units' declared path globs reach the same file?
+
+    D-010 permits parallel writers only while their globs are disjoint. A
+    directory glob swallows anything beneath it, which is how two agents end up
+    editing one file and discovering it at merge time.
+    """
+    for a in (item.strip() for item in left.split(",") if item.strip()):
+        for b in (item.strip() for item in right.split(",") if item.strip()):
+            if a == b:
+                return True
+            root_a, root_b = _glob_root(a), _glob_root(b)
+            if a.endswith("**") and _covers(root_a, root_b):
+                return True
+            if b.endswith("**") and _covers(root_b, root_a):
+                return True
+    return False
+
+
+def conflicting_units(units: dict, unit_id: str) -> list[str]:
+    """In-progress units whose globs reach the same files as this one."""
+    mine = str(units[unit_id][0].get("paths", ""))
+    if not mine:
+        return []
+    clashes = []
+    for other_id, (meta, _, _, _) in units.items():
+        if other_id == unit_id or meta["state"] not in ("claimed", "in_review"):
+            continue
+        if paths_overlap(mine, str(meta.get("paths", ""))):
+            clashes.append(f"{other_id} ({meta['owner']})")
+    return sorted(clashes)
+
+
 def cmd_list(units: dict, lane: str | None, state: str | None, owner: str | None) -> int:
     rows = []
     for unit_id in sorted(units):
@@ -167,6 +209,13 @@ def cmd_claim(units: dict, unit_id: str, owner: str, branch: str | None) -> int:
     ]
     if unmet:
         raise UnitError(f"{unit_id} depends on unmerged units: {', '.join(unmet)}")
+    clashes = conflicting_units(units, unit_id)
+    if clashes:
+        raise UnitError(
+            f"{unit_id} declares paths that overlap work already in progress: "
+            f"{', '.join(clashes)}. Parallel writers are only safe while their "
+            "globs are disjoint, per D-010."
+        )
     slug = path.stem
     meta["state"] = "claimed"
     meta["owner"] = owner
@@ -321,6 +370,32 @@ def self_test() -> int:
         cases += 1
 
         # 11. two files declaring one id is a registry corruption, not a merge
+
+        # 12. overlapping globs cannot be held at the same time
+        (directory / "030-wide.md").write_text(
+            _sample("UNIT-030", "research", "available", UNCLAIMED, "[]").replace(
+                "reviewer: code-reviewer", "paths: src/alphaledger/data/**\nreviewer: code-reviewer"
+            )
+        )
+        (directory / "031-narrow.md").write_text(
+            _sample("UNIT-031", "research", "available", UNCLAIMED, "[]").replace(
+                "reviewer: code-reviewer",
+                "paths: src/alphaledger/data/universe.py\nreviewer: code-reviewer",
+            )
+        )
+        cmd_claim(load_all(directory), "UNIT-030", "ada/claude", None)
+        try:
+            cmd_claim(load_all(directory), "UNIT-031", "pablo/codex", None)
+            raise AssertionError("overlapping globs must be refused")
+        except UnitError as exc:
+            assert "overlap" in str(exc), "refusal must name the overlap"
+        cases += 1
+
+        # 13. disjoint globs in the same lane are fine
+        assert paths_overlap("src/a/**", "src/b/**") is False, "siblings must not overlap"
+        assert paths_overlap("src/data/**", "src/database/**") is False, "prefix is not containment"
+        assert paths_overlap("src/a/x.py", "src/a/x.py") is True, "same file overlaps"
+        cases += 1
         (directory / "099-dupe.md").write_text(
             _sample("UNIT-001", "shared", "available", UNCLAIMED)
         )
