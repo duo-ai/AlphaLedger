@@ -1,0 +1,7 @@
+# Files a fresh worktree needs but git does not carry, because they are
+# ignored. Without this, a worktree silently has no Alpaca MCP server, which
+# D-010 recorded as a known gap.
+#
+# The pattern form matters: .claude/settings.local.json is ignored by a
+# **/.claude/settings.local.json rule, so a bare path does not match it.
+**/.claude/settings.local.json
