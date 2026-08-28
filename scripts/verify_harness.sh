@@ -217,7 +217,10 @@ esac
 check $? "current branch '$branch' follows the model"
 
 echo "== prose =="
-c=$(grep -rln $'[—–]' --include="*.md" . 2>/dev/null | grep -v "^./.idea" | wc -l)
+# tracked files only. A Codex review artifact lands in the ignored .dispatch/
+# directory and is full of em dashes, because it is a third party's prose and
+# not ours. Scanning it made this check permanently red after any review.
+c=$(git ls-files -z '*.md' | xargs -0 grep -ln $'[—–]' 2>/dev/null | wc -l)
 [ "$c" -eq 0 ]; check $? "no em or en dashes in markdown ($c files)"
 
 echo "== hooks fire inside a worktree =="
