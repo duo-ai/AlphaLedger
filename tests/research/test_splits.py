@@ -109,6 +109,28 @@ def test_a_different_purge_changes_the_hash_so_two_splits_are_never_confused() -
     assert wide[0].fold_hash != narrow[0].fold_hash
 
 
+def test_the_declared_purge_is_part_of_the_fold_address() -> None:
+    """Two folds over identical windows but built under different purges are
+    different folds. Only a direct construction can hold the windows still
+    while the purge moves, which is why this is not a walk forward."""
+
+    def fold(purge: timedelta) -> Fold:
+        return Fold(
+            index=0,
+            train=Window(start=ORIGIN, end=moment(100)),
+            calibration=Window(start=moment(120), end=moment(140)),
+            test=Window(start=moment(160), end=moment(180)),
+            horizon=5 * DAY,
+            purge=purge,
+            train_labels=(),
+            calibration_labels=(),
+            test_labels=(),
+            purged=(),
+        )
+
+    assert fold(5 * DAY).fold_hash != fold(10 * DAY).fold_hash
+
+
 # --- failure ------------------------------------------------------------
 
 
@@ -151,7 +173,7 @@ def test_a_label_predicted_inside_the_purge_gap_is_excluded_and_named() -> None:
 def test_a_fold_whose_windows_overlap_is_refused_rather_than_trimmed() -> None:
     """Constructed directly, because a caller assembling a fold by hand must
     not be able to produce one that a walk forward never would."""
-    with pytest.raises(FoldOrderError):
+    with pytest.raises(FoldOrderError, match="overlaps"):
         Fold(
             index=0,
             train=Window(start=ORIGIN, end=moment(100)),

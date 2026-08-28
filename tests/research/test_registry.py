@@ -74,11 +74,16 @@ def test_registering_the_same_trial_twice_records_one_fact(tmp_path: Path) -> No
     the same trial rather than inventing a second one to answer for."""
     trials = registry(tmp_path)
 
+    path = tmp_path / "trials.jsonl"
+
     first = trials.register(a_config(), "widen the lookback", T0)
     second = trials.register(a_config(), "widen the lookback", T0)
 
     assert first == second
     assert trials.count() == 1
+    # on disk too: reading collapses duplicates by id, so counting trials alone
+    # would pass even while the log grew a line per retry
+    assert len(path.read_text().splitlines()) == 1
 
 
 def test_the_same_configuration_registered_at_two_instants_is_two_trials(tmp_path: Path) -> None:
@@ -142,8 +147,14 @@ def test_a_float_in_a_result_is_refused_because_a_metric_is_recorded_verbatim(
     trials = registry(tmp_path)
     trial_id = trials.register(a_config(), "widen the lookback", T0)
 
-    with pytest.raises(TypeError, match="result"):
+    with pytest.raises(TypeError) as raised:
         trials.record_result(trial_id, {"brier": 0.21}, T0)  # type: ignore[dict-item]
+
+    # the field alone is not enough: a generic type check names the same field.
+    # The refusal has to say a float is the problem, or the float specific
+    # branch could be deleted with nothing noticing
+    assert "float" in str(raised.value)
+    assert "0.21" in str(raised.value)
 
 
 # --- restart ------------------------------------------------------------
