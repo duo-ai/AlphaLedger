@@ -169,6 +169,11 @@ class Recorder:
         # same store afterwards is not seen, which is the concurrent-writer
         # case this unit does not claim to support.
         self._recorded = {_stored_text(record, "observation_id") for record in store.read_all()}
+        # Reading the whole history at construction couples the write path to
+        # store integrity: a store with an unreadable line can no longer be
+        # opened at all, where before the fix it could still be appended to.
+        # That is deliberate. Truncating to the last readable record would
+        # reopen the hole the raise exists to close.
 
     def record(self, observation: RawObservation) -> ObservationId:
         """Validate and append one observation, returning its content address.
@@ -241,19 +246,25 @@ class Recorder:
 
         An empty result is an answer. It is never replaced by the most recent
         record, because a caller that asked what was knowable at an instant
-        would then silently receive something knowable only later. A `feed`
-        filter naming no registered policy is rejected rather than answered
-        with that empty result.
+        would then silently receive something knowable only later.
+
+        A `feed` filter is checked against the registry and against the feeds
+        the store actually holds. A typo belonging to neither is rejected
+        rather than answered with that same empty result, while a feed present
+        on disk stays queryable by a reader that does not write under it. The
+        store is the evidence ledger; what it holds does not stop being
+        readable because one instance's write registry is narrower.
         """
         cutoff = _utc(as_of, "as_of")
-        if feed is not None:
-            # The write path refuses an unregistered feed. A read that answered
-            # "nothing was knowable" for a typo would be the more permissive
-            # reading of the same question.
-            self._policy_for(feed)
+        if feed is not None and not feed.strip():
+            raise ObservationRejectedError(
+                "feed", "must identify the source; it is never defaulted"
+            )
+        stored_feeds: set[str] = set()
         visible: list[Observation] = []
         for record in self._store.read_all():
             observation = _decode(record)
+            stored_feeds.add(observation.timestamps.feed)
             if observation.timestamps.first_seen_time > cutoff:
                 continue
             if feed is not None and observation.timestamps.feed != feed:
@@ -261,6 +272,14 @@ class Recorder:
             if subject_id is not None and observation.subject_id != subject_id:
                 continue
             visible.append(observation)
+        if feed is not None and feed not in self._policies and feed not in stored_feeds:
+            known = ", ".join(sorted(set(self._policies) | stored_feeds)) or "none"
+            raise ObservationRejectedError(
+                "feed",
+                f"{feed!r} is neither a registered feed nor present anywhere in the "
+                f"store, so an empty result would report a typo as an absence of "
+                f"evidence; known feeds: {known}",
+            )
         return tuple(visible)
 
     def _policy_for(self, feed: str) -> FeedPolicy:

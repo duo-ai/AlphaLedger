@@ -646,6 +646,40 @@ def test_a_read_filtered_by_an_unregistered_feed_is_rejected_rather_than_empty(
     assert "iex_bar" in str(raised.value)
 
 
+def test_a_feed_present_in_the_store_reads_even_when_this_instance_lacks_its_policy(
+    tmp_path: Path,
+) -> None:
+    """The store is the evidence ledger, so what it holds stays queryable.
+
+    A registry lists the feeds an instance may write under. An auditing reader
+    built with a narrower registry, or one opened after a feed was retired,
+    must still be able to filter on data that is genuinely on disk.
+    """
+    path = tmp_path / "observations.jsonl"
+    writer = Recorder(AppendOnlyStore(path), (BARS, NEWS))
+    writer.record(bar())
+    writer.record(article())
+
+    auditor = Recorder(AppendOnlyStore(path), (BARS,))
+    visible = auditor.read_as_of(utc(days=1), feed=NEWS.feed)
+
+    assert [item.subject_id for item in visible] == ["article-1"]
+
+
+def test_a_corrupted_store_refuses_new_writes_and_not_only_reads(tmp_path: Path) -> None:
+    """Opening reads the whole history, so corruption wedges the write path too.
+
+    That coupling is deliberate, and it is a change in blast radius worth
+    holding still: recovering by truncating to the last readable record would
+    reopen the hole the raise exists to close, because a torn last line is not
+    distinguishable from a deliberately truncated one.
+    """
+    path = corrupted(tmp_path, '{"observation_id": "abc", "feed": "iex_b')
+
+    with pytest.raises(StoreCorruptionError):
+        Recorder(AppendOnlyStore(path), (BARS,)).record(bar(subject_id="written after damage"))
+
+
 # --- interface shape ----------------------------------------------------
 
 
