@@ -24,7 +24,7 @@ from alphaledger.data.recorder import (
     RawObservation,
     Recorder,
 )
-from alphaledger.data.storage import AppendOnlyStore
+from alphaledger.data.storage import AppendOnlyStore, StoreCorruptionError
 
 # A feed whose delivery time is proven by the transport: an intraday bar
 # arrives with the timestamp at which we received it.
@@ -426,6 +426,90 @@ def test_an_empty_payload_is_rejected_because_a_record_of_nothing_is_not_evidenc
     assert raised.value.field == "payload"
 
 
+# --- corruption is raised, never skipped --------------------------------
+
+
+def corrupted(tmp_path: Path, line: str) -> Path:
+    """A store holding one recorded observation followed by a damaged line."""
+    path = tmp_path / "observations.jsonl"
+    Recorder(AppendOnlyStore(path), (BARS,)).record(bar())
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
+    return path
+
+
+@pytest.mark.parametrize(
+    ("name", "line"),
+    [
+        ("blank", ""),
+        ("truncated json", '{"observation_id": "abc", "feed": "iex_b'),
+        ("a json array", '["observation_id", "feed"]'),
+        ("a bare json string", '"observation_id"'),
+    ],
+)
+def test_a_damaged_line_is_raised_rather_than_skipped(tmp_path: Path, name: str, line: str) -> None:
+    """A store that skipped what it could not parse would report a shorter
+    history than it holds, and no audit could tell that from a session that
+    simply recorded less."""
+    path = corrupted(tmp_path, line)
+
+    with pytest.raises(StoreCorruptionError):
+        AppendOnlyStore(path).read_all()
+    # Opening the recorder is enough: it reads the store to rebuild its
+    # address index, so a damaged store fails closed at open rather than on
+    # the first read that happens to touch the damaged line.
+    with pytest.raises(StoreCorruptionError):
+        Recorder(AppendOnlyStore(path), (BARS,)).read_as_of(utc(days=1))
+
+
+@pytest.mark.parametrize(
+    "missing",
+    ["payload", "quality_flags", "availability_lag_seconds", "first_seen_time", "feed"],
+)
+def test_a_record_missing_a_required_field_is_raised_rather_than_skipped(
+    tmp_path: Path, missing: str
+) -> None:
+    path = tmp_path / "observations.jsonl"
+    recorder(tmp_path).record(bar())
+    [line] = path.read_text().splitlines()
+    damaged = json.loads(line)
+    del damaged[missing]
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(damaged) + "\n")
+
+    with pytest.raises(StoreCorruptionError):
+        Recorder(AppendOnlyStore(path), (BARS,)).read_as_of(utc(days=1))
+
+
+# --- one fact is one observation ----------------------------------------
+
+
+def test_recording_one_observation_twice_does_not_duplicate_the_fact(tmp_path: Path) -> None:
+    """A retried write records the same fact, not a second one. Two copies
+    would double the evidentiary weight of a single observation downstream."""
+    path = tmp_path / "observations.jsonl"
+    store = Recorder(AppendOnlyStore(path), (BARS,))
+
+    first = store.record(bar())
+    second = store.record(bar())
+
+    assert first == second
+    assert len(path.read_text().splitlines()) == 1
+    assert [item.observation_id for item in store.read_as_of(utc(days=1))] == [first]
+
+
+def test_a_revision_is_still_a_second_observation_not_a_duplicate(tmp_path: Path) -> None:
+    """The dedupe is by content address, so a changed field is a new record."""
+    path = tmp_path / "observations.jsonl"
+    store = Recorder(AppendOnlyStore(path), (BARS,))
+
+    first = store.record(bar())
+    revised = store.record(bar(payload={"close": "191.5000"}))
+
+    assert first != revised
+    assert len(path.read_text().splitlines()) == 2
+
+
 # --- restart ------------------------------------------------------------
 
 
@@ -434,7 +518,7 @@ import sys
 from datetime import UTC, datetime, timedelta
 
 from alphaledger.data.recorder import FeedPolicy, RawObservation, Recorder
-from alphaledger.data.storage import AppendOnlyStore
+from alphaledger.data.storage import AppendOnlyStore, StoreCorruptionError
 
 path, subject = sys.argv[1], sys.argv[2]
 policy = FeedPolicy(
@@ -500,6 +584,23 @@ def test_a_restarted_reader_sees_records_written_by_the_previous_process(tmp_pat
     assert [item.subject_id for item in visible] == ["first", "second"]
 
 
+def test_a_restarted_recorder_does_not_duplicate_a_record_the_previous_process_wrote(
+    tmp_path: Path,
+) -> None:
+    """The dedupe index is rebuilt from the file, so it survives a real restart.
+    An index held only in memory would let every restart re-append its first
+    observation."""
+    path = tmp_path / "observations.jsonl"
+    run_restart(path, "first")
+    before = path.read_bytes()
+
+    reopened = Recorder(AppendOnlyStore(path), (BARS,))
+    again = reopened.record(bar(subject_id="first"))
+
+    assert path.read_bytes() == before
+    assert [item.observation_id for item in reopened.read_as_of(utc(days=1))] == [again]
+
+
 # --- no trade -----------------------------------------------------------
 
 
@@ -528,6 +629,21 @@ def test_a_filter_that_matches_nothing_returns_empty_rather_than_everything(
 
     assert store.read_as_of(utc(days=1), subject_id="MSFT|missing") == ()
     assert store.read_as_of(utc(days=1), feed=CALENDAR.feed) == ()
+
+
+def test_a_read_filtered_by_an_unregistered_feed_is_rejected_rather_than_empty(
+    tmp_path: Path,
+) -> None:
+    """A typo must not answer 'nothing was knowable'. The write path rejects an
+    unregistered feed, and the read path cannot be more permissive."""
+    store = recorder(tmp_path)
+    store.record(bar())
+
+    with pytest.raises(ObservationRejectedError) as raised:
+        store.read_as_of(utc(days=1), feed="iex_bar")
+
+    assert raised.value.field == "feed"
+    assert "iex_bar" in str(raised.value)
 
 
 # --- interface shape ----------------------------------------------------

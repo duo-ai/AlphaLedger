@@ -163,12 +163,23 @@ class Recorder:
             )
         self._store = store
         self._policies: Mapping[str, FeedPolicy] = MappingProxyType(registry)
+        # Rebuilt from the file rather than carried in memory, so a restart
+        # cannot re-append what an earlier process already recorded. It is a
+        # snapshot taken at construction: a second process appending to the
+        # same store afterwards is not seen, which is the concurrent-writer
+        # case this unit does not claim to support.
+        self._recorded = {_stored_text(record, "observation_id") for record in store.read_all()}
 
     def record(self, observation: RawObservation) -> ObservationId:
         """Validate and append one observation, returning its content address.
 
         Nothing is written until every check has passed, so a rejected
         observation leaves no trace to be read back later.
+
+        Recording the same observation twice writes one record. The address is
+        the content, so a retry after an ambiguous write records the same fact
+        rather than a second one, while a revision differs in at least one
+        field and is stored separately.
         """
         policy = self._policy_for(observation.feed)
         if not observation.subject_id.strip():
@@ -213,7 +224,10 @@ class Recorder:
             "payload": dict(payload),
         }
         observation_id = _address(body)
+        if observation_id in self._recorded:
+            return observation_id
         self._store.append({"observation_id": observation_id, **body})
+        self._recorded.add(observation_id)
         return observation_id
 
     def read_as_of(
@@ -227,9 +241,16 @@ class Recorder:
 
         An empty result is an answer. It is never replaced by the most recent
         record, because a caller that asked what was knowable at an instant
-        would then silently receive something knowable only later.
+        would then silently receive something knowable only later. A `feed`
+        filter naming no registered policy is rejected rather than answered
+        with that empty result.
         """
         cutoff = _utc(as_of, "as_of")
+        if feed is not None:
+            # The write path refuses an unregistered feed. A read that answered
+            # "nothing was knowable" for a typo would be the more permissive
+            # reading of the same question.
+            self._policy_for(feed)
         visible: list[Observation] = []
         for record in self._store.read_all():
             observation = _decode(record)
