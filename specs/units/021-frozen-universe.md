@@ -2,13 +2,14 @@
 id: UNIT-021
 title: Generate the lagged frozen universe
 lane: research
-state: available
-owner: -
-branch: -
+state: claimed
+owner: mazwy/claude
+branch: feature/021-frozen-universe
 reviewer: backtest-auditor
 preferred_runtime: claude
 depends_on: [UNIT-001]
 paths: src/alphaledger/data/universe.py, tests/research/test_universe.py
+claimed_at: 2026-08-28T19:34:04Z
 ---
 
 ## Problem
