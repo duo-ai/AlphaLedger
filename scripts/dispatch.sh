@@ -4,6 +4,7 @@
 #   scripts/dispatch.sh UNIT-010 pablo/codex
 #   scripts/dispatch.sh UNIT-010 UNIT-020 UNIT-021 pablo/codex
 #   scripts/dispatch.sh UNIT-010 UNIT-020 pablo/codex --dry-run
+#   scripts/dispatch.sh UNIT-010 pablo/codex --continue   (after a review)
 #
 # For each unit: claims it, cuts a worktree off develop, builds the prompt from
 # the unit's own intake, and launches `codex exec` in the background. Claims are
@@ -22,9 +23,11 @@ die() { echo "dispatch: $*" >&2; exit 1; }
 UNITS=()
 OWNER=""
 DRY_RUN=false
+CONTINUE=false
 for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY_RUN=true ;;
+        --continue) CONTINUE=true ;;
         */codex|*/claude) OWNER="$arg" ;;
         UNIT-*) UNITS+=("$arg") ;;
         *) die "unrecognised argument '$arg'. Usage: scripts/dispatch.sh <UNIT-ID>... <handle>/codex [--dry-run]" ;;
@@ -92,9 +95,18 @@ build_prompt() {
 You are implementing $unit in the AlphaLedger repository, as owner $OWNER.
 
 You are already inside an isolated git worktree on branch $branch, cut from
-develop. The unit is already claimed for you. Do not claim anything, do not
-switch branches, and do not merge or push. Your job ends with a green quality
-gate and a summary.
+develop. The unit is already claimed for you.
+
+Commit your work on this branch as you go, with conventional commit subjects.
+Uncommitted work is lost work: the branch is how your output reaches anyone.
+Do not claim anything, do not switch branches, do not merge, and do not push.
+Do not change the unit's state in the registry. Your job ends when the gate is
+green, your work is committed, and you have written a summary.
+
+The environment is already prepared. `uv sync --frozen` has been run here, so
+the virtualenv exists. If a uv command reports the cache is read-only, set
+UV_CACHE_DIR to a path inside this worktree rather than working around it some
+other way.
 
 Other agents are working other units in parallel worktrees right now. Stay
 strictly inside the path globs named in your unit's frontmatter. Touching
@@ -134,6 +146,12 @@ Hard constraints, enforced by a PreToolUse hook so violating one fails loudly:
 
 Stop and report instead of guessing if: two sources of truth disagree, the unit
 needs a file outside its lane, or the only way to pass a gate is to lower it.
+Stopping is a correct outcome and is preferred over a guess. Say exactly what
+blocked you and what you did and did not change.
+
+If the gate or the harness is already failing when you arrive, before you have
+changed anything, that is an environment or tooling problem rather than a
+verdict on your unit. Report it with the exact failing commands and stop.
 
 When done, summarise: what you implemented, the exact commands you ran and
 their output, which acceptance criteria you believe are met, and what remains
@@ -164,6 +182,11 @@ git diff --quiet && git diff --cached --quiet \
 # A leftover branch or worktree means a previous run died midway. Say so before
 # claiming anything, so a retry cannot deepen the mess.
 for slug in "${SLUGS[@]}"; do
+    if [ "$CONTINUE" = true ]; then
+        [ -d "$ROOT/../AlphaLedger-wt/$slug" ] \
+            || die "--continue needs an existing worktree at ../AlphaLedger-wt/$slug. Dispatch without it to start fresh."
+        continue
+    fi
     if git show-ref --verify --quiet "refs/heads/feature/$slug"; then
         die "branch feature/$slug already exists, so a previous run did not finish. Clean up with:
   git worktree remove --force ../AlphaLedger-wt/$slug
@@ -176,7 +199,9 @@ done
 
 # take every unit first, so a refusal midway does not leave a half-dispatched batch
 claimed_any=false
+[ "$CONTINUE" = true ] && echo "  continuing existing work, not re-claiming"
 for i in "${!UNITS[@]}"; do
+    [ "$CONTINUE" = true ] && continue
     unit="${UNITS[$i]}"
     held_by=$(bash scripts/hook_python.sh scripts/coord.py show "$unit" \
         | sed -n 's/^owner: //p' | head -1)
@@ -206,7 +231,26 @@ for i in "${!UNITS[@]}"; do
     result="$LOGDIR/$slug.result.md"
 
     build_prompt "$unit" "$slug" "$branch" "$LOGDIR/$slug.prompt.txt"
-    git worktree add "$worktree" -b "$branch" develop >/dev/null
+    if [ "$CONTINUE" = true ]; then
+        cat >> "$LOGDIR/$slug.prompt.txt" <<'FOLLOWUP'
+
+THIS IS A SECOND PASS. Your earlier implementation of this unit is already on
+this branch and has been through an independent safety review. The review
+returned findings, and the unit intake has been updated: read it again in full,
+including the acceptance criteria you have not seen and the section recording
+the review findings.
+
+Reconcile the existing code with the updated specification. Where a test is
+named as theatre, replace it rather than adding another beside it. Where an
+acceptance criterion was corrected because the original was unachievable,
+implement the corrected one and do not try to satisfy the old wording.
+
+Keep the existing commits. Add new ones on top.
+FOLLOWUP
+    fi
+    if [ "$CONTINUE" = false ]; then
+        git worktree add "$worktree" -b "$branch" develop >/dev/null
+    fi
     [ -f .claude/settings.local.json ] && cp .claude/settings.local.json "$worktree/.claude/" || true
 
     # Prepare the environment here, outside the agent's sandbox. A fresh
@@ -217,7 +261,8 @@ for i in "${!UNITS[@]}"; do
     ( cd "$worktree" && uv sync --frozen >/dev/null 2>&1 ) \
         || die "uv sync failed in $worktree. Fix the environment before dispatching."
 
-    nohup codex exec \
+    # the default uv cache sits outside the sandbox and is not writable there
+    nohup env UV_CACHE_DIR="$worktree/.uv-cache" codex exec \
         -C "$worktree" \
         -s workspace-write \
         --add-dir "$GIT_COMMON" \

@@ -60,8 +60,8 @@ report, a log, or a commit.
 ## Phase 6: paper isolation
 
 ```bash
-grep -rn "api.alpaca.markets" --include="*.py" src | grep -v "paper-api" || echo clean
-grep -rn -- "--live\|paper\s*=\s*False" --include="*.py" src || echo clean
+grep -rn --include="*.py" "api.alpaca.markets" src | grep -v "paper-api" || echo clean
+grep -rnE --include="*.py" -e "--live" -e "paper[[:space:]]*=[[:space:]]*False" src || echo clean
 ```
 
 Any hit is blocking. The live host must be absent from `src`, not merely
