@@ -2,7 +2,7 @@
 id: UNIT-011
 title: Map Alpaca order schemas behind a typed adapter
 lane: execution
-state: in_review
+state: claimed
 owner: pablo/codex
 branch: feature/011-order-schema-adapter
 reviewer: execution-safety-reviewer
@@ -82,11 +82,26 @@ def build_mleg_order(
 def canonical_bytes(payload: Mapping[str, object]) -> bytes: ...
 def order_payload_hash(payload: Mapping[str, object]) -> str: ...
 def parse_order(raw: Mapping[str, object]) -> BrokerOrder: ...
+def parse_activity(raw: Mapping[str, object]) -> BrokerActivity: ...
+def parse_position(raw: Mapping[str, object]) -> BrokerPosition: ...
 ```
 
 `BrokerOrder` is frozen and carries the broker id, the client order id, a
 status, filled quantity, and timestamps. Its status is an enum that includes an
 explicit `unknown` member.
+
+`BrokerActivity` and `BrokerPosition` are frozen too and live beside
+`BrokerOrder` in `orders.py`, which is what this unit's declared globs allow.
+They exist because an order alone cannot rebuild truth after a restart: an
+ambiguous submit that partially filled is visible as fills and as a held
+position, and a reconciler with no typed way to read either has to bypass this
+boundary or stay halted. Carry what reconciliation needs and nothing more. For
+an activity, its broker id, its type, the symbol, the signed quantity, the
+price, and the time. For a position, the symbol, the signed quantity, the
+average entry price, and the side. Quantity is an integer and every price is a
+`Decimal`, on the same terms as the rest of this module. Both parsers obey AC-4
+and AC-5: an unrecognised enumerated value becomes `unknown` rather than a
+default, and a truncated payload raises the typed adapter error.
 
 The serializer accepts `Decimal` and rejects `float`, matching `money()` in the
 domain. It must not re-round: the domain already quantizes to four places with
@@ -111,6 +126,13 @@ with the approved plan.
 - AC-7: the module contains no host string, no URL construction, and no
   redirect logic. It reaches the network only through `send_paper_request`.
 - AC-8: a leg key outside the declared vocabulary is rejected at build time.
+- AC-9: a documented Alpaca activity payload and a documented position
+  payload each parse to their frozen record, and a truncated one raises the
+  typed adapter error rather than `KeyError`.
+- AC-10: the hash property in AC-3 is proven field by field. Mutating any
+  single top-level field, and any single leg field, changes the hash. A test
+  that mutates one example field cannot tell a complete canonicalization
+  from one that silently drops `qty`, `limit_price`, or `client_order_id`.
 
 ## Test list
 
@@ -125,8 +147,19 @@ with the approved plan.
 - failure: a leg key outside the vocabulary is rejected, naming the key.
 - failure: a truncated broker payload raises the typed adapter error and the
   message does not contain any credential-shaped value.
-- failure: a payload whose hash was computed, then a leg mutated, produces a
-  different hash. This is the property `RiskApproval` depends on.
+- failure: a payload whose hash was computed, then any single field mutated,
+  produces a different hash. Parameterise over every top-level field and
+  every leg field rather than one example, including a leg reordering that
+  alters meaning. This is the property `RiskApproval` depends on, and a
+  single-field version of it stays green while canonicalization drops a
+  field that decides size or price.
+- success: a realistic Alpaca activity payload and position payload each
+  parse to their frozen record with the expected quantity sign and price.
+- restart: after an ambiguous submit, the fills reported as activities and
+  the resulting position both parse, so a reconciler can reconstruct filled
+  quantity from broker truth without leaving the typed boundary.
+- failure: a truncated activity payload and a truncated position payload
+  each raise the typed adapter error.
 - restart: a hash computed in one process equals the hash computed in another
   from the same plan, so an approval survives a restart. Use a subprocess.
 - no-trade: an unrecognised status parses to `unknown` and the caller can
@@ -155,3 +188,34 @@ the documented shape. Any test that reaches the live API carries the
 `paper_integration` marker, which the default run excludes.
 
 ## Handoff notes
+
+- 2026-08-29 code review round one, `execution-safety-reviewer` via
+  `codex exec review`, verdict block. Two P1 findings.
+  1. `src/alphaledger/execution/orders.py` around line 143. The Scope section
+     required the inverse mapping for an order, an activity, and a position,
+     and only `parse_order` shipped. After an ambiguous submit partially fills
+     and the process restarts, activities and positions are what reconstruct
+     truth, so reconciliation would have to bypass this typed boundary or stay
+     halted, against the startup reconciliation invariant in
+     `.claude/rules/30-execution.md`.
+  2. `tests/execution/test_orders.py` around line 292. The payload-hash
+     mutation test mutates only a leg symbol and its ordering. If
+     canonicalization later omits `qty`, `limit_price`, or `client_order_id`,
+     an approval hashed for one payload could authorise a changed size or price
+     while that test stays green, which leaves AC-3 unprotected.
+- 2026-08-29 pablo/claude. The first finding is partly an intake defect, and it
+  is fixed above rather than left for the next reader. Scope named orders,
+  activities, and positions while the Contract code block listed `parse_order`
+  alone, so the unit disagreed with itself and the implementer followed the
+  half that was executable. The Contract, the acceptance criteria, and the test
+  list now carry all three. This is the same shape as the UNIT-004 contract
+  contradiction, and it is the second time an intake I wrote has sent an agent
+  at an underspecified surface.
+- 2026-08-29 pablo/claude on the package note. The reviewer named Pydantic v2
+  as the established alternative to the hand-rolled validation layer, correctly
+  applying the package rule in `AGENTS.md`. Not adopting it in this unit: it is
+  not currently a dependency, the merged domain layer hand-rolls the same shape
+  of validation deliberately, and introducing it here would split the
+  validation story across two idioms at the boundary that most needs one. It is
+  one decision for the whole boundary, and it is recorded on UNIT-004 too.
+
