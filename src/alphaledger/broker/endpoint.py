@@ -1,8 +1,8 @@
 """Paper endpoint safety boundary."""
 
 import os
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Literal, Protocol
 from urllib.parse import urlsplit
 
 PAPER_BASE_URL = "https://paper-api.alpaca.markets"
@@ -12,6 +12,8 @@ _BASE_URL_ENVIRONMENT_VARIABLES = (
     "ALPACA_BASE_URL",
 )
 _ENDPOINT_REJECTION_REASON = "endpoint_not_paper"
+_PATH_REJECTION_REASON = "request_path_invalid"
+_REDIRECT_REJECTION_REASON = "redirect_invalid"
 
 
 class LiveEndpointError(RuntimeError):
@@ -26,11 +28,21 @@ class EndpointRecorder(Protocol):
     def no_trade(self, reason: str) -> None: ...
 
 
-@dataclass
+@dataclass(frozen=True, init=False)
 class EndpointConfiguration:
-    """Mutable runtime configuration rechecked for every broker request."""
+    """Factory-created paper configuration rechecked for every broker request."""
 
-    base_url: str
+    base_url: str = field(repr=False)
+
+    def __init__(self) -> None:
+        raise TypeError("use EndpointConfiguration.from_resolver")
+
+    @classmethod
+    def from_resolver(cls, recorder: EndpointRecorder) -> EndpointConfiguration:
+        """Create configuration only from the fail-closed endpoint resolver."""
+        configuration = object.__new__(cls)
+        object.__setattr__(configuration, "base_url", resolve_paper_base_url(recorder))
+        return configuration
 
 
 @dataclass(frozen=True)
@@ -38,7 +50,7 @@ class TransportResponse:
     """Response metadata required to reject redirect replay."""
 
     status_code: int
-    location: str | None = None
+    location: str | None = field(default=None, repr=False)
 
 
 class PaperTransport(Protocol):
@@ -49,14 +61,15 @@ class PaperTransport(Protocol):
         url: str,
         body: bytes,
         *,
-        follow_redirects: bool,
+        follow_redirects: Literal[False],
     ) -> TransportResponse: ...
 
 
-def resolve_paper_base_url() -> str:
+def resolve_paper_base_url(recorder: EndpointRecorder) -> str:
     for variable_name in _BASE_URL_ENVIRONMENT_VARIABLES:
         configured_url = os.environ.get(variable_name)
         if configured_url is not None and configured_url != PAPER_BASE_URL:
+            recorder.no_trade(_ENDPOINT_REJECTION_REASON)
             raise LiveEndpointError(f"paper endpoint required; reject {variable_name}")
     return PAPER_BASE_URL
 
@@ -68,11 +81,7 @@ def assert_paper_endpoint(base_url: str, recorder: EndpointRecorder) -> None:
 
 
 def validate_process_start(recorder: EndpointRecorder) -> str:
-    try:
-        base_url = resolve_paper_base_url()
-    except LiveEndpointError:
-        recorder.no_trade(_ENDPOINT_REJECTION_REASON)
-        raise
+    base_url = resolve_paper_base_url(recorder)
     assert_paper_endpoint(base_url, recorder)
     recorder.startup(f"trading_endpoint={base_url}")
     return base_url
@@ -88,7 +97,7 @@ def send_paper_request(
     base_url = configuration.base_url
     assert_paper_endpoint(base_url, recorder)
     if not path.startswith("/") or path.startswith("//"):
-        recorder.no_trade(_ENDPOINT_REJECTION_REASON)
+        recorder.no_trade(_PATH_REJECTION_REASON)
         raise LiveEndpointError("broker request path must be relative")
 
     response = transport.request(
@@ -114,8 +123,8 @@ def _assert_safe_redirect(location: str | None, recorder: EndpointRecorder) -> N
             and redirect_url.port is None
         )
     except ValueError:
-        recorder.no_trade("redirect_not_paper")
+        recorder.no_trade(_REDIRECT_REJECTION_REASON)
         raise LiveEndpointError("redirect target rejected") from None
     if not is_relative and not is_paper_origin:
-        recorder.no_trade("redirect_not_paper")
+        recorder.no_trade(_REDIRECT_REJECTION_REASON)
         raise LiveEndpointError("redirect target rejected")

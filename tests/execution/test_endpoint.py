@@ -1,4 +1,9 @@
+import os
+import subprocess
+import sys
 import traceback
+from dataclasses import FrozenInstanceError
+from typing import Literal, get_type_hints
 
 import pytest
 
@@ -6,6 +11,7 @@ from alphaledger.broker.endpoint import (
     PAPER_BASE_URL,
     EndpointConfiguration,
     LiveEndpointError,
+    PaperTransport,
     TransportResponse,
     assert_paper_endpoint,
     resolve_paper_base_url,
@@ -36,16 +42,20 @@ class RecordingTransport:
         url: str,
         body: bytes,
         *,
-        follow_redirects: bool,
+        follow_redirects: Literal[False],
     ) -> TransportResponse:
         self.requests.append((url, body, follow_redirects))
         return self.response
 
 
+def configuration(recorder: RecordingEndpointEvents) -> EndpointConfiguration:
+    return EndpointConfiguration.from_resolver(recorder)
+
+
 def test_clean_start_returns_paper_host_and_records_it() -> None:
     recorder = RecordingEndpointEvents()
 
-    assert resolve_paper_base_url() == PAPER_BASE_URL
+    assert resolve_paper_base_url(recorder) == PAPER_BASE_URL
     assert validate_process_start(recorder) == PAPER_BASE_URL
     assert recorder.banners == [f"trading_endpoint={PAPER_BASE_URL}"]
 
@@ -55,7 +65,7 @@ def test_paper_pre_submit_assertion_allows_body_send() -> None:
     transport = RecordingTransport()
 
     response = send_paper_request(
-        EndpointConfiguration(PAPER_BASE_URL), "/orders", b"payload", transport, recorder
+        configuration(recorder), "/orders", b"payload", transport, recorder
     )
 
     assert response.status_code == 200
@@ -63,65 +73,92 @@ def test_paper_pre_submit_assertion_allows_body_send() -> None:
     assert recorder.no_trade_reasons == []
 
 
-def test_environment_override_is_rejected_without_exposing_its_value(
+@pytest.mark.parametrize(
+    "variable_name",
+    ["APCA_API_BASE_URL", "ALPACA_API_BASE_URL", "ALPACA_BASE_URL"],
+)
+def test_each_environment_override_is_rejected_without_exposing_its_value(
+    variable_name: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    recorder = RecordingEndpointEvents()
     credential = "sensitive-marker"
     rejected_url = "https://" + "api.alpaca.markets" + f"/?token={credential}"
-    monkeypatch.setenv("APCA_API_BASE_URL", rejected_url)
+    monkeypatch.setenv(variable_name, rejected_url)
 
     with pytest.raises(LiveEndpointError) as error:
-        resolve_paper_base_url()
+        resolve_paper_base_url(recorder)
 
     assert credential not in str(error.value)
     assert rejected_url not in str(error.value)
+    assert recorder.no_trade_reasons == ["endpoint_not_paper"]
 
 
-def test_cross_host_redirect_is_rejected_before_body_send() -> None:
+def test_redirect_contract_disables_following_and_rejects_replay() -> None:
     recorder = RecordingEndpointEvents()
-    transport = RecordingTransport(
-        TransportResponse(status_code=302, location="https://example.invalid/orders")
-    )
+    redirect_target = "https://example.invalid/orders"
+    transport = RecordingTransport(TransportResponse(status_code=302, location=redirect_target))
 
     with pytest.raises(LiveEndpointError):
-        send_paper_request(
-            EndpointConfiguration(PAPER_BASE_URL),
-            "/orders",
-            b"payload",
-            transport,
-            recorder,
-        )
+        send_paper_request(configuration(recorder), "/orders", b"payload", transport, recorder)
 
+    request_hints = get_type_hints(PaperTransport.request)
+    assert request_hints["follow_redirects"] == Literal[False]
     assert transport.requests == [(f"{PAPER_BASE_URL}/orders", b"payload", False)]
-    assert all(
-        not request[0].startswith("https://example.invalid") for request in transport.requests
-    )
+    assert all(not request[0].startswith(redirect_target) for request in transport.requests)
 
 
-def test_mutation_after_start_is_rejected_by_pre_submit_assertion() -> None:
+def test_corruption_after_start_is_rejected_by_pre_submit_assertion() -> None:
     recorder = RecordingEndpointEvents()
-    configuration = EndpointConfiguration(PAPER_BASE_URL)
+    endpoint_configuration = configuration(recorder)
     validate_process_start(recorder)
-    configuration.base_url = "https://example.invalid"
+    object.__setattr__(endpoint_configuration, "base_url", "https://example.invalid")
     transport = RecordingTransport()
 
     with pytest.raises(LiveEndpointError):
-        send_paper_request(configuration, "/orders", b"payload", transport, recorder)
+        send_paper_request(endpoint_configuration, "/orders", b"payload", transport, recorder)
 
     assert transport.requests == []
+    assert recorder.no_trade_reasons == ["endpoint_not_paper"]
 
 
-def test_each_restart_revalidates_instead_of_using_previous_state(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_configuration_is_frozen_and_requires_resolver_bound_factory() -> None:
     recorder = RecordingEndpointEvents()
-    assert validate_process_start(recorder) == PAPER_BASE_URL
-    monkeypatch.setenv("APCA_API_BASE_URL", "https://example.invalid")
+    endpoint_configuration = configuration(recorder)
 
-    with pytest.raises(LiveEndpointError):
-        validate_process_start(recorder)
+    with pytest.raises(TypeError):
+        EndpointConfiguration()
+    with pytest.raises(TypeError):
+        EndpointConfiguration("https://example.invalid")  # type: ignore[call-arg]
+    with pytest.raises(FrozenInstanceError):
+        endpoint_configuration.base_url = "https://example.invalid"  # type: ignore[misc]
 
-    assert recorder.banners == [f"trading_endpoint={PAPER_BASE_URL}"]
+
+def test_fresh_interpreter_revalidates_endpoint_environment() -> None:
+    rejected_environment = os.environ.copy()
+    rejected_environment["APCA_API_BASE_URL"] = "https://example.invalid"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """
+from alphaledger.broker.endpoint import validate_process_start
+
+class Recorder:
+    def startup(self, banner: str) -> None: print("unexpected_startup_banner")
+    def no_trade(self, reason: str) -> None: print(reason)
+
+validate_process_start(Recorder())
+""",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=rejected_environment,
+    )
+
+    assert result.returncode != 0
+    assert result.stdout.strip() == "endpoint_not_paper"
 
 
 def test_failed_assertion_records_no_trade_and_never_falls_back() -> None:
@@ -131,24 +168,63 @@ def test_failed_assertion_records_no_trade_and_never_falls_back() -> None:
         assert_paper_endpoint("https://example.invalid", recorder)
 
     assert recorder.no_trade_reasons == ["endpoint_not_paper"]
-    assert resolve_paper_base_url() == PAPER_BASE_URL
+
+
+@pytest.mark.parametrize(
+    ("path", "response", "expected_reason"),
+    [
+        ("orders", None, "request_path_invalid"),
+        (
+            "/orders",
+            TransportResponse(status_code=307, location="https://[invalid"),
+            "redirect_invalid",
+        ),
+    ],
+)
+def test_rejection_causes_record_distinct_reason_codes(
+    path: str,
+    response: TransportResponse | None,
+    expected_reason: str,
+) -> None:
+    recorder = RecordingEndpointEvents()
+
+    with pytest.raises(LiveEndpointError):
+        send_paper_request(
+            configuration(recorder),
+            path,
+            b"payload",
+            RecordingTransport(response),
+            recorder,
+        )
+
+    assert recorder.no_trade_reasons == [expected_reason]
+    assert expected_reason != "endpoint_not_paper"
+
+
+def test_sensitive_endpoint_values_are_absent_from_repr() -> None:
+    recorder = RecordingEndpointEvents()
+    endpoint_configuration = configuration(recorder)
+    location = "https://example.invalid/?token=sensitive-marker"
+    response = TransportResponse(status_code=302, location=location)
+
+    assert PAPER_BASE_URL not in repr(endpoint_configuration)
+    assert location not in repr(response)
+    assert "sensitive-marker" not in repr(response)
 
 
 @pytest.mark.parametrize(
     "location",
     ["https://paper-api.alpaca.markets:sensitive-marker/orders", "https://[invalid"],
 )
-def test_malformed_redirect_records_no_trade_and_sends_no_replay(location: str) -> None:
+def test_malformed_redirect_is_redacted_and_sends_no_replay(location: str) -> None:
     recorder = RecordingEndpointEvents()
     transport = RecordingTransport(TransportResponse(status_code=307, location=location))
 
     with pytest.raises(LiveEndpointError, match="redirect target rejected") as error:
-        send_paper_request(
-            EndpointConfiguration(PAPER_BASE_URL), "/orders", b"payload", transport, recorder
-        )
+        send_paper_request(configuration(recorder), "/orders", b"payload", transport, recorder)
 
     formatted_error = "".join(traceback.format_exception(error.value))
     assert location not in formatted_error
     assert "sensitive-marker" not in formatted_error
-    assert recorder.no_trade_reasons == ["redirect_not_paper"]
+    assert recorder.no_trade_reasons == ["redirect_invalid"]
     assert len(transport.requests) == 1
