@@ -169,10 +169,15 @@ step that makes trust meaningful.
 A Codex dispatch writes a JSONL event stream. Follow it live:
 
 ```bash
-scripts/watch.sh                 every active dispatch
-scripts/watch.sh UNIT-011        one of them
+scripts/watch.sh                 every dispatch, one colour per agent
+scripts/watch.sh UNIT-011        one agent alone
+scripts/watch.sh --split         one tmux pane per agent
 scripts/watch.sh --replay        what already happened, then stop
 ```
+
+Two agents in one stream interleave, so each gets a stable colour and a short
+tag in the merged view. When that is still too busy, `--split` gives each its
+own pane and removes the interleaving entirely.
 
 Ctrl-C stops watching, not the run.
 
