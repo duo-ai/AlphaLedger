@@ -56,6 +56,28 @@ rm -r "$probe_units"
 git diff --quiet specs/
 check $? "the probe never touched the real registry"
 
+echo "== skill conventions =="
+c=0
+for f in .claude/skills/*/SKILL.md .agents/skills/*/SKILL.md; do
+    grep -q "^origin:" "$f" || c=$((c + 1))
+done
+[ "$c" -eq 0 ]; check $? "every skill declares origin ($c missing)"
+
+c=0
+for d in .agents/skills/*/; do
+    [ -f "$d/agents/openai.yaml" ] || c=$((c + 1))
+done
+[ "$c" -eq 0 ]; check $? "every codex skill has an interface binding ($c missing)"
+
+# Lifecycle skills must never be implicitly invocable. A model must not be able
+# to decide on its own to run a paper smoke test or freeze research.
+c=0
+for s in bootstrap handoff paper-smoke research-gate submission-readiness social-update; do
+    f=".agents/skills/$s/agents/openai.yaml"
+    [ -f "$f" ] && grep -q "allow_implicit_invocation: false" "$f" || c=$((c + 1))
+done
+[ "$c" -eq 0 ]; check $? "lifecycle skills stay manual-only ($c wrong)"
+
 echo "== git flow =="
 git show-ref --verify --quiet refs/heads/develop; check $? "develop exists"
 git show-ref --verify --quiet refs/heads/main; check $? "main exists"
