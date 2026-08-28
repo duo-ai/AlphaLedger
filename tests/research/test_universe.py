@@ -333,6 +333,31 @@ def test_the_feed_is_recorded_and_two_feeds_never_share_a_universe_hash() -> Non
     assert consolidated.universe_hash != single_venue.universe_hash
 
 
+def test_a_feed_behind_an_excluded_symbol_still_reaches_the_record_and_the_hash() -> None:
+    """Design section 4 wants a feed change to be impossible to miss.
+
+    Collecting feeds from the surviving symbols alone would have hidden a
+    mixed-feed build whenever the odd feed sat among the names that were
+    screened out or capped away, which is most of them.
+    """
+    one_feed = source(
+        observed("KEPT", feed="sip_daily"),
+        observed("CUT", feed="sip_daily", prior_close="2.00"),
+    )
+    two_feeds = source(
+        observed("KEPT", feed="sip_daily"),
+        observed("CUT", feed="iex_daily", prior_close="2.00"),
+    )
+
+    homogeneous = build(PRIOR_CLOSE, one_feed)
+    mixed = build(PRIOR_CLOSE, two_feeds)
+
+    assert homogeneous.symbols == mixed.symbols == ("KEPT",)
+    assert homogeneous.feeds == ("sip_daily",)
+    assert mixed.feeds == ("iex_daily", "sip_daily")
+    assert homogeneous.universe_hash != mixed.universe_hash
+
+
 def test_a_record_without_a_feed_is_rejected_rather_than_defaulted() -> None:
     with pytest.raises(ValueError, match="feed"):
         observed("AAPL", feed="")

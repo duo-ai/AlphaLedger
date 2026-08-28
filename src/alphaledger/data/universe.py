@@ -192,6 +192,7 @@ class FrozenUniverse:
 
     as_of: datetime
     symbols: tuple[str, ...]
+    #: Every feed behind the evidence considered, including excluded symbols.
     feeds: tuple[str, ...]
     floors: UniverseFloors
     used_static_fallback: bool
@@ -251,7 +252,12 @@ def build(
     exclusions.extend(Exclusion(symbol=item.symbol, reasons=(OUTSIDE_CAP,)) for item in cut)
 
     symbols = tuple(item.symbol for item in kept)
-    feeds = tuple(sorted({item.feed for item in kept}))
+    # Every feed that contributed evidence, not only the feeds behind the
+    # survivors. A mixed-feed build whose odd feed sits among the screened out
+    # names is still a mixed-feed build, and design section 4 wants a change of
+    # feed to be impossible to miss rather than impossible to miss only when it
+    # lands in the top cohort.
+    feeds = tuple(sorted({item.feed for item in latest}))
     fallback_hash = static_fallback_hash() if fallback else None
     return FrozenUniverse(
         as_of=cutoff,
