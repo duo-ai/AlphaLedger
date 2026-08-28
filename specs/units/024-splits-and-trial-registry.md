@@ -202,6 +202,53 @@ were accepted, with the wording nit above.
 Twenty-three defects were injected one at a time after these fixes and every one
 is caught by a named test.
 
+### Review round two, backtest-auditor
+
+One new high finding, which is round one's own fix reappearing one window to
+the left, plus two low ones.
+
+- The `empty_test_window` reason had no calibration counterpart, and
+  `SplitConfig` related nothing but the purge to the horizon. A calibration
+  window no longer than the horizon can only hold a label predicted at its very
+  first instant, so it purges every other candidate, and a fold with a populated
+  test set and an empty calibration window was reported entirely clean. Design
+  section 7 names calibration as its own required step, so such a fold has no
+  way to have chosen a threshold. Both windows are now validated against the
+  horizon at construction, which refuses the whole family before a fold exists,
+  and an `empty_calibration_window` reason mirrors the test one for the case
+  where the window is long enough but the data does not reach it.
+- The reason string did not distinguish a window nothing was predicted in from
+  one whose candidates were all purged. Those are a data gap and a geometry
+  problem, and they call for different fixes, so the message now says which and
+  how many.
+- The all-folds-empty case, which round two flagged as chosen but unpinned, now
+  has a test. Suppressing the reason when every fold is empty would silence it
+  exactly where the configuration is most wrong for the data supplied.
+
+A binding in the new reason loop shadowed the assignment tuple. `mypy` caught
+it; the pipeline that ran it did not, because a pipe swallowed the exit code,
+and the commit landed before the check was read. That is a hazard in how the
+gate was run, not in the gate.
+
+Twenty-six defects were injected one at a time after these fixes and every one
+is caught by a named test.
+
+### The race this unit detects but does not prevent
+
+`record_result` refuses a second result, but two processes can both pass that
+check before either appends, and `AppendOnlyStore.append` takes no lock. Round
+one's fix makes the resulting log raise on read rather than resolving it by
+reading order, so the failure is loud and fail-closed: every later read, and
+every later `register`, refuses until a human looks.
+
+The reviewer suggested an advisory lock around the check-and-append, which would
+sit in this unit's own file. It is not done here, deliberately. A lock is only
+worth having if it is tested, a deterministic concurrency test needs either a
+sleep, which `.claude/rules/40-tests.md` forbids, or a synchronisation
+mechanism this unit has no other reason to own, and untested concurrency code in
+an audit path is its own risk. The detection is in place and disclosed; the
+prevention should be its own unit if concurrent research runs become real.
+
 ### Not verified
 
 - No model consumes a fold and no result is ever recorded, so the registry is
