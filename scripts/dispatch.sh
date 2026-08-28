@@ -44,7 +44,7 @@ cd "$ROOT"
 # resolve each unit to its intake file
 SLUGS=()
 for unit in "${UNITS[@]}"; do
-    slug=$(python3 - "$unit" <<'PY'
+    slug=$(bash scripts/hook_python.sh - "$unit" <<'PY'
 import sys, pathlib
 unit = sys.argv[1]
 for p in sorted(pathlib.Path("specs/units").glob("*.md")):
@@ -60,7 +60,7 @@ done
 
 # refuse a batch that would put two agents in the same files
 if [ ${#UNITS[@]} -gt 1 ]; then
-    python3 - "${UNITS[@]}" <<'PY' || exit 1
+    bash scripts/hook_python.sh - "${UNITS[@]}" <<'PY' || exit 1
 import sys
 sys.path.insert(0, "scripts")
 import coord
@@ -161,16 +161,39 @@ fi
 git diff --quiet && git diff --cached --quiet \
     || die "working tree is dirty. Commit or stash before dispatching."
 
+# A leftover branch or worktree means a previous run died midway. Say so before
+# claiming anything, so a retry cannot deepen the mess.
+for slug in "${SLUGS[@]}"; do
+    if git show-ref --verify --quiet "refs/heads/feature/$slug"; then
+        die "branch feature/$slug already exists, so a previous run did not finish. Clean up with:
+  git worktree remove --force ../AlphaLedger-wt/$slug
+  git branch -D feature/$slug"
+    fi
+    if [ -e "$ROOT/../AlphaLedger-wt/$slug" ]; then
+        die "worktree ../AlphaLedger-wt/$slug already exists. Remove it with: git worktree remove --force ../AlphaLedger-wt/$slug"
+    fi
+done
+
 # take every unit first, so a refusal midway does not leave a half-dispatched batch
+claimed_any=false
 for i in "${!UNITS[@]}"; do
     unit="${UNITS[$i]}"
-    python3 scripts/coord.py claim "$unit" --owner "$OWNER" >/dev/null \
-        || die "claim refused for $unit. Nothing after it was claimed. Run 'python3 scripts/coord.py list'."
-    git add "specs/units/${SLUGS[$i]}.md"
-    git commit -q -m "chore(registry): claim $unit for $OWNER"
+    held_by=$(bash scripts/hook_python.sh scripts/coord.py show "$unit" \
+        | sed -n 's/^owner: //p' | head -1)
+    if [ "$held_by" = "$OWNER" ]; then
+        echo "  $unit already held by $OWNER, resuming without re-claiming"
+    else
+        bash scripts/hook_python.sh scripts/coord.py claim "$unit" --owner "$OWNER" >/dev/null \
+            || die "claim refused for $unit. Nothing after it was claimed. Run 'scripts/coord.py list'."
+        git add "specs/units/${SLUGS[$i]}.md"
+        git commit -q -m "chore(registry): claim $unit for $OWNER"
+        claimed_any=true
+    fi
 done
-git push -q origin develop \
-    || die "claim push rejected. Run: git pull --rebase origin develop, then re-check the registry."
+if [ "$claimed_any" = true ]; then
+    git push -q origin develop \
+        || die "claim push rejected. Run: git pull --rebase origin develop, then re-check the registry."
+fi
 
 GIT_COMMON=$(cd "$(git rev-parse --git-common-dir)" && pwd)
 
@@ -200,4 +223,4 @@ done
 echo
 echo "watch all:  tail -f $LOGDIR/*.jsonl"
 echo "results:    cat $LOGDIR/*.result.md"
-echo "status:     python3 scripts/coord.py list"
+echo "status:     bash scripts/hook_python.sh scripts/coord.py list"
