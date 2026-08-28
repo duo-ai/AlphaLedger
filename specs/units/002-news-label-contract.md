@@ -2,7 +2,7 @@
 id: UNIT-002
 title: Amend the news label contract to hold what the labeler emits
 lane: shared
-state: claimed
+state: in_review
 owner: mazwy/claude
 branch: feature/002-news-label-contract
 reviewer: code-reviewer
@@ -107,3 +107,65 @@ uv run mypy src
 ```
 
 ## Handoff notes
+
+`NewsLabel` gains `ticker`, `entity_match`, and `limitations`, all required.
+`Novelty` and `Relevance` gain `unknown`. `EntityMatch` and the allowed-value
+tuples are exported from `alphaledger.domain`.
+
+### One decision beyond a strictly additive amendment
+
+The enumerated fields are now checked at run time, not only the new one. A
+`Literal` is a static annotation and stops nothing at run time, and these
+records are built from JSON parsed out of a model's reply, which is exactly
+where the annotation does not hold. Validating only `entity_match` and leaving
+`direction`, `novelty`, `relevance`, `surprise`, and `ambiguity` unchecked
+would have been an inconsistency a reviewer should reject.
+
+This exceeds the strictest reading of AC-6, which asked for an additive change.
+Nothing constructs a `NewsLabel` outside the domain package and its tests, so
+the blast radius is nil and no existing test changed meaning. The alternative,
+leaving a typo from a model to reach the evidence ledger unchallenged, is worse
+than the scope cost.
+
+Prompt B's consistency rules are still not enforced here, per D-016 and D-014.
+A `not_matched` label with any relevance constructs, and a test asserts that,
+because Prompt B qualifies its own rules and the adapter is the designated
+validator.
+
+### Verified
+
+- `uv run pytest tests/domain/test_contracts.py -q`: 47 passed.
+- `uv sync --frozen`, `ruff check`, `ruff format --check`, `mypy src`,
+  `pytest`: all pass, 191 tests.
+- Seven defects were injected one at a time and each was caught by a named
+  test, including a record that enforced a Prompt B consistency rule, which is
+  the failure this unit is deliberately not supposed to have.
+
+### Review round one, code-reviewer
+
+No critical or high findings. Both were fixed.
+
+- Medium, and the reviewer was right that a handoff note was too weak for it.
+  `category` is still a bare `str` while Prompt B and design section 5.2 both
+  enumerate nine values, and this unit is what made that inconsistent: before
+  it, no enumerated field was checked at run time, so `category` was uniform
+  with its neighbours; after it, `category` is the only one left unchecked. It
+  is genuinely outside the scope D-016 accepted, so it is not fixed here, but
+  it is now UNIT-003 with a dependency edge into UNIT-023 rather than prose
+  nobody has to read. An unvalidated category reaching feature encoding is the
+  same failure D-016's rationale invokes for entity match.
+- Low. `_one_of` advertised a normalised return value that no call site kept.
+  Harmless today, and a trap the moment someone adds case folding inside it. It
+  now returns nothing, and says why.
+
+The reviewer independently reproduced four defects, including hand-adding
+Prompt B's `not_matched` consistency rule to the record, which is the failure
+this unit is specifically built not to have. That one is caught by a named
+test, which is the evidence that the D-016 boundary is enforced rather than
+merely written down.
+
+### Not verified
+
+`category` is unvalidated until UNIT-003 lands. No labeler exists, so Prompt B
+fidelity is checked against the prompt text and not against a running model.
+
