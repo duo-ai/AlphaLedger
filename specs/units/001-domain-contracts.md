@@ -2,13 +2,14 @@
 id: UNIT-001
 title: Freeze the domain contracts
 lane: shared
-state: available
-owner: -
-branch: -
+state: claimed
+owner: pablo/claude
+branch: feature/001-domain-contracts
 reviewer: code-reviewer
 preferred_runtime: codex
 depends_on: []
 paths: src/alphaledger/domain/**
+claimed_at: 2026-08-28T16:48:52Z
 ---
 
 ## Problem
