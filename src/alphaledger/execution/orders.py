@@ -20,13 +20,19 @@ from alphaledger.domain import StructurePlan
 
 __all__ = [
     "DEBIT_CREDIT_SIGN_CONVENTION",
+    "BrokerActivity",
+    "BrokerActivityType",
     "BrokerOrder",
     "BrokerOrderStatus",
+    "BrokerPosition",
+    "BrokerPositionSide",
     "OrderAdapterError",
     "build_mleg_order",
     "canonical_bytes",
     "order_payload_hash",
+    "parse_activity",
     "parse_order",
+    "parse_position",
 ]
 
 # Alpaca's MLeg wire convention. Positive means cash paid and negative means
@@ -47,6 +53,8 @@ _SIDE_BY_POSITION_INTENT = MappingProxyType(
     }
 )
 _POSITIVE_INTEGER_PATTERN = re.compile(r"[1-9][0-9]*")
+_INTEGER_PATTERN = re.compile(r"-?(?:0|[1-9][0-9]*)")
+_DECIMAL_PATTERN = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?")
 _NONNEGATIVE_DECIMAL_PATTERN = re.compile(r"(?:0|[1-9][0-9]*)(?:\.[0-9]+)?")
 _RFC3339_PATTERN = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}T"
@@ -81,6 +89,18 @@ class BrokerOrderStatus(StrEnum):
     UNKNOWN = "unknown"
 
 
+class BrokerActivityType(StrEnum):
+    FILL = "fill"
+    PARTIAL_FILL = "partial_fill"
+    UNKNOWN = "unknown"
+
+
+class BrokerPositionSide(StrEnum):
+    LONG = "long"
+    SHORT = "short"
+    UNKNOWN = "unknown"
+
+
 @dataclass(frozen=True, slots=True)
 class BrokerOrder:
     broker_id: str
@@ -91,6 +111,24 @@ class BrokerOrder:
     updated_at: datetime | None
     submitted_at: datetime | None
     filled_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class BrokerActivity:
+    broker_id: str
+    activity_type: BrokerActivityType
+    symbol: str
+    signed_quantity: int
+    price: Decimal
+    transaction_time: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class BrokerPosition:
+    symbol: str
+    signed_quantity: int
+    average_entry_price: Decimal
+    side: BrokerPositionSide
 
 
 def build_mleg_order(
@@ -157,6 +195,59 @@ def parse_order(raw: Mapping[str, object]) -> BrokerOrder:
         updated_at=_optional_timestamp(raw, "updated_at"),
         submitted_at=_optional_timestamp(raw, "submitted_at"),
         filled_at=_optional_timestamp(raw, "filled_at"),
+    )
+
+
+def parse_activity(raw: Mapping[str, object]) -> BrokerActivity:
+    """Parse a trade activity needed to reconstruct fills after a restart."""
+    raw_activity_type = _required_string(raw, "type", record_kind="activity")
+    try:
+        activity_type = BrokerActivityType(raw_activity_type)
+    except ValueError:
+        activity_type = BrokerActivityType.UNKNOWN
+
+    side = _required_string(raw, "side", record_kind="activity")
+    if side == "buy":
+        quantity_sign = 1
+    elif side == "sell":
+        quantity_sign = -1
+    else:
+        raise OrderAdapterError("broker activity field 'side' is not recognized")
+    quantity = _required_integer(raw, "qty", record_kind="activity")
+    if quantity < 0:
+        raise OrderAdapterError("broker activity field 'qty' must be nonnegative")
+
+    return BrokerActivity(
+        broker_id=_required_string(raw, "id", record_kind="activity"),
+        activity_type=activity_type,
+        symbol=_required_string(raw, "symbol", record_kind="activity"),
+        signed_quantity=quantity_sign * quantity,
+        price=_required_exact_decimal(raw, "price", record_kind="activity"),
+        transaction_time=_required_timestamp(
+            raw,
+            "transaction_time",
+            record_kind="activity",
+        ),
+    )
+
+
+def parse_position(raw: Mapping[str, object]) -> BrokerPosition:
+    """Parse the broker's signed position truth after a restart."""
+    raw_side = _required_string(raw, "side", record_kind="position")
+    try:
+        side = BrokerPositionSide(raw_side)
+    except ValueError:
+        side = BrokerPositionSide.UNKNOWN
+
+    return BrokerPosition(
+        symbol=_required_string(raw, "symbol", record_kind="position"),
+        signed_quantity=_required_integer(raw, "qty", record_kind="position"),
+        average_entry_price=_required_exact_decimal(
+            raw,
+            "avg_entry_price",
+            record_kind="position",
+        ),
+        side=side,
     )
 
 
@@ -249,16 +340,26 @@ def _normalize_json_value(value: object, field: str) -> object:
     )
 
 
-def _required(raw: Mapping[str, object], field: str) -> object:
+def _required(
+    raw: Mapping[str, object],
+    field: str,
+    *,
+    record_kind: str = "order",
+) -> object:
     if field not in raw:
-        raise OrderAdapterError(f"broker order is missing required field '{field}'")
+        raise OrderAdapterError(f"broker {record_kind} is missing required field '{field}'")
     return raw[field]
 
 
-def _required_string(raw: Mapping[str, object], field: str) -> str:
-    value = _required(raw, field)
+def _required_string(
+    raw: Mapping[str, object],
+    field: str,
+    *,
+    record_kind: str = "order",
+) -> str:
+    value = _required(raw, field, record_kind=record_kind)
     if not isinstance(value, str) or not value:
-        raise OrderAdapterError(f"broker order field '{field}' must be a non-empty string")
+        raise OrderAdapterError(f"broker {record_kind} field '{field}' must be a non-empty string")
     return value
 
 
@@ -277,30 +378,83 @@ def _required_quantity(raw: Mapping[str, object], field: str) -> Decimal:
     return quantity
 
 
-def _required_timestamp(raw: Mapping[str, object], field: str) -> datetime:
-    value = _required(raw, field)
-    return _parse_timestamp(value, field)
+def _required_integer(
+    raw: Mapping[str, object],
+    field: str,
+    *,
+    record_kind: str,
+) -> int:
+    value = _required(raw, field, record_kind=record_kind)
+    if isinstance(value, bool | float) or not isinstance(value, str | int | Decimal):
+        raise OrderAdapterError(f"broker {record_kind} field '{field}' must be an integer")
+    if isinstance(value, str) and _INTEGER_PATTERN.fullmatch(value) is None:
+        raise OrderAdapterError(f"broker {record_kind} field '{field}' must be an integer")
+    try:
+        quantity = Decimal(value)
+    except InvalidOperation:
+        raise OrderAdapterError(
+            f"broker {record_kind} field '{field}' must be an integer"
+        ) from None
+    if not quantity.is_finite() or quantity != quantity.to_integral_value():
+        raise OrderAdapterError(f"broker {record_kind} field '{field}' must be an integer")
+    return int(quantity)
+
+
+def _required_exact_decimal(
+    raw: Mapping[str, object],
+    field: str,
+    *,
+    record_kind: str,
+) -> Decimal:
+    value = _required(raw, field, record_kind=record_kind)
+    if isinstance(value, bool | float) or not isinstance(value, str | int | Decimal):
+        raise OrderAdapterError(f"broker {record_kind} field '{field}' must be an exact decimal")
+    if isinstance(value, str) and _DECIMAL_PATTERN.fullmatch(value) is None:
+        raise OrderAdapterError(f"broker {record_kind} field '{field}' must be an exact decimal")
+    try:
+        exact = Decimal(value)
+    except InvalidOperation:
+        raise OrderAdapterError(
+            f"broker {record_kind} field '{field}' must be an exact decimal"
+        ) from None
+    if not exact.is_finite():
+        raise OrderAdapterError(f"broker {record_kind} field '{field}' must be an exact decimal")
+    return exact
+
+
+def _required_timestamp(
+    raw: Mapping[str, object],
+    field: str,
+    *,
+    record_kind: str = "order",
+) -> datetime:
+    value = _required(raw, field, record_kind=record_kind)
+    return _parse_timestamp(value, field, record_kind=record_kind)
 
 
 def _optional_timestamp(raw: Mapping[str, object], field: str) -> datetime | None:
     value = _required(raw, field)
     if value is None:
         return None
-    return _parse_timestamp(value, field)
+    return _parse_timestamp(value, field, record_kind="order")
 
 
-def _parse_timestamp(value: object, field: str) -> datetime:
+def _parse_timestamp(value: object, field: str, *, record_kind: str) -> datetime:
     if not isinstance(value, str) or not value:
-        raise OrderAdapterError(f"broker order field '{field}' must be an RFC3339 timestamp")
+        raise OrderAdapterError(
+            f"broker {record_kind} field '{field}' must be an RFC3339 timestamp"
+        )
     if _RFC3339_PATTERN.fullmatch(value) is None:
-        raise OrderAdapterError(f"broker order field '{field}' must be an RFC3339 timestamp")
+        raise OrderAdapterError(
+            f"broker {record_kind} field '{field}' must be an RFC3339 timestamp"
+        )
     normalized = f"{value[:-1]}+00:00" if value.endswith("Z") else value
     try:
         parsed = datetime.fromisoformat(normalized)
     except ValueError:
         raise OrderAdapterError(
-            f"broker order field '{field}' must be an RFC3339 timestamp"
+            f"broker {record_kind} field '{field}' must be an RFC3339 timestamp"
         ) from None
     if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise OrderAdapterError(f"broker order field '{field}' must include a UTC offset")
+        raise OrderAdapterError(f"broker {record_kind} field '{field}' must include a UTC offset")
     return parsed.astimezone(UTC)

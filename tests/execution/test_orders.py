@@ -22,7 +22,6 @@ from alphaledger.execution.orders import (
     parse_order,
 )
 
-
 _HASH_MUTATIONS: tuple[tuple[str, object], ...] = (
     ("order_class", "simple"),
     ("qty", "3"),
