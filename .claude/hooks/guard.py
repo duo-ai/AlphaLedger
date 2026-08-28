@@ -81,6 +81,9 @@ CONVENTIONAL_TYPES = (
     "revert",
 )
 
+# git writes these itself, and the conventional commits spec does not cover them
+MERGE_SUBJECT = re.compile(r"^(?:Merge|Revert) ")
+
 CONVENTIONAL_SUBJECT = re.compile(
     r"^(?:" + "|".join(CONVENTIONAL_TYPES) + r")(?:\([a-z0-9._/-]+\))?!?: .+"
 )
@@ -131,7 +134,11 @@ def _git_violation(command: str) -> str | None:
         for pattern, reason in COMMIT_TELLS:
             if pattern.search(message):
                 return f"{reason} in a commit message"
-        if messages and not CONVENTIONAL_SUBJECT.match(messages[0]):
+        if (
+            messages
+            and not MERGE_SUBJECT.match(messages[0])
+            and not CONVENTIONAL_SUBJECT.match(messages[0])
+        ):
             allowed = ", ".join(CONVENTIONAL_TYPES)
             return (
                 f"a commit subject outside conventional commits: {messages[0]!r}. "
@@ -316,6 +323,20 @@ def _self_test() -> int:
         ),
         (
             {"tool_name": "Bash", "tool_input": {"command": "git commit --amend --no-edit"}},
+            False,
+        ),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git merge --no-ff feature/x -m 'Merge feature x'"},
+            },
+            False,
+        ),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git commit -m 'Merge branch develop into feature/x'"},
+            },
             False,
         ),
     )
