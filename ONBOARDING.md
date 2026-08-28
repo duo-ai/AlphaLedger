@@ -135,6 +135,27 @@ Codex. They are not style preferences.
 - The Alpaca MCP server is market-data-only. Order placement goes through
   tested application code, never a raw tool.
 
+## If you drive Codex
+
+Codex records hook trust as a hash. Editing `.codex/hooks.json` invalidates it,
+and Codex then **skips the hook silently**: a dispatched agent runs with no
+guard and nothing tells you. This was observed on 2026-08-28, when a command
+carrying the live trading host ran cleanly inside `codex exec` while the same
+command was blocked under Claude Code.
+
+`scripts/verify_harness.sh` now fails when it detects stale trust. To restore
+it, start Codex in this repository, inspect the hook with `/hooks`, and approve
+it:
+
+```bash
+codex
+/hooks
+```
+
+Re-approve after any change to `.codex/hooks.json`. Do not use
+`--dangerously-bypass-hook-trust` as a routine workaround; it skips the review
+step that makes trust meaningful.
+
 ## When to stop and ask
 
 - Two sources of truth disagree. Surface the conflict; do not pick the more

@@ -2,13 +2,13 @@
 id: UNIT-010
 title: Assert the paper endpoint and make live impossible
 lane: execution
-state: claimed
+state: in_review
 owner: pablo/codex
 branch: feature/010-paper-endpoint-assertion
 reviewer: execution-safety-reviewer
 preferred_runtime: codex
 depends_on: [UNIT-001]
-paths: src/alphaledger/broker/**, tests/execution/**
+paths: src/alphaledger/broker/**, tests/execution/test_endpoint.py
 claimed_at: 2026-08-28T17:54:19Z
 ---
 
@@ -75,6 +75,13 @@ can be set to `False`.
 - AC-8: rejection reasons are distinct per cause. A non-paper host, a
   malformed request path, and a malformed redirect must be
   distinguishable in the ledger.
+- AC-10: every 3xx response is an indeterminate outcome, whatever its target.
+  A same-origin or relative redirect is not success: the broker may not have
+  accepted the request. It is recorded with its own reason and raised as
+  `IndeterminateResponseError`, so a caller cannot mistake it for a 200 and
+  must resolve by broker lookup. Design section 11 step 5 already says an
+  unknown result may not be blindly retried; a silently returned 3xx is exactly
+  such a result.
 - AC-9: `base_url` and redirect `location` never appear in a `repr`. The
   existing protection covers `str(exc)` only, so a log line or a test diff
   rendering one of these objects would still leak the value.
@@ -96,6 +103,12 @@ can be set to `False`.
   `validate_process_start`, still records its reason.
 - failure: a rejected redirect, a malformed path, and a non-paper host each
   record a different reason code.
+- failure: every status in 301, 302, 303, 307 and 308 raises and records,
+  parametrised over a relative target, a same-origin target, and a cross-host
+  target. The same-origin case is the one that previously returned silently.
+- failure: `resolve_paper_base_url` called twice in one process, with the
+  environment changed to a live host between the calls, raises on the second.
+  This catches an in-process cache that a subprocess restart test cannot see.
 - failure: `repr()` of a configuration or response carrying a token-bearing
   value does not contain the value. Assert on `repr`, not only `str(exc)`.
 - failure: constructing a configuration with a non-paper host is impossible

@@ -114,9 +114,13 @@ present and verified to fire inside a worktree.
 | UNIT-021 | research | Generate the lagged frozen universe | G3 |
 | UNIT-022 | research | Build residual price and volume features | G3 |
 
-Rows with an intake file in `specs/units/` are claimable today: UNIT-001
-(merged), UNIT-010, UNIT-020, UNIT-021, and UNIT-022. The rest are backlog
-rows; promoting one means writing its intake from `specs/TEMPLATE.md`.
+Rows with an intake file in `specs/units/` are specified: UNIT-001 (merged),
+UNIT-010, UNIT-011, UNIT-012, UNIT-020, UNIT-021, and UNIT-022. The rest are
+backlog rows; promoting one means writing its intake from `specs/TEMPLATE.md`.
+
+Specified is not the same as claimable. The execution lane is a chain:
+UNIT-011 waits on UNIT-010 and UNIT-012 waits on UNIT-011, because each
+consumes the previous one's public surface. `coord.py` enforces that.
 
 `UNIT-022` additionally depends on `UNIT-021`, since features are built over a
 frozen universe.
