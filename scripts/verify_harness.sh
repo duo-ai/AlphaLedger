@@ -89,6 +89,14 @@ for s in bootstrap handoff paper-smoke research-gate submission-readiness social
 done
 [ "$c" -eq 0 ]; check $? "lifecycle skills stay manual-only ($c wrong)"
 
+echo "== codex dispatch =="
+command -v codex >/dev/null 2>&1; check $? "codex CLI on PATH"
+bash scripts/dispatch.sh UNIT-010 pablo/codex --dry-run >/dev/null 2>&1
+check $? "dispatch dry run builds a prompt"
+bash scripts/dispatch.sh UNIT-010 pablo/claude --dry-run >/dev/null 2>&1
+[ $? -ne 0 ]; check $? "dispatch refuses a claude owner"
+git diff --quiet specs/; check $? "a dry run claims nothing"
+
 echo "== git flow =="
 git show-ref --verify --quiet refs/heads/develop; check $? "develop exists"
 git show-ref --verify --quiet refs/heads/main; check $? "main exists"

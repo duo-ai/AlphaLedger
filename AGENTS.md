@@ -109,10 +109,24 @@ Two people and three coding-agent runtimes share this repository. Read
 | `teammate/claude` | Claude Code | research | `src/alphaledger/{data,evidence,forecast}/**`, `research/**` |
 
 Lanes have disjoint path globs. Never write outside the lane of the unit you
-hold. Codex carries the larger budget, so units marked
-`preferred_runtime: codex` are implementation-heavy and belong there; Claude
-sessions are better spent authoring intakes, running specialist reviews, and
-integrating. That field is a hint for a human, not routing logic.
+hold.
+
+Codex is the default runtime for implementation work. It carries the larger
+budget, so a Claude session that is about to write a substantial amount of
+implementation code should dispatch it instead:
+
+```bash
+scripts/dispatch.sh UNIT-010 pablo/codex
+```
+
+That claims the unit, pushes the claim, cuts a worktree off `develop`, builds
+the prompt from the unit's own intake, and runs `codex exec` in the background.
+Add `--dry-run` to see the prompt without claiming anything.
+
+Claude sessions are best spent on the work Codex cannot do as well: authoring
+intakes, running the specialist reviews, integrating, and deciding. Reserve
+Claude for implementation only when a unit is small, or when it is so entangled
+with a judgement call that handing it over would cost more than doing it.
 
 ### Claiming a unit
 
