@@ -2,7 +2,7 @@
 id: UNIT-004
 title: Load the frozen configuration and hash it
 lane: shared
-state: in_review
+state: claimed
 owner: pablo/codex
 branch: feature/004-frozen-config
 reviewer: execution-safety-reviewer
@@ -10,6 +10,9 @@ preferred_runtime: codex
 depends_on: [UNIT-001]
 paths: src/alphaledger/config/**, tests/config/**, config/**
 claimed_at: 2026-08-28T22:06:36Z
+reviewed_by: execution-safety-reviewer
+review_verdict: block
+reviewed_at: 2026-08-28T23:11:20Z
 ---
 
 ## Problem
@@ -128,3 +131,48 @@ them honest.
   files rather than writing them, but it is the only unit that touches them and
   the claim-time path check cannot tell a read from a write. Ownership is the
   honest resolution.
+
+- 2026-08-29 code review round one, `execution-safety-reviewer` via `codex exec review`.
+  Three P1 findings and one P2, every one of them a test that can stay green
+  while the invariant it names is broken. The reviewer states AC-1 through AC-6
+  are implemented, so this round is about proving the code, not changing it.
+  Do not rewrite the loader. Change production code only where a strengthened
+  test demonstrates a real defect, and say so in the commit when you do.
+  1. P1, `tests/config/test_frozen_config.py` around line 110. The hash-change
+     test mutates only `dte_max`, so it cannot tell the full content hash from
+     one that omits a universe, feature, or risk field. If a risk cap were left
+     out of the hash, the cap could change while the old hash, and an arm bound
+     to it, stayed valid. Parameterise a valid mutation of every field and
+     assert an invariant-only change fails closed.
+  2. P1, same file around line 105. The freeze test assigns to the outer
+     `FrozenConfig.risk` attribute only, so it proves nothing about the nested
+     records. If `RiskConfig` became mutable a process could load and arm under
+     hash H, mutate `max_contracts_per_structure`, and trade the changed cap
+     still calling it H. Attempt assignment on the fields of each nested
+     section record.
+  3. P1, same file around line 227. The environment guard fake subclasses
+     `dict`, so inherited `items`, `keys`, `copy`, and `in` read its empty
+     storage without ever reaching the overridden methods, and `os.environb` is
+     not guarded at all. A loader could take an override through any of those
+     and the test would still pass, which means AC-5 is currently unasserted.
+     Use a proxy that refuses every mapping operation, and cover the
+     byte-oriented API.
+  4. P2, same file around line 153. Matching the error text cannot tell
+     `UniverseConfig.__post_init__` from a duplicate check in the loader.
+     Moving the check into `_load_universe` while letting the public record
+     accept 31 would leave the test green. Exercise the invalid public record
+     directly, or otherwise assert where the exception came from.
+- 2026-08-29 pablo/claude on two things the reviewer raised that are not
+  findings to fix here. It named Pydantic v2 as the established alternative to
+  the hand-rolled validation, correctly applying the package rule in
+  `AGENTS.md`; that is one decision for the whole boundary rather than a change
+  to make inside this unit, and the same note is on UNIT-011. It also listed
+  the whole pre-gate execution matrix as unverified, which is true and is the
+  scope of UNIT-012 onward, not of this unit.
+- 2026-08-29 pablo/claude, recorded so it is not rediscovered: this review
+  emitted no `VERDICT:` line, although the prompt asks for one and the UNIT-011
+  review produced one. The verdict was graded from the findings by the session,
+  which is what D-018 puts on the session anyway. `scripts/notable.py` only
+  announces a verdict it can see, so a review that omits the line is silent on
+  the monitor.
+
