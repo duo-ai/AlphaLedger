@@ -2,7 +2,7 @@
 id: UNIT-022
 title: Build residual price and volume features
 lane: research
-state: claimed
+state: in_review
 owner: mazwy/claude
 branch: feature/022-price-volume-features
 reviewer: backtest-auditor
@@ -112,3 +112,68 @@ uv run ruff check . && uv run mypy src
 ```
 
 ## Handoff notes
+
+Implemented as `src/alphaledger/evidence/price_volume.py`. All eight features
+from design section 5.1 are present. `build` is pure, reads no clock, and takes
+the panel the caller has already restricted to `as_of`.
+
+### The model, and why it is this one
+
+Rolling robust demeaning: the residual return for a session is the symbol's
+return minus the median return of its sector peers. The median rather than the
+mean, so one peer with a corporate action or a squeeze cannot drag the whole
+cross-section, which is asserted by a test with a peer that moves twenty
+percent. A sector with fewer peers than `min_sector_peers` falls back to the
+whole panel and sets `sector_fallback_market`.
+
+No betas are fitted. A regression would introduce configuration that has not
+been selected on development data, and the design requires those choices to be
+registered as trials and frozen first. The median demeaning is already a strict
+function of past observations, which is what this unit has to guarantee.
+
+### Boundaries the tests pin
+
+`bars` is an `as_of` restricted panel, the same shape as UNIT-021's source. A
+bar first seen after `as_of` raises rather than being dropped, including the
+case where that would leave nothing: an unfiltered panel at an early `as_of`
+stops instead of reporting an empty block, because "no data" and "data you must
+not use" are different answers and a caller who confused them would read a leak
+as a quiet no-trade. Two bars for one symbol and session that disagree raise,
+the same rule the universe builder needed.
+
+The volume baseline and the ATR window both exclude the session being measured,
+each pinned by a test that fails if the window is widened by one.
+
+### Verified
+
+- `uv run pytest tests/research/test_price_volume.py -q`: 29 passed.
+- `uv sync --frozen`, `ruff check`, `ruff format --check`, `mypy src`,
+  `pytest`: all pass, 167 tests.
+- Every feature is checked against a hand-computed value from a fixture built
+  so the arithmetic can be redone on paper: the peers are flat, so the sector
+  median is zero and each residual equals the raw return.
+- Determinism is asserted across two processes under different
+  `PYTHONHASHSEED` values, comparing the full output byte for byte.
+- Twenty-two defects were injected one at a time and every one was caught by a
+  named test. Three survived the first pass and each exposed a real fixture
+  weakness rather than a false alarm: identical peers made a mean
+  indistinguishable from a median, a twenty session volume baseline of equal
+  volumes made the off-by-one window invisible, and an event session with no
+  move made the inclusive and exclusive windows identical. All three now have
+  fixtures that separate them.
+
+### Not verified
+
+- No adapter produces `Bar` records from Alpaca. Every bar here is a fixture.
+- Intraday data is absent, so abnormal volume uses the trailing daily baseline
+  that design section 5.1 names as the fallback, and every block says so with
+  `abnormal_volume_daily_baseline`. The time-of-day baseline is unimplemented.
+- The lookbacks, the winsorization limits, and the sector map are declared
+  defaults, not values selected on development data and registered as trials.
+  Section 5.1 requires that selection before any live run, and it has not
+  happened. `feature_version` changes when they change, which is what makes the
+  selection auditable later.
+- Nothing yet compares this family against news or combined baselines. That is
+  the comparison this unit exists to be the control in, and it belongs to
+  UNIT-023 and UNIT-024.
+
