@@ -336,3 +336,60 @@ def test_records_with_mapping_fields_are_not_hashable() -> None:
     for build in (an_evidence_card, a_forecast, a_structure_plan):
         with pytest.raises(TypeError):
             hash(build())
+
+
+# design decisions settled after the UNIT-001 review
+
+
+def test_a_first_seen_time_before_its_source_time_is_rejected() -> None:
+    """You cannot observe a record before its source emitted it. Design section
+    4 sets first_seen to the published time plus a conservative lag, so this
+    ordering is the one the contract guarantees."""
+    with pytest.raises(ValueError, match="first_seen_time"):
+        ObservationTimestamps(
+            event_time=T0,
+            first_seen_time=T0 - timedelta(seconds=1),
+            source_time=T0,
+            received_time=T0,
+            feed="iex",
+            as_of=T0,
+        )
+
+
+def test_a_first_seen_time_equal_to_its_source_time_is_accepted() -> None:
+    stamps = ObservationTimestamps(
+        event_time=T0,
+        first_seen_time=T0,
+        source_time=T0,
+        received_time=T0,
+        feed="iex",
+        as_of=T0,
+    )
+    assert stamps.first_seen_time == stamps.source_time
+
+
+def test_an_event_scheduled_after_it_was_announced_is_accepted() -> None:
+    """A scheduled earnings date is known weeks in advance, so event_time after
+    first_seen_time is legitimate and must not be rejected."""
+    stamps = ObservationTimestamps(
+        event_time=T0 + timedelta(days=14),
+        first_seen_time=T0,
+        source_time=T0,
+        received_time=T0,
+        feed="benzinga",
+        as_of=T0,
+    )
+    assert stamps.event_time > stamps.first_seen_time
+
+
+def test_a_leg_value_that_is_not_a_scalar_is_rejected() -> None:
+    """A nested container would be shared by reference, so a caller could mutate
+    a plan after its payload hash was computed."""
+    with pytest.raises(TypeError, match="legs"):
+        a_structure_plan(legs=({"symbol": "AAPL", "greeks": [1, 2, 3]},))
+
+
+def test_a_float_leg_value_is_rejected() -> None:
+    """A strike is money. rules/01-safety.md forbids float for it."""
+    with pytest.raises(TypeError, match="legs"):
+        a_structure_plan(legs=({"symbol": "AAPL", "strike": 200.0},))

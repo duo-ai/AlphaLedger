@@ -124,6 +124,32 @@ def _strings(value: Iterable[object], field: str) -> tuple[str, ...]:
     return tuple(str(item) for item in value)
 
 
+LEG_VALUE_TYPES = (str, int, Decimal, datetime)
+
+
+def _leg(value: Mapping[str, object], field: str) -> Mapping[str, object]:
+    """Copy one leg into a read-only view, allowing scalars only.
+
+    Design section 14 leaves the leg schema open. Values are still bounded
+    here: a nested container would stay shared by reference, so a caller
+    could mutate a plan after a RiskApproval was bound to its payload hash.
+    """
+    out: dict[str, object] = {}
+    for key, item in dict(value).items():
+        if isinstance(item, float):
+            raise TypeError(
+                f"{field}[{key}] must not be float; a strike or premium is money. "
+                f"Pass a string or Decimal; got {item!r}"
+            )
+        if not isinstance(item, LEG_VALUE_TYPES):
+            raise TypeError(
+                f"{field}[{key}] must be a scalar, not {type(item).__name__}. "
+                "A nested value would stay mutable through a shared reference"
+            )
+        out[str(key)] = item
+    return MappingProxyType(out)
+
+
 def _set(instance: object, field: str, value: object) -> None:
     object.__setattr__(instance, field, value)
 
@@ -148,6 +174,12 @@ class ObservationTimestamps:
             _set(self, field, require_utc(getattr(self, field), field))
         if not self.feed:
             raise ValueError("feed must identify the source; it is never defaulted")
+        if self.first_seen_time < self.source_time:
+            raise ValueError(
+                "first_seen_time precedes source_time, which would mean observing a "
+                f"record before its source emitted it: {self.first_seen_time.isoformat()} "
+                f"< {self.source_time.isoformat()}"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,7 +286,7 @@ class StructurePlan:
             raise ValueError(f"quantity must be positive; got {self.quantity!r}")
         if not self.legs:
             raise ValueError("a structure plan must name at least one leg")
-        _set(self, "legs", tuple(MappingProxyType(dict(leg)) for leg in self.legs))
+        _set(self, "legs", tuple(_leg(leg, "legs") for leg in self.legs))
         _set(
             self,
             "quote_times",
