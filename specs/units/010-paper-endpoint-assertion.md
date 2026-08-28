@@ -2,7 +2,7 @@
 id: UNIT-010
 title: Assert the paper endpoint and make live impossible
 lane: execution
-state: in_review
+state: merged
 owner: pablo/codex
 branch: feature/010-paper-endpoint-assertion
 reviewer: execution-safety-reviewer
