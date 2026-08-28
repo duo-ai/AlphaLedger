@@ -209,6 +209,14 @@ for i in "${!UNITS[@]}"; do
     git worktree add "$worktree" -b "$branch" develop >/dev/null
     [ -f .claude/settings.local.json ] && cp .claude/settings.local.json "$worktree/.claude/" || true
 
+    # Prepare the environment here, outside the agent's sandbox. A fresh
+    # worktree has no .venv, so the agent's first `uv run` would need network
+    # access the sandbox may deny, and the quality gate would fail before any
+    # work began. ONBOARDING tells the agent to stop on that, correctly.
+    echo "  $unit preparing environment"
+    ( cd "$worktree" && uv sync --frozen >/dev/null 2>&1 ) \
+        || die "uv sync failed in $worktree. Fix the environment before dispatching."
+
     nohup codex exec \
         -C "$worktree" \
         -s workspace-write \

@@ -163,10 +163,9 @@ def _git_violation(command: str) -> str | None:
         if name not in GIT_FLOW_BASE_BRANCHES and not name.startswith(GIT_FLOW_PREFIXES):
             return f"branch rename to {name!r} outside the git flow prefixes"
 
-    if re.search(r"\bgit\s+push\b", command, re.I) and re.search(
-        r"(?:--force(?!-with-lease)|\s-f\b)", command
-    ):
-        return "a force push; use --force-with-lease on your own branch only"
+    for push in re.findall(r"\bgit\s+push\b[^\n;&|]*", command, re.I):
+        if re.search(r"(?:--force(?!-with-lease)|\s-f\b)", push):
+            return "a force push; use --force-with-lease on your own branch only"
 
     if (
         re.search(r"\bgit\s+merge(?=\s|$)", command, re.I)
@@ -447,6 +446,17 @@ def _self_test() -> int:
         (
             {"tool_name": "Bash", "tool_input": {"command": "git merge --continue"}},
             False,
+        ),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "[ -f x ] && git push -q origin develop"},
+            },
+            False,
+        ),
+        (
+            {"tool_name": "Bash", "tool_input": {"command": "git push -f origin develop"}},
+            True,
         ),
     )
     failures = [
