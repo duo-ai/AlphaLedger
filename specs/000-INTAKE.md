@@ -23,6 +23,26 @@ What was missing was per-unit metadata: who owns a piece of work, on which
 branch, in what state, and which reviewer gates it. That gap is why parallel
 work was previously unsafe, and it is the only thing this intake adds.
 
+## Two entry points
+
+Work smaller than a unit is a bugfix branch. Work that is one unit starts at
+the intake below. Work larger than one unit starts with a spec, so the
+decomposition is decided once and several units become dispatchable together
+rather than one at a time:
+
+```
+spec-plot -> spec-analyze -> spec-clarify -> spec-plan -> spec-analyze again
+          -> spec-tasks -> dispatch.sh -> review.sh -> coord.py review -> merge
+```
+
+Each step is a skill. `spec-tasks` writes unit intakes into `specs/units/`, at
+which point everything below applies unchanged: the registry claims them, the
+dispatcher sends them, the reviewer gates them. See `specs/features/README.md`.
+
+The pipeline exists to plot ahead. Its value is not ceremony per unit, it is
+that a decomposition decided in advance can be dispatched in parallel, and
+`coord.py` will refuse the batch if the boundaries were not real.
+
 ## How a unit moves
 
 ```text

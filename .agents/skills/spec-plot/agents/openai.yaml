@@ -1,0 +1,7 @@
+interface:
+  display_name: "Spec Plot"
+  short_description: "Write a feature spec, what and why"
+  brand_color: "#8B5CF6"
+  default_prompt: "Use $spec-plot to write a feature spec, what and why."
+policy:
+  allow_implicit_invocation: true

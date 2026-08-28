@@ -151,6 +151,21 @@ intakes, running the specialist reviews, integrating, and deciding. Reserve
 Claude for implementation only when a unit is small, or when it is so entangled
 with a judgement call that handing it over would cost more than doing it.
 
+### Work larger than one unit
+
+Start with a spec rather than an intake, so the decomposition is decided once
+and several units become dispatchable at the same time:
+
+```
+spec-plot -> spec-analyze -> spec-clarify -> spec-plan -> spec-tasks
+```
+
+`spec-tasks` produces unit intakes, and from there the protocol below is
+unchanged. `specs/features/README.md` has the detail. The reason to plan ahead
+is parallelism: `coord.py` refuses a batch whose path globs overlap, so a
+decomposition that survives `dispatch.sh --dry-run` is one that can actually
+run at once.
+
 ### Claiming a unit
 
 ```bash
