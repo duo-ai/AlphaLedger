@@ -1,4 +1,4 @@
-# AlphaLedger — orchestrator and news-labeling prompts
+# AlphaLedger: orchestrator and news-labeling prompts
 
 This file contains two separate system prompts:
 
@@ -16,7 +16,7 @@ validated schema, and has been tested against the competition paper account.
 
 ---
 
-## Prompt A — autonomous paper-trading orchestrator
+## Prompt A: autonomous paper-trading orchestrator
 
 ```text
 You are AlphaLedger, an autonomous OPTIONS PAPER-TRADING orchestrator.
@@ -187,8 +187,8 @@ Every decision summary must be grounded in returned values and use this order:
 4. forecast: horizon, p_up, expected residual, key quantiles, calibration or
    effective sample metadata, and model version;
 5. structure: name, exact legs, expiry, quantity, limit bound, max loss/profit,
-   breakeven, and quote times—or exact rejection reason;
-6. risk: approval ID and post-trade open-risk state—or failed gates;
+   breakeven, and quote times, or exact rejection reason;
+6. risk: approval ID and post-trade open-risk state, or failed gates;
 7. execution: client order ID and reconciled status, when applicable;
 8. counterfactual/shadow references; and
 9. next monitor or exit time.
@@ -221,7 +221,7 @@ halt. Safety and truthful traceability outrank activity.
 
 ---
 
-## Prompt B — point-in-time news labeler
+## Prompt B: point-in-time news labeler
 
 This prompt runs in a separate, tool-free call. The caller supplies one article,
 one candidate ticker/company pair, and an optional deterministic list of

@@ -1,4 +1,4 @@
-# AlphaLedger — replanned hackathon package
+# AlphaLedger: replanned hackathon package
 
 This package replaces the original single-ticker options recommender with an
 autonomous, cross-sectional paper-trading agent. Its core claim is narrower
@@ -11,24 +11,24 @@ and more defensible:
 
 ## Files
 
-- `options-alpha-agent-design.md` — product thesis, alpha model, validation,
+- `options-alpha-agent-design.md`: product thesis, alpha model, validation,
   options construction, execution, risk, observability, and source notes.
-- `hackathon-build-plan.md` — execution-first schedule from Aug 27 through the
+- `hackathon-build-plan.md`: execution-first schedule from Aug 27 through the
   Sep 4 submission deadline, with gates and a strict descope ladder.
-- `orchestrator-system-prompt.md` — paste-ready system prompt plus the
+- `orchestrator-system-prompt.md`: paste-ready system prompt plus the
   structured news-labeling contract used by the deterministic pipeline.
-- `claude-development-harness.md` — setup, trust boundaries, daily workflow,
+- `claude-development-harness.md`: setup, trust boundaries, daily workflow,
   and official references for the included Claude Code development harness.
-- `codex-development-harness.md` — native Codex configuration, trust flow,
+- `codex-development-harness.md`: native Codex configuration, trust flow,
   agents, hooks, command rules, skills, and official references.
-- `AGENTS.md`, `.claude/`, `.codex/`, and `.agents/skills/` — one canonical
+- `AGENTS.md`, `.claude/`, `.codex/`, and `.agents/skills/`: one canonical
   coding-agent contract with runtime-native settings, six read-only
   specialists per harness, manual workflows, and safety hooks.
-- `project-state/` — the single restart checkpoint and accepted-decision log
+- `project-state/`: the single restart checkpoint and accepted-decision log
   shared by both development harnesses.
-- `.mcp.json` — pinned Alpaca MCP configured for market data only; order tools
+- `.mcp.json`: pinned Alpaca MCP configured for market data only; order tools
   are deliberately absent.
-- `run_manifest.example.yaml` — secret-free Day-0 facts and frozen-run template
+- `run_manifest.example.yaml`: secret-free Day-0 facts and frozen-run template
   referenced by the build plan.
 
 ## The consequential changes
@@ -54,7 +54,7 @@ feature; it no longer masquerades as a forward alpha by itself.
 
 ## MVP in one sentence
 
-Scan 20–30 liquid optionable names, combine a market/sector-neutral
+Scan 20 to 30 liquid optionable names, combine a market/sector-neutral
 price-volume signal with point-in-time news features, trade at most the top
 one or two validated directions through liquid debit verticals, and show the
 trade, its counterfactual shadow books, and the risk state in a live evidence

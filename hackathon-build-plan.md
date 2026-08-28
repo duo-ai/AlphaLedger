@@ -1,4 +1,4 @@
-# AlphaLedger — solo hackathon build plan
+# AlphaLedger: solo hackathon build plan
 
 Event: Alpaca AI Trading Agents Hackathon, Options Alpha Agents track  
 Kickoff: Friday, 28 Aug 2026, 15:00 UTC / 11:00 ET  
@@ -53,7 +53,7 @@ full lifecycle is reliable.
 | G5 Submission freeze | Sep 2 end of day | No model/threshold/strategy changes; demo and write-up reproducible | Cut stretch work and freeze immediately |
 | G6 Flat and submitted | Sep 4 before 15:00 UTC | All positions/orders reconciled flat; final artifacts submitted | Wind-down takes precedence over polish |
 
-## 3. Day 0 — Thursday, Aug 27
+## 3. Day 0: Thursday, Aug 27
 
 Do only administrative, research, and generic integration work permitted by
 the event rules. If pre-kickoff project code is prohibited, keep the submission
@@ -96,12 +96,12 @@ Copy it to the runtime configuration only after the facts are verified. G0
 remains unpassed until every required field matches the actual competition
 environment and the frozen copy has a recorded hash.
 
-## 4. Day 1 — Friday, Aug 28: execution-first vertical slice
+## 4. Day 1 (Friday, Aug 28): execution-first vertical slice
 
 The event begins at 11:00 ET while the market is open. Use the remaining
 session to remove execution uncertainty.
 
-### 15:00–16:00 UTC — lock rules and environment
+### 15:00 to 16:00 UTC: lock rules and environment
 
 - Complete G0.
 - Verify market clock, account ID, equity, buying power, options permissions,
@@ -110,9 +110,9 @@ session to remove execution uncertainty.
   not merely discouraged in a prompt.
 - Record version hashes and start the raw-data/ledger recorder.
 
-### 16:00–18:00 UTC — order and state-machine smoke test
+### 16:00 to 18:00 UTC: order and state-machine smoke test
 
-- Pull one liquid underlying and a 7–21 DTE chain.
+- Pull one liquid underlying and a 7 to 21 DTE chain.
 - Build one valid one-contract debit spread from deterministic strike rules.
 - Calculate debit, width, max loss/profit, and breakeven; test invariants.
 - Risk-approve a tiny test within the frozen sandbox limit.
@@ -122,7 +122,7 @@ session to remove execution uncertainty.
 - If MCP MLeg placement fails, switch immediately to the direct adapter. Do not
   spend the weekend debugging a presentation-layer wrapper.
 
-### 18:00 UTC to market close — thin autonomous loop
+### 18:00 UTC to market close: thin autonomous loop
 
 Implement a placeholder, non-claimed signal solely to exercise the flow; it
 must remain disabled for competition P&L unless it already passed a legitimate
@@ -154,13 +154,13 @@ historical test. Wire:
 G1 and G2 pass. The system can safely do nothing, place one approved paper
 spread, observe it, exit it, and recover after a restart. No dashboard polish.
 
-## 5. Day 2 — Saturday, Aug 29: point-in-time research dataset
+## 5. Day 2 (Saturday, Aug 29): point-in-time research dataset
 
 The market is closed; build the evidence layer without execution pressure.
 
-### Morning — data and universe
+### Morning: data and universe
 
-- Build the lagged, frozen universe generator, capped at 20–30 names.
+- Build the lagged, frozen universe generator, capped at 20 to 30 names.
 - Pull/cache historical stock bars, SPY, static sector ETFs, and Alpaca news.
 - Normalize timestamps and save `source_time`, `first_seen_time`, `feed`, and
   `as_of`.
@@ -172,7 +172,7 @@ The market is closed; build the evidence layer without execution pressure.
 - Add explicit sanity checks: duplicates, missing sessions, split/corporate
   actions, extreme values, stale records, and impossible future timestamps.
 
-### Afternoon — structured news and price features
+### Afternoon: structured news and price features
 
 - Implement the fixed-schema news-labeling prompt from
   `orchestrator-system-prompt.md`.
@@ -183,7 +183,7 @@ The market is closed; build the evidence layer without execution pressure.
   features.
 - The labeler never receives future returns or post-article market summaries.
 
-### Evening — first baselines
+### Evening: first baselines
 
 - Generate price-only, news-only, and combined datasets.
 - Run a shuffled-label/random-ranking negative control.
@@ -195,9 +195,9 @@ One command reconstructs a point-in-time feature table and forward labels from
 raw cached data. Spot checks for several articles can be explained from input
 to label to subsequent outcome.
 
-## 6. Day 3 — Sunday, Aug 30: model, costs, and freeze candidate
+## 6. Day 3 (Sunday, Aug 30): model, costs, and freeze candidate
 
-### Morning — simple forecast
+### Morning: simple forecast
 
 - Fit one regularized pooled directional model and one magnitude model.
 - Use chronological expanding folds with a purge at least as long as the
@@ -205,7 +205,7 @@ to label to subsequent outcome.
 - Calibrate probabilities on a later slice.
 - Do not add symbol-specific memorization or a large hyperparameter search.
 
-### Afternoon — evaluation and option expression
+### Afternoon: evaluation and option expression
 
 - Run the locked test for random, price-only, news-only, and combined models.
 - Report Brier/calibration, rank IC, sign precision, residual-return deciles,
@@ -217,7 +217,7 @@ to label to subsequent outcome.
 - If a pre-expiry repricer is not validated, label its output as stress, not EV
   or POP.
 
-### Evening — go/no-go and freeze
+### Evening: go/no-go and freeze
 
 Freeze alpha v1 only if:
 
@@ -237,9 +237,9 @@ system is disarmed and the change is prominently disclosed.
 
 Use a separately tested price-volume model only if it already meets the same
 gate. Otherwise keep live entry disabled, continue shadow forecasts, and use
-Monday to fix data/leakage—not to lower the statistical bar.
+Monday to fix data/leakage, not to lower the statistical bar.
 
-## 7. Day 4 — Monday, Aug 31: first full autonomous market session
+## 7. Day 4 (Monday, Aug 31): first full autonomous market session
 
 ### Before open
 
@@ -267,7 +267,7 @@ Monday to fix data/leakage—not to lower the statistical bar.
 - Review only operational defects and data incidents.
 - Promote to full frozen risk on Tuesday only if G4 passes.
 
-## 8. Day 5 — Tuesday, Sep 1: reliability and counterfactuals
+## 8. Day 5 (Tuesday, Sep 1): reliability and counterfactuals
 
 - Run the autonomous session with the same alpha/config.
 - Fix only clearly logged implementation defects; version every change.
@@ -285,7 +285,7 @@ Two consecutive sessions have reproducible scans, no manual order choice,
 clean reconciliation, and complete evidence. Draft the one-page logic/risk/
 Alpaca-infrastructure narrative directly from the ledger and design spec.
 
-## 9. Day 6 — Wednesday, Sep 2: submission freeze
+## 9. Day 6 (Wednesday, Sep 2): submission freeze
 
 - Run the unchanged system.
 - Freeze code affecting alpha, strategy, risk, and order semantics by end of
@@ -302,7 +302,7 @@ Alpaca-infrastructure narrative directly from the ledger and design spec.
   5. shadow counterfactuals and limitations.
 - Record a backup demo while the system and data are known to work.
 
-## 10. Day 7 — Thursday, Sep 3: final full-session run
+## 10. Day 7 (Thursday, Sep 3): final full-session run
 
 - Operate the frozen system; no alpha tuning.
 - Permit only high-severity operational fixes that preserve logged intent.
@@ -312,7 +312,7 @@ Alpaca-infrastructure narrative directly from the ledger and design spec.
 - Test the public project from a clean environment with no private keys.
 - Prepare an explicit wind-down checklist for Friday morning.
 
-## 11. Deadline day — Friday, Sep 4
+## 11. Deadline day: Friday, Sep 4
 
 The event closes at 15:00 UTC / 11:00 ET, well before the market close.
 Use an internal cutoff with margin; confirm organizers' final rules first.
