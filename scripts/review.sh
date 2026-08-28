@@ -91,7 +91,13 @@ You are reviewing $UNIT. Its specification is specs/units/$SLUG.md; read it in
 full, including its acceptance criteria, its test list, and any handoff notes,
 because those record decisions taken during implementation.
 
-Review only the bounded diff against $BASE. Do not widen to the repository.
+The bounded diff is:
+
+    git diff $BASE...HEAD
+
+Use the three-dot form. Two dots would also show everything $BASE gained since
+this branch was cut, which here is substantial and none of it belongs to this
+unit. Do not widen beyond that diff.
 
 Answer these explicitly:
   - which acceptance criteria are met and which are not, by number;
@@ -119,7 +125,7 @@ EOF
 
 echo
 echo "reviewing with the Codex specialist $(basename "$AGENT_FILE" .toml)"
-( cd "$WORKTREE" && codex exec review --base "$BASE" -c model_reasoning_effort=xhigh - < "$PROMPT" ) \
+( cd "$WORKTREE" && codex exec review -c model_reasoning_effort=xhigh - < "$PROMPT" ) \
     | tee "$OUT" | tail -40
 
 echo
