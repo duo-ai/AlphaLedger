@@ -8,7 +8,6 @@ import re
 import sys
 from typing import Any
 
-
 MUTATING_ALPACA_PREFIXES = (
     "place_",
     "replace_",
@@ -103,7 +102,7 @@ def _current_branch() -> str:
             timeout=3,
             check=False,
         )
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return ""
     return result.stdout.strip() if result.returncode == 0 else ""
 
@@ -118,7 +117,9 @@ def _git_violation(command: str) -> str | None:
             if pattern.search(message):
                 return f"{reason} in a commit message"
         if _current_branch() == "main":
-            return "a direct commit to main; main takes only --no-ff merges from release/ or hotfix/"
+            return (
+                "a direct commit to main; main takes only --no-ff merges from release/ or hotfix/"
+            )
 
     for pattern in BRANCH_CREATION_PATTERNS:
         for name in pattern.findall(command):
@@ -157,9 +158,7 @@ def _bash_violation(command: str) -> str | None:
 
     if re.search(r"https?://api\.alpaca\.markets\b", command, re.I):
         return "live Alpaca trading endpoint"
-    if re.search(
-        r"\bALPACA_PAPER_TRADE\s*=\s*(?:false|0|no|off)\b", command, re.I
-    ):
+    if re.search(r"\bALPACA_PAPER_TRADE\s*=\s*(?:false|0|no|off)\b", command, re.I):
         return "paper-trading mode disabled"
     if re.search(r"\balphaledger\b[^\n;&|]*\s--live\b", command, re.I):
         return "live application mode"
@@ -210,10 +209,7 @@ def _patch_violation(patch: str) -> str | None:
     for line in additions.splitlines():
         if "ALPACA_TOOLSETS" not in line:
             continue
-        tokens = {
-            token.lower()
-            for token in re.findall(r"[a-z][a-z-]*", line, flags=re.I)
-        }
+        tokens = {token.lower() for token in re.findall(r"[a-z][a-z-]*", line, flags=re.I)}
         forbidden = sorted(tokens & FORBIDDEN_TOOLSETS)
         if forbidden:
             return f"forbidden Alpaca MCP toolset added: {', '.join(forbidden)}"
@@ -290,7 +286,7 @@ def _self_test() -> int:
                 "tool_input": {
                     "command": (
                         "*** Begin Patch\n*** Update File: .codex/config.toml\n"
-                        "+ALPACA_TOOLSETS = \"assets,trading\"\n*** End Patch"
+                        '+ALPACA_TOOLSETS = "assets,trading"\n*** End Patch'
                     )
                 },
             },
@@ -305,16 +301,63 @@ def _self_test() -> int:
             },
             False,
         ),
-        ({"tool_name": "Bash", "tool_input": {"command": "git commit -m 'x\n\nCo-Authored-By: Claude <a@b>'"}}, True),
-        ({"tool_name": "Bash", "tool_input": {"command": "git commit -m 'fix guard \u2014 tighten regex'"}}, True),
-        ({"tool_name": "Bash", "tool_input": {"command": "git commit -m 'tighten the guard regex'"}}, False),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git commit -m 'x\n\nCo-Authored-By: Claude <a@b>'"},
+            },
+            True,
+        ),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git commit -m 'fix guard \u2014 tighten regex'"},
+            },
+            True,
+        ),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git commit -m 'tighten the guard regex'"},
+            },
+            False,
+        ),
         ({"tool_name": "Bash", "tool_input": {"command": "git checkout -b wip-thing"}}, True),
-        ({"tool_name": "Bash", "tool_input": {"command": "git checkout -b feature/010-order-adapter"}}, False),
-        ({"tool_name": "Bash", "tool_input": {"command": "git worktree add ../wt/x -b feature/020-recorder"}}, False),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git checkout -b feature/010-order-adapter"},
+            },
+            False,
+        ),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git worktree add ../wt/x -b feature/020-recorder"},
+            },
+            False,
+        ),
         ({"tool_name": "Bash", "tool_input": {"command": "git push --force origin develop"}}, True),
-        ({"tool_name": "Bash", "tool_input": {"command": "grep -b pattern file.py && git status"}}, False),
-        ({"tool_name": "Bash", "tool_input": {"command": "git worktree add ../wt/x -b nope"}}, True),
-        ({"tool_name": "Bash", "tool_input": {"command": "cat > f.md <<'X'\nprose \u2014 with a dash\nX\ngit commit -m 'add prose'"}}, False),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "grep -b pattern file.py && git status"},
+            },
+            False,
+        ),
+        (
+            {"tool_name": "Bash", "tool_input": {"command": "git worktree add ../wt/x -b nope"}},
+            True,
+        ),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": "cat > f.md <<'X'\nprose \u2014 with a dash\nX\ngit commit -m 'add prose'"
+                },
+            },
+            False,
+        ),
     )
     failures = [
         index

@@ -15,14 +15,14 @@ from pathlib import Path
 
 def main() -> int:
     root = Path(__file__).resolve().parent.parent
-    today = date.today().isoformat()
+    # Local date on purpose: this tracks the operator's calendar day, not a
+    # market timestamp, so the project's UTC rule does not apply here.
+    today = date.today().isoformat()  # noqa: DTZ011
     draft = root / "social" / f"{today}.md"
     if draft.exists():
         return 0
 
-    existing = sorted(
-        path.stem for path in (root / "social").glob("*.md") if path.stem != "README"
-    )
+    existing = sorted(path.stem for path in (root / "social").glob("*.md") if path.stem != "README")
     if existing:
         print(
             f"No social progress draft for {today} yet (last one: {existing[-1]}). "

@@ -8,7 +8,6 @@ import re
 import sys
 from typing import Any
 
-
 MUTATING_ALPACA_PREFIXES = (
     "place_",
     "replace_",
@@ -30,7 +29,10 @@ DESTRUCTIVE_COMMANDS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\bgit\s+reset\s+--hard\b", re.I), "destructive git reset"),
     (re.compile(r"\bgit\s+clean\s+-[^\s]*f", re.I), "destructive git clean"),
     (re.compile(r"\bfind\b[^\n;&|]*\s-delete\b", re.I), "recursive find deletion"),
-    (re.compile(r"\b(?:mkfs(?:\.[a-z0-9]+)?|shutdown|reboot)\b", re.I), "system-destructive command"),
+    (
+        re.compile(r"\b(?:mkfs(?:\.[a-z0-9]+)?|shutdown|reboot)\b", re.I),
+        "system-destructive command",
+    ),
     (re.compile(r"\bdd\s+[^\n;&|]*\bif=", re.I), "raw device copy"),
     (re.compile(r"\bchmod\s+-R\s+777\b", re.I), "unsafe recursive permissions"),
 )
@@ -96,7 +98,7 @@ def _current_branch() -> str:
             timeout=3,
             check=False,
         )
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return ""
     return result.stdout.strip() if result.returncode == 0 else ""
 
@@ -111,7 +113,9 @@ def _git_violation(command: str) -> str | None:
             if pattern.search(message):
                 return f"{reason} in a commit message"
         if _current_branch() == "main":
-            return "a direct commit to main; main takes only --no-ff merges from release/ or hotfix/"
+            return (
+                "a direct commit to main; main takes only --no-ff merges from release/ or hotfix/"
+            )
 
     for pattern in BRANCH_CREATION_PATTERNS:
         for name in pattern.findall(command):
@@ -150,9 +154,7 @@ def _bash_violation(command: str) -> str | None:
 
     if re.search(r"https?://api\.alpaca\.markets\b", command, re.I):
         return "live Alpaca trading endpoint"
-    if re.search(
-        r"\bALPACA_PAPER_TRADE\s*=\s*(?:false|0|no|off)\b", command, re.I
-    ):
+    if re.search(r"\bALPACA_PAPER_TRADE\s*=\s*(?:false|0|no|off)\b", command, re.I):
         return "paper-trading mode disabled"
     if re.search(r"\balphaledger\b[^\n;&|]*\s--live\b", command, re.I):
         return "live application mode"
@@ -195,21 +197,80 @@ def _self_test() -> int:
     cases = (
         ({"tool_name": "Read", "tool_input": {"file_path": "/repo/.env"}}, True),
         ({"tool_name": "Bash", "tool_input": {"command": "git reset --hard HEAD"}}, True),
-        ({"tool_name": "Bash", "tool_input": {"command": "curl https://api.alpaca.markets/v2/account"}}, True),
-        ({"tool_name": "Bash", "tool_input": {"command": "curl https://paper-api.alpaca.markets/v2/account"}}, False),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "curl https://api.alpaca.markets/v2/account"},
+            },
+            True,
+        ),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "curl https://paper-api.alpaca.markets/v2/account"},
+            },
+            False,
+        ),
         ({"tool_name": "mcp__alpaca__place_option_order", "tool_input": {}}, True),
         ({"tool_name": "mcp__alpaca__get_option_chain", "tool_input": {}}, False),
         ({"tool_name": "Read", "tool_input": {"file_path": "/repo/src/app.py"}}, False),
-        ({"tool_name": "Bash", "tool_input": {"command": "git commit -m 'x\n\nCo-Authored-By: Claude <a@b>'"}}, True),
-        ({"tool_name": "Bash", "tool_input": {"command": "git commit -m 'fix guard \u2014 tighten regex'"}}, True),
-        ({"tool_name": "Bash", "tool_input": {"command": "git commit -m 'tighten the guard regex'"}}, False),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git commit -m 'x\n\nCo-Authored-By: Claude <a@b>'"},
+            },
+            True,
+        ),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git commit -m 'fix guard \u2014 tighten regex'"},
+            },
+            True,
+        ),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git commit -m 'tighten the guard regex'"},
+            },
+            False,
+        ),
         ({"tool_name": "Bash", "tool_input": {"command": "git checkout -b wip-thing"}}, True),
-        ({"tool_name": "Bash", "tool_input": {"command": "git checkout -b feature/010-order-adapter"}}, False),
-        ({"tool_name": "Bash", "tool_input": {"command": "git worktree add ../wt/x -b feature/020-recorder"}}, False),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git checkout -b feature/010-order-adapter"},
+            },
+            False,
+        ),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git worktree add ../wt/x -b feature/020-recorder"},
+            },
+            False,
+        ),
         ({"tool_name": "Bash", "tool_input": {"command": "git push --force origin develop"}}, True),
-        ({"tool_name": "Bash", "tool_input": {"command": "grep -b pattern file.py && git status"}}, False),
-        ({"tool_name": "Bash", "tool_input": {"command": "git worktree add ../wt/x -b nope"}}, True),
-        ({"tool_name": "Bash", "tool_input": {"command": "cat > f.md <<'X'\nprose \u2014 with a dash\nX\ngit commit -m 'add prose'"}}, False),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "grep -b pattern file.py && git status"},
+            },
+            False,
+        ),
+        (
+            {"tool_name": "Bash", "tool_input": {"command": "git worktree add ../wt/x -b nope"}},
+            True,
+        ),
+        (
+            {
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": "cat > f.md <<'X'\nprose \u2014 with a dash\nX\ngit commit -m 'add prose'"
+                },
+            },
+            False,
+        ),
     )
     failures = [
         index
