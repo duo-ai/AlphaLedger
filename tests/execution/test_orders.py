@@ -2,6 +2,8 @@ import copy
 import hashlib
 import subprocess
 import sys
+import traceback
+from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import cast
@@ -168,6 +170,8 @@ def test_realistic_filled_order_parses_status_quantity_and_utc_timestamps() -> N
     assert order.updated_at == datetime(2026, 8, 28, 15, 31, 5, 987654, tzinfo=UTC)
     assert order.submitted_at == datetime(2026, 8, 28, 15, 31, 2, 223456, tzinfo=UTC)
     assert order.filled_at == datetime(2026, 8, 28, 15, 31, 5, 887654, tzinfo=UTC)
+    with pytest.raises(FrozenInstanceError):
+        order.status = BrokerOrderStatus.CANCELED  # type: ignore[misc]
 
 
 def test_float_price_or_nested_leg_value_is_rejected_and_names_the_field() -> None:
@@ -200,17 +204,28 @@ def test_leg_key_outside_declared_vocabulary_is_rejected_and_names_the_key() -> 
 
 def test_truncated_broker_payload_raises_redacted_typed_adapter_error() -> None:
     credential_shaped_value = "credential-shaped-value"
-    raw = {
-        "id": "4c51a4ba-53f9-4bf2-88a5-6d1c17b8e108",
-        "authorization": credential_shaped_value,
-    }
+    payloads = (
+        {
+            "id": "4c51a4ba-53f9-4bf2-88a5-6d1c17b8e108",
+            "authorization": credential_shaped_value,
+        },
+        {
+            "id": "4c51a4ba-53f9-4bf2-88a5-6d1c17b8e108",
+            "client_order_id": "client-debit-001",
+            "status": "new",
+            "filled_qty": "0",
+            "created_at": credential_shaped_value,
+        },
+    )
 
-    with pytest.raises(OrderAdapterError) as error:
-        parse_order(raw)
+    for raw in payloads:
+        with pytest.raises(OrderAdapterError) as error:
+            parse_order(raw)
 
-    assert not isinstance(error.value, (KeyError, TypeError))
-    assert credential_shaped_value not in str(error.value)
-    assert "authorization" not in str(error.value)
+        formatted_error = "".join(traceback.format_exception(error.value))
+        assert not isinstance(error.value, (KeyError, TypeError))
+        assert credential_shaped_value not in formatted_error
+        assert "authorization" not in formatted_error
 
 
 def test_mutating_one_leg_after_hashing_changes_the_risk_binding() -> None:

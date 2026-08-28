@@ -185,8 +185,8 @@ def _ratio_quantity(value: object, field: str) -> str:
         raise OrderAdapterError(f"{field} must be a positive integer")
     try:
         quantity = Decimal(value)
-    except InvalidOperation as exc:
-        raise OrderAdapterError(f"{field} must be a positive integer") from exc
+    except InvalidOperation:
+        raise OrderAdapterError(f"{field} must be a positive integer") from None
     if not quantity.is_finite() or quantity <= 0 or quantity != quantity.to_integral_value():
         raise OrderAdapterError(f"{field} must be a positive integer")
     return str(int(quantity))
@@ -251,8 +251,8 @@ def _required_quantity(raw: Mapping[str, object], field: str) -> Decimal:
         raise OrderAdapterError(f"broker order field '{field}' must be an exact quantity")
     try:
         quantity = Decimal(value)
-    except InvalidOperation as exc:
-        raise OrderAdapterError(f"broker order field '{field}' must be an exact quantity") from exc
+    except InvalidOperation:
+        raise OrderAdapterError(f"broker order field '{field}' must be an exact quantity") from None
     if not quantity.is_finite() or quantity < 0:
         raise OrderAdapterError(f"broker order field '{field}' must be a nonnegative quantity")
     return quantity
@@ -276,10 +276,10 @@ def _parse_timestamp(value: object, field: str) -> datetime:
     normalized = f"{value[:-1]}+00:00" if value.endswith("Z") else value
     try:
         parsed = datetime.fromisoformat(normalized)
-    except ValueError as exc:
+    except ValueError:
         raise OrderAdapterError(
             f"broker order field '{field}' must be an RFC3339 timestamp"
-        ) from exc
+        ) from None
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise OrderAdapterError(f"broker order field '{field}' must include a UTC offset")
     return parsed.astimezone(UTC)
