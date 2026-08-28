@@ -2,7 +2,7 @@
 id: UNIT-003
 title: Enumerate the news category on the label
 lane: shared
-state: claimed
+state: merged
 owner: pablo/claude
 branch: feature/003-news-category
 reviewer: code-reviewer
