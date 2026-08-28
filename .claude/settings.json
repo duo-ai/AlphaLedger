@@ -15,7 +15,13 @@
       "Bash(uv run mypy *)",
       "Bash(python3 .claude/hooks/guard.py --self-test)",
       "Bash(claude plugin validate .claude/agents)",
-      "Bash(claude mcp list)"
+      "Bash(claude mcp list)",
+      "Bash(python3 scripts/coord.py *)",
+      "Bash(python3 scripts/coord.py --self-test)",
+      "Bash(bash scripts/gitflow-init.sh)",
+      "Bash(python3 scripts/social_check.py)",
+      "Bash(git worktree list)",
+      "Bash(git branch --show-current)"
     ],
     "ask": [
       "Bash(uv add *)",
@@ -54,6 +60,17 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/scripts/social_check.py\"",
             "timeout": 5
           }
         ]
