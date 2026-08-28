@@ -2,7 +2,7 @@
 id: UNIT-021
 title: Generate the lagged frozen universe
 lane: research
-state: in_review
+state: merged
 owner: mazwy/claude
 branch: feature/021-frozen-universe
 reviewer: backtest-auditor
