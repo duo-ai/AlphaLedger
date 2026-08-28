@@ -66,6 +66,12 @@ def _sensitive_path(path: str) -> str | None:
 GIT_FLOW_PREFIXES = ("feature/", "bugfix/", "release/", "hotfix/", "support/")
 GIT_FLOW_BASE_BRANCHES = ("main", "develop")
 
+BRANCH_CREATION_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bgit\s+checkout\s+(?:-[^\s]+\s+)*-b\s+([^\s]+)"),
+    re.compile(r"\bgit\s+switch\s+(?:-[^\s]+\s+)*-c\s+([^\s]+)"),
+    re.compile(r"\bgit\s+worktree\s+add\s+[^\s]+\s+-b\s+([^\s]+)"),
+)
+
 COMMIT_TELLS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
         re.compile(r"co-authored-by\s*:[^\n]*(claude|codex|gpt|copilot|anthropic|openai)", re.I),
@@ -104,10 +110,11 @@ def _git_violation(command: str) -> str | None:
         if _current_branch() == "main":
             return "a direct commit to main; main takes only --no-ff merges from release/ or hotfix/"
 
-    for name in re.findall(r"\s-(?:b|c)\s+([^\s]+)", command):
-        if name not in GIT_FLOW_BASE_BRANCHES and not name.startswith(GIT_FLOW_PREFIXES):
-            allowed = ", ".join(GIT_FLOW_PREFIXES)
-            return f"branch name {name!r} outside the git flow prefixes ({allowed})"
+    for pattern in BRANCH_CREATION_PATTERNS:
+        for name in pattern.findall(command):
+            if name not in GIT_FLOW_BASE_BRANCHES and not name.startswith(GIT_FLOW_PREFIXES):
+                allowed = ", ".join(GIT_FLOW_PREFIXES)
+                return f"branch name {name!r} outside the git flow prefixes ({allowed})"
 
     for name in re.findall(r"\bgit\s+branch\s+-[mM]\s+(?:[^\s]+\s+)?([^\s]+)", command):
         if name not in GIT_FLOW_BASE_BRANCHES and not name.startswith(GIT_FLOW_PREFIXES):
@@ -295,6 +302,8 @@ def _self_test() -> int:
         ({"tool_name": "Bash", "tool_input": {"command": "git checkout -b feature/010-order-adapter"}}, False),
         ({"tool_name": "Bash", "tool_input": {"command": "git worktree add ../wt/x -b feature/020-recorder"}}, False),
         ({"tool_name": "Bash", "tool_input": {"command": "git push --force origin develop"}}, True),
+        ({"tool_name": "Bash", "tool_input": {"command": "grep -b pattern file.py && git status"}}, False),
+        ({"tool_name": "Bash", "tool_input": {"command": "git worktree add ../wt/x -b nope"}}, True),
     )
     failures = [
         index
