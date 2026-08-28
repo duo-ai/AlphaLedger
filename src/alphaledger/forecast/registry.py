@@ -162,11 +162,30 @@ class TrialRegistry:
                 payload = record.get("result")
                 if not isinstance(payload, dict):
                     raise StoreCorruptionError(f"{trial_id}: a result record has no result")
+                if trial_id in results:
+                    # `record_result` refuses a second result, but two processes
+                    # can both pass that check before either appends. Resolving
+                    # it here by taking the last one would be the overwrite this
+                    # registry exists to prevent, arriving by another route.
+                    raise StoreCorruptionError(
+                        f"{trial_id} has two recorded results. Which one stands cannot be "
+                        "decided by reading order, and choosing would be the overwrite "
+                        "this registry refuses"
+                    )
                 results[trial_id] = MappingProxyType(
                     {str(key): str(value) for key, value in payload.items()}
                 )
             else:
                 raise StoreCorruptionError(f"a stored record has an unknown kind {kind!r}")
+        orphans = sorted(set(results) - set(registered))
+        if orphans:
+            # Dropping these would report a shorter history than the file holds,
+            # which no later audit could tell from a session that recorded less.
+            raise StoreCorruptionError(
+                f"results without a registration: {', '.join(orphans)}. A result that "
+                "never had a registered trial is the ordering this registry exists to "
+                "enforce, arriving after the fact"
+            )
         return tuple(
             Trial(
                 trial_id=trial.trial_id,

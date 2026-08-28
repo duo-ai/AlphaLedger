@@ -28,6 +28,7 @@ from datetime import datetime, timedelta
 from alphaledger.domain.contracts import require_utc
 
 __all__ = [
+    "EMPTY_TEST_WINDOW",
     "IN_PURGE_GAP",
     "OUTCOME_CROSSES_BOUNDARY",
     "Fold",
@@ -43,6 +44,7 @@ __all__ = [
 
 OUTCOME_CROSSES_BOUNDARY = "outcome_crosses_boundary"
 IN_PURGE_GAP = "in_purge_gap"
+EMPTY_TEST_WINDOW = "empty_test_window"
 
 
 class SplitConfigurationError(ValueError):
@@ -192,7 +194,7 @@ def walk_forward(
     labels: Iterable[Labelled],
     config: SplitConfig,
     *,
-    available_until: datetime | None = None,
+    available_until: datetime,
 ) -> WalkForward:
     """Build the folds the available span supports, in time order.
 
@@ -203,9 +205,14 @@ def walk_forward(
     A span too short for a fold returns no folds and the reason. It never
     returns a fold with a shortened purge, because that would answer the
     question by changing it.
+
+    `available_until` is required rather than defaulted. Without it a caller
+    gets as many folds as it asked for, whatever the data covers, and a later
+    stage averaging over "three folds" would be averaging over one real fold and
+    two built out of nothing with no artifact saying so.
     """
     start = require_utc(origin, "origin")
-    limit = require_utc(available_until, "available_until") if available_until else None
+    limit = require_utc(available_until, "available_until")
     ordered = sorted(labels, key=lambda item: (item.prediction_time, item.label_id))
 
     folds: list[Fold] = []
@@ -220,7 +227,7 @@ def walk_forward(
             start=calibration.end + config.purge,
             end=calibration.end + config.purge + config.test,
         )
-        if limit is not None and test.end > limit:
+        if test.end > limit:
             reasons.append(
                 f"insufficient span for fold {index}: it would end "
                 f"{test.end.isoformat()}, past the available {limit.isoformat()}"
@@ -243,6 +250,17 @@ def walk_forward(
         )
     if len(folds) < config.folds:
         reasons.append(f"requested {config.folds} folds, built {len(folds)}")
+    # A fold whose test window holds nothing, while the label series holds
+    # something, is a fold that cannot produce a result. It stays, because the
+    # geometry is still true, but it does not get to look like the others.
+    if ordered:
+        for fold in folds:
+            if not fold.test_labels:
+                reasons.append(
+                    f"{EMPTY_TEST_WINDOW}: fold {fold.index} tests "
+                    f"{fold.test.start.isoformat()} to {fold.test.end.isoformat()}, "
+                    "where no label resolves"
+                )
     return WalkForward(folds=tuple(folds), reasons=tuple(reasons))
 
 

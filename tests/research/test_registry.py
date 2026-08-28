@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from alphaledger.data.storage import AppendOnlyStore
+from alphaledger.data.storage import AppendOnlyStore, StoreCorruptionError
 from alphaledger.forecast.registry import (
     ResultAlreadyRecordedError,
     TrialRegistry,
@@ -155,6 +155,62 @@ def test_a_float_in_a_result_is_refused_because_a_metric_is_recorded_verbatim(
     # branch could be deleted with nothing noticing
     assert "float" in str(raised.value)
     assert "0.21" in str(raised.value)
+
+
+def test_a_float_in_a_configuration_is_refused_the_same_way_a_metric_is() -> None:
+    """One validator serves both arguments. Testing only the result path would
+    let a change that bypassed validation on the configuration path pass."""
+    with pytest.raises(TypeError) as raised:
+        TrialRegistry(AppendOnlyStore(Path("unused.jsonl"))).register(
+            {"winsor": 0.05},  # type: ignore[dict-item]
+            "widen the winsor",
+            T0,
+        )
+
+    assert "float" in str(raised.value)
+    assert "0.05" in str(raised.value)
+
+
+def test_two_results_for_one_trial_on_disk_are_refused_on_read(tmp_path: Path) -> None:
+    """`record_result` refuses the second, but two processes can both pass that
+    check before either appends. Taking the last one on read would be the same
+    overwrite arriving by another route."""
+    path = tmp_path / "trials.jsonl"
+    store = AppendOnlyStore(path)
+    trials = TrialRegistry(store)
+    trial_id = trials.register(a_config(), "widen the lookback", T0)
+    for brier in ("0.31", "0.05"):
+        store.append(
+            {
+                "kind": "result",
+                "trial_id": trial_id,
+                "result": {"brier": brier},
+                "recorded_at": T0.isoformat(),
+            }
+        )
+
+    with pytest.raises(StoreCorruptionError, match="two recorded results"):
+        TrialRegistry(AppendOnlyStore(path)).trials()
+
+
+def test_a_result_with_no_registration_on_disk_is_refused_rather_than_hidden(
+    tmp_path: Path,
+) -> None:
+    """An orphan result would otherwise vanish from every count, which reports
+    a shorter history than the file holds."""
+    path = tmp_path / "trials.jsonl"
+    store = AppendOnlyStore(path)
+    store.append(
+        {
+            "kind": "result",
+            "trial_id": "never-registered",
+            "result": {"brier": "0.05"},
+            "recorded_at": T0.isoformat(),
+        }
+    )
+
+    with pytest.raises(StoreCorruptionError, match="never-registered"):
+        TrialRegistry(store).trials()
 
 
 # --- restart ------------------------------------------------------------
