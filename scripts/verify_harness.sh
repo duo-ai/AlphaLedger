@@ -34,10 +34,27 @@ check $? ".mcp.json"
 echo "== unit registry =="
 python3 scripts/coord.py list >/dev/null 2>&1
 check $? "coord list runs"
-python3 scripts/coord.py claim UNIT-010 --owner probe/codex >/dev/null 2>&1
+
+# Probe a throwaway copy. A verification script must never mutate the registry.
+probe_units=$(mktemp -d)
+cp specs/units/*.md "$probe_units/"
+sed -i 's/^state: merged$/state: available/' "$probe_units"/001-*.md
+python3 scripts/coord.py --units-dir "$probe_units" claim UNIT-010 --owner probe/codex \
+    >/dev/null 2>&1
 [ $? -ne 0 ]; check $? "dependency gate refuses a unit whose dependency is unmerged"
+
+sed -i 's/^state: available$/state: merged/' "$probe_units"/001-*.md
+python3 scripts/coord.py --units-dir "$probe_units" claim UNIT-010 --owner probe/codex \
+    >/dev/null 2>&1
+check $? "the same unit is claimable once its dependency is merged"
+
+python3 scripts/coord.py --units-dir "$probe_units" claim UNIT-010 --owner other/claude \
+    >/dev/null 2>&1
+[ $? -ne 0 ]; check $? "a second owner cannot claim a held unit"
+
+rm -r "$probe_units"
 git diff --quiet specs/
-check $? "a refused claim leaves specs/ untouched"
+check $? "the probe never touched the real registry"
 
 echo "== git flow =="
 git show-ref --verify --quiet refs/heads/develop; check $? "develop exists"
