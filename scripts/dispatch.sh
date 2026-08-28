@@ -262,7 +262,10 @@ FOLLOWUP
         || die "uv sync failed in $worktree. Fix the environment before dispatching."
 
     # the default uv cache sits outside the sandbox and is not writable there
+    # Reasoning effort is pinned here rather than inherited from whoever's
+    # personal config happens to be loaded, so a dispatch is reproducible.
     nohup env UV_CACHE_DIR="$worktree/.uv-cache" codex exec \
+        -c model_reasoning_effort=xhigh \
         -C "$worktree" \
         -s workspace-write \
         --add-dir "$GIT_COMMON" \
