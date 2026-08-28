@@ -56,6 +56,17 @@ rm -r "$probe_units"
 git diff --quiet specs/
 check $? "the probe never touched the real registry"
 
+# These harness checks do not replace the application quality gate in AGENTS.md.
+# Run it here too, or a formatting regression in the tooling passes this script
+# while the repository gate is red.
+if [ -f pyproject.toml ]; then
+    echo "== application quality gate =="
+    uv run ruff check . >/dev/null 2>&1; check $? "ruff check"
+    uv run ruff format --check . >/dev/null 2>&1; check $? "ruff format --check"
+    uv run mypy src >/dev/null 2>&1; check $? "mypy strict"
+    uv run pytest -q >/dev/null 2>&1; check $? "pytest"
+fi
+
 echo "== skill conventions =="
 c=0
 for f in .claude/skills/*/SKILL.md .agents/skills/*/SKILL.md; do

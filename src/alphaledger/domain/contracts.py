@@ -14,6 +14,7 @@ This module performs no I/O and imports nothing from `alphaledger` outside
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -72,7 +73,13 @@ def money(value: object, field: str) -> Decimal:
         raise TypeError(f"{field} must be Decimal, str, or int; got {type(value).__name__}")
     if not parsed.is_finite():
         raise ValueError(f"{field} must be finite; got {value!r}")
-    return parsed.quantize(MONEY_EXPONENT, rounding=MONEY_ROUNDING)
+    try:
+        return parsed.quantize(MONEY_EXPONENT, rounding=MONEY_ROUNDING)
+    except InvalidOperation as exc:
+        raise ValueError(
+            f"{field} magnitude cannot be represented at the declared "
+            f"exponent {MONEY_EXPONENT}; got {value!r}"
+        ) from exc
 
 
 def require_utc(value: object, field: str) -> datetime:
@@ -95,7 +102,10 @@ def _floats(value: Mapping[str, object] | None, field: str) -> Mapping[str, floa
     for key, item in dict(value).items():
         if isinstance(item, bool) or not isinstance(item, int | float | Decimal):
             raise TypeError(f"{field}[{key}] must be a real number; got {type(item).__name__}")
-        out[str(key)] = float(item)
+        number = float(item)
+        if not math.isfinite(number):
+            raise ValueError(f"{field}[{key}] must be finite; got {item!r}")
+        out[str(key)] = number
     return MappingProxyType(out)
 
 
@@ -106,6 +116,11 @@ def _money_map(value: Mapping[str, object], field: str) -> Mapping[str, Decimal]
 
 
 def _strings(value: Iterable[object], field: str) -> tuple[str, ...]:
+    if isinstance(value, str | bytes):
+        raise TypeError(
+            f"{field} must be a sequence of strings, not a bare string. "
+            f"A string is iterable and would be split into characters; got {value!r}"
+        )
     return tuple(str(item) for item in value)
 
 
@@ -195,6 +210,10 @@ class Forecast:
     model_version: str
 
     def __post_init__(self) -> None:
+        for field in ("expected_residual_return", "calibration_error", "effective_sample_size"):
+            number = getattr(self, field)
+            if not math.isfinite(number):
+                raise ValueError(f"{field} must be finite; got {number!r}")
         if not 0.0 <= self.p_up <= 1.0:
             raise ValueError(f"p_up must be a probability in [0, 1]; got {self.p_up!r}")
         if self.horizon_sessions <= 0:
@@ -259,3 +278,8 @@ class RiskApproval:
         _set(self, "failed_gates", _strings(self.failed_gates, "failed_gates"))
         if self.approved and self.failed_gates:
             raise ValueError("an approval cannot be granted while gates are recorded as failed")
+        if not self.approved and not self.failed_gates:
+            raise ValueError(
+                "a refused approval must record failed_gates; an unexplained refusal "
+                "cannot be audited"
+            )

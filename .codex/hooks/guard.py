@@ -336,7 +336,9 @@ def _self_test() -> int:
         (
             {
                 "tool_name": "Bash",
-                "tool_input": {"command": "git commit -m 'chore: x' -m 'Co-Authored-By: Claude <a@b>'"},
+                "tool_input": {
+                    "command": "git commit -m 'chore: x' -m 'Co-Authored-By: Claude <a@b>'"
+                },
             },
             True,
         ),
