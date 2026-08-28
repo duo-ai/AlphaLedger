@@ -51,14 +51,34 @@ Out:
 ## Contract
 
 A single package, `alphaledger.domain`, importable with no side effects and no
-network. Every type is immutable and hashable. Money, prices, strikes, and
+network. Every type is immutable; see the resolved conflicts for which are also
+hashable. Money, prices, strikes, and
 payoffs are `Decimal`; quantities are `int`. All datetimes are timezone-aware
 UTC and are rejected otherwise.
 
+## Resolved conflicts
+
+Recorded before implementation, per the source-of-truth rule in `AGENTS.md`.
+
+1. Money type. Design section 14 sketches `entry_limit_bound`,
+   `exact_max_loss`, `exact_max_profit`, `expiry_breakeven`, and the values of
+   `stress_pnl` as `float`. `.claude/rules/01-safety.md` and
+   `.claude/rules/10-python.md` require `Decimal` for money, price, payoff, and
+   risk. The rule wins: `float` is the more permissive reading and the design
+   block is an illustrative sketch, not a typed contract. AC-1 therefore holds
+   field for field on names and cardinality, and deviates on these types only.
+2. Hashability. Design section 14 gives `EvidenceCard`, `Forecast`, and
+   `StructurePlan` mapping fields, which cannot be hashable. Every type is
+   immutable; only the types whose fields are all hashable are hashable, which
+   is `NewsLabel`, `ObservationTimestamps`, and `RiskApproval`. Mapping fields
+   are stored behind a read-only view so they cannot be mutated through the
+   instance.
+
 ## Acceptance criteria
 
-- AC-1: the five dataclasses match design section 14 field for field, including
-  names, types, and `Literal` members.
+- AC-1: the five dataclasses match design section 14 field for field on names,
+  cardinality, and `Literal` members, deviating only on the money types
+  recorded above.
 - AC-2: constructing any type with a naive datetime raises, naming the field.
 - AC-3: constructing a money or price field from `float` raises. `Decimal` and
   `str` are accepted; `str` is parsed exactly.
