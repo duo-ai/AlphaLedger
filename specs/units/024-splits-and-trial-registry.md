@@ -129,11 +129,11 @@ and an empty split is an answer.
 
 The scope said the registry does not reuse `alphaledger.data.storage`. It does.
 The rule was written to stop two units sharing one file, and that still holds:
-this registry writes its own file. Reuse here is a read-only import of a module
-UNIT-020 already built and tested, corruption behaviour included. Duplicating an
-append-only writer would have created a second corruption implementation to keep
-in sync, which is a worse outcome than the coupling. Say so if you disagree; the
-import is one line to reverse.
+this registry writes its own file. Reuse here imports a module UNIT-020 already
+built and tested, corruption behaviour included, and duplicating an append-only
+writer would have created a second corruption implementation to keep in sync.
+The import is not read-only, since `register` and `record_result` both append;
+what it does not do is share or modify UNIT-020's file.
 
 ### The rule that does the work
 
@@ -165,6 +165,42 @@ quietly becomes a better one.
   duplicate-registration test passed because reading collapses duplicates by id
   so a growing log was invisible, and the float refusal was satisfied by a
   generic type error. All four now have assertions that separate them.
+
+### Review round one, backtest-auditor
+
+Two high findings, both real, both fixed.
+
+- `walk_forward` built every fold it was asked for when `available_until` was
+  omitted, whatever the data covered, and recorded no reason. Three structurally
+  valid, hashed folds over a span with data in only the first one is not three
+  results, and a later stage averaging across "three folds" would have been
+  averaging one real fold and two built out of nothing. `available_until` is now
+  required, so a caller has to state the span it has. Separately, a fold whose
+  test window holds no label while the label series holds something is now
+  reported, which catches a span that is merely too generous rather than absent.
+  Every no-trade test had supplied the argument, and every assignment test
+  destructured the first fold only, so the empty later folds were already the
+  fixtures' normal state and nothing looked at them.
+- The registry enforced register-before-result and no-overwrite at the write
+  call and nowhere on read, so a duplicate result on disk was resolved by
+  reading order, last one winning, and an orphan result vanished from every
+  count. Two processes can both pass the write-time check before either appends,
+  and the unit's own restart tests spawn concurrent processes against one file,
+  so this was not a corrupted-file edge case. Both now raise on read. Taking the
+  last result would have been the overwrite this registry exists to prevent,
+  arriving by another route.
+- Two low findings, both fixed. The float refusal was exercised only through
+  `record_result`, though one validator serves both arguments, and only one of
+  the two purge gaps had a fixture.
+
+The reviewer confirmed by construction that a label predicted before a window,
+and a label spanning a whole window, are both handled, and that the classic
+overlapping-label problem inside a single window is a sample-size concern
+belonging to `effective_sample_size`, not to the purge. Both declared deviations
+were accepted, with the wording nit above.
+
+Twenty-three defects were injected one at a time after these fixes and every one
+is caught by a named test.
 
 ### Not verified
 
