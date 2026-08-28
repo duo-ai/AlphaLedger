@@ -2,7 +2,7 @@
 name: backtest-auditor
 description: Use this agent after research, feature, labeling, model, or backtest code changes to audit temporal leakage, validation, baselines, costs, and claim strength.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: sonnet
 effort: high
 permissionMode: dontAsk
 color: yellow

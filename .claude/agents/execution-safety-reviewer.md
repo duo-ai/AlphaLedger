@@ -2,7 +2,7 @@
 name: execution-safety-reviewer
 description: Use this agent before enabling or changing paper order submission, sizing, risk, reconciliation, exits, state recovery, or the kill switch.
 tools: Read, Grep, Glob
-model: opus
+model: sonnet
 effort: high
 permissionMode: plan
 color: red

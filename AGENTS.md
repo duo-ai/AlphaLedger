@@ -53,7 +53,7 @@ Keep deterministic responsibilities separated:
 - ledger code is append-only and records every decision, including no-trades;
 - presentation code reads projections and never changes trading state.
 
-Use Python 3.12, `uv`, strict typing at domain boundaries, UTC internally, and
+Use Python 3.14, `uv`, strict typing at domain boundaries, UTC internally, and
 the exchange calendar for sessions. Keep broker and LLM clients behind small
 interfaces so unit tests never require network access.
 
@@ -94,6 +94,65 @@ uv run pytest
 
 If those commands are not yet defined, report that fact. Do not invent a
 parallel toolchain.
+
+## Parallel work protocol
+
+Two people and three coding-agent runtimes share this repository. Read
+`specs/000-INTAKE.md` before starting work. The short version follows.
+
+### Roster and lanes
+
+| Owner | Runtime | Lane | Paths |
+|---|---|---|---|
+| `pablo/codex` | Codex | execution | `src/alphaledger/{broker,execution,risk,structure,ledger}/**` |
+| `pablo/claude` | Claude Code | execution and shared | intake authoring, review, integration |
+| `teammate/claude` | Claude Code | research | `src/alphaledger/{data,evidence,forecast}/**`, `research/**` |
+
+Lanes have disjoint path globs. Never write outside the lane of the unit you
+hold. Codex carries the larger budget, so units marked
+`preferred_runtime: codex` are implementation-heavy and belong there; Claude
+sessions are better spent authoring intakes, running specialist reviews, and
+integrating. That field is a hint for a human, not routing logic.
+
+### Claiming a unit
+
+```bash
+git switch develop && git pull --rebase origin develop
+python3 scripts/coord.py list --state available
+python3 scripts/coord.py claim UNIT-010 --owner pablo/codex
+```
+
+Claim from the primary clone, not from a worktree. Git refuses to check the
+same branch out twice, so only one working copy can sit on `develop`. Keep the
+primary clone on `develop` as the claiming station and let worktrees hold
+`feature/` branches only.
+
+`claim` refuses a unit that is already owned, one whose dependencies are not
+`merged`, and an owner string that does not name both a person and a runtime.
+It then prints the exact commit and worktree commands. Push the claim to
+`develop` immediately: it touches one file, so concurrent claims on different
+units never conflict. A rejected push means someone claimed first. Rebase,
+re-read, and take a different unit.
+
+`UNIT-001` freezes the domain contracts and blocks every other unit. That is
+enforced by the dependency check, not by convention.
+
+### Branching
+
+Git Flow. `main` is production, `develop` is integration, one unit is one
+`feature/` branch in its own worktree cut from `develop`. Run
+`scripts/gitflow-init.sh` once per clone and once per worktree. Full rules in
+`.claude/rules/50-git.md`, which applies to both runtimes despite its path.
+
+`.claude/settings.local.json` is untracked and does not carry into a worktree,
+so a fresh worktree has no MCP server enabled until it is copied in. Both guard
+hooks are tracked and have been verified to fire inside a worktree.
+
+### Finishing
+
+Move the unit to `in_review`, request the reviewer named in its frontmatter,
+address the findings, then merge into `develop` with `--no-ff` and set the unit
+to `merged`. Reviewers report; they do not edit files.
 
 ## Code Review Rules
 
