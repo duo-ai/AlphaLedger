@@ -73,9 +73,11 @@ def clip(text: str, room: int) -> str:
 
 
 def short(stem: str) -> str:
-    """004-frozen-config -> 004"""
-    head = stem.split("-", 1)[0]
-    return head if head.isdigit() else stem[:4]
+    """004-frozen-config -> 004, and 004-frozen-config.review -> 004R"""
+    base = stem.removesuffix(".review")
+    head = base.split("-", 1)[0]
+    tag = head if head.isdigit() else base[:4]
+    return f"{tag}R" if stem.endswith(".review") else tag
 
 
 class Agent:
@@ -88,8 +90,15 @@ class Agent:
         self.colour = PALETTE[index % len(PALETTE)]
         self.handle: object | None = None
 
+    @property
+    def is_review(self) -> bool:
+        return self.stem.endswith(".review")
+
     def label(self) -> str:
-        return paint(f"● {self.tag:<4}", self.colour, BOLD)
+        # a diamond for a review, a circle for the implementation, so a glance
+        # separates the agent doing the work from the one judging it
+        mark = "◆" if self.is_review else "●"
+        return paint(f"{mark} {self.tag:<4}", self.colour, BOLD)
 
 
 def render(event: dict, agent: Agent, *, clock: bool = True) -> str | None:

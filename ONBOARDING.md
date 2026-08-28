@@ -175,6 +175,11 @@ scripts/watch.sh --split         one tmux pane per agent
 scripts/watch.sh --replay        what already happened, then stop
 ```
 
+Reviews appear here too. A review is a Codex run like any other, so it streams
+alongside the implementations, marked with a diamond and an R tag: `◆ 011R`
+against `● 011`. That way a glance separates the agent doing the work from the
+one judging it.
+
 Two agents in one stream interleave, so each gets a stable colour and a short
 tag in the merged view. When that is still too busy, `--split` gives each its
 own pane and removes the interleaving entirely.

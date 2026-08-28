@@ -125,8 +125,33 @@ EOF
 
 echo
 echo "reviewing with the Codex specialist $(basename "$AGENT_FILE" .toml)"
-( cd "$WORKTREE" && codex exec review -c model_reasoning_effort=xhigh - < "$PROMPT" ) \
-    | tee "$OUT" | tail -40
+# --json so the run is watchable like any dispatch. scripts/watch.sh picks
+# up *.review.jsonl and marks it a review rather than an implementation.
+STREAM="$ROOT/.dispatch/$SLUG.review.jsonl"
+( cd "$WORKTREE" && codex exec review --json -c model_reasoning_effort=xhigh \
+    - < "$PROMPT" ) > "$STREAM" 2>&1 || true
+
+# the verdict is in the final message, so lift it into a readable artifact
+bash scripts/hook_python.sh - "$STREAM" > "$OUT" <<'EXTRACT'
+import json
+import sys
+from pathlib import Path
+
+last = ""
+for line in Path(sys.argv[1]).read_text(encoding='utf-8', errors='replace').splitlines():
+    line = line.strip()
+    if not line.startswith('{'):
+        continue
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+    item = event.get('item', {})
+    if event.get('type') == 'item.completed' and item.get('type') == 'agent_message':
+        last = item.get('text', '')
+print(last)
+EXTRACT
+tail -40 "$OUT"
 
 echo
 echo "full review: $OUT"
