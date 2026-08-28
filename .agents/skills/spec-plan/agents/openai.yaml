@@ -1,0 +1,7 @@
+interface:
+  display_name: "Spec Plan"
+  short_description: "Derive how, and the unit boundaries"
+  brand_color: "#3B82F6"
+  default_prompt: "Use $spec-plan to derive how, and the unit boundaries."
+policy:
+  allow_implicit_invocation: true

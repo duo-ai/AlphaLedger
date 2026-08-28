@@ -1,0 +1,7 @@
+interface:
+  display_name: "Spec Analyze"
+  short_description: "Read a spec adversarially and record findings"
+  brand_color: "#F97316"
+  default_prompt: "Use $spec-analyze to read a spec adversarially and record findings."
+policy:
+  allow_implicit_invocation: true

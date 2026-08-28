@@ -1,0 +1,7 @@
+interface:
+  display_name: "Spec Tasks"
+  short_description: "Turn a plan into claimable unit intakes"
+  brand_color: "#14B8A6"
+  default_prompt: "Use $spec-tasks to turn a plan into claimable unit intakes."
+policy:
+  allow_implicit_invocation: true

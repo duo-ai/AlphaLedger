@@ -1,0 +1,7 @@
+interface:
+  display_name: "Spec Clarify"
+  short_description: "Resolve open questions one at a time"
+  brand_color: "#EAB308"
+  default_prompt: "Use $spec-clarify to resolve open questions one at a time."
+policy:
+  allow_implicit_invocation: true
