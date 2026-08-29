@@ -3,7 +3,7 @@ import json
 import subprocess
 import sys
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, localcontext
 from types import ModuleType
 
 import pytest
@@ -215,6 +215,62 @@ def _ordered_projection() -> str:
     return _project_plans(result.candidates)
 
 
+def _context_sensitive_contracts(chains: ModuleType) -> tuple[object, ...]:
+    nearer_expiry = date(2026, 9, 10)
+    later_expiry = date(2026, 9, 12)
+    return (
+        _contract(
+            chains,
+            symbol="SPY260910C01099999",
+            strike=Decimal("1099.9999"),
+            expiry=nearer_expiry,
+            bid=Decimal("0.10"),
+            ask=Decimal("0.11"),
+            multiplier=1,
+            delta=Decimal("0.30"),
+        ),
+        _contract(
+            chains,
+            symbol="SPY260912C00100000",
+            strike=Decimal("100"),
+            expiry=later_expiry,
+            bid=Decimal("1.00"),
+            ask=Decimal("1.10"),
+            multiplier=1,
+            delta=Decimal("0.50"),
+        ),
+        _contract(
+            chains,
+            symbol="SPY260912C01100000",
+            strike=Decimal("1100"),
+            expiry=later_expiry,
+            bid=Decimal("0.10"),
+            ask=Decimal("0.11"),
+            multiplier=1,
+            delta=Decimal("0.30"),
+        ),
+        _contract(
+            chains,
+            symbol="SPY260910C00100000",
+            strike=Decimal("100"),
+            expiry=nearer_expiry,
+            bid=Decimal("1.00"),
+            ask=Decimal("1.10"),
+            multiplier=1,
+            delta=Decimal("0.50"),
+        ),
+    )
+
+
+def _low_precision_projection() -> str:
+    chains = _chains()
+    contracts = _context_sensitive_contracts(chains)
+    with localcontext() as context:
+        context.prec = 7
+        result, _ = _enumerate(chains, contracts)
+    return _project_plans(result.candidates)
+
+
 def _call_projection() -> str:
     chains = _chains()
     result, _ = _enumerate(chains, _call_contracts(chains))
@@ -343,6 +399,54 @@ def test_three_candidates_follow_cost_expiry_and_long_strike_order_across_proces
     assert first.candidates == second.candidates
     assert _subprocess_helper("_ordered_projection") == _project_plans(first.candidates)
     assert len({plan.plan_id for plan in first.candidates}) == 3
+
+
+def test_cost_drag_order_is_exact_across_decimal_contexts_and_processes() -> None:
+    chains = _chains()
+    contracts = _context_sensitive_contracts(chains)
+    default_result, _ = _enumerate(chains, contracts)
+    with localcontext() as context:
+        context.prec = 7
+        low_precision_result, _ = _enumerate(chains, contracts)
+
+    expected_ids = [
+        "candidate-spy-014/SPY260912C00100000/SPY260912C01100000",
+        "candidate-spy-014/SPY260910C00100000/SPY260910C01099999",
+    ]
+    assert [plan.plan_id for plan in default_result.candidates] == expected_ids
+    assert low_precision_result.candidates == default_result.candidates
+    assert _subprocess_helper("_low_precision_projection") == _project_plans(
+        default_result.candidates
+    )
+
+
+def test_identical_duplicate_symbols_collapse_to_one_plan_with_one_plan_id() -> None:
+    chains = _chains()
+    long_leg, short_leg = _call_contracts(chains)
+    result, _ = _enumerate(chains, (long_leg, short_leg, long_leg, short_leg))
+
+    assert len(result.candidates) == 1
+    assert result.candidates[0].plan_id == (
+        f"candidate-spy-014/{_LONG_CALL_SYMBOL}/{_SHORT_CALL_SYMBOL}"
+    )
+
+
+def test_conflicting_duplicate_symbol_fails_closed_independent_of_lookup_order() -> None:
+    chains = _chains()
+    long_leg, short_leg = _call_contracts(chains)
+    conflicting_long = _contract(
+        chains,
+        bid=Decimal("2.95"),
+        ask=Decimal("3.05"),
+        quote_time=_AS_OF - timedelta(seconds=15),
+    )
+    contracts = (long_leg, short_leg, conflicting_long)
+
+    first, _ = _enumerate(chains, contracts)
+    second, _ = _enumerate(chains, tuple(reversed(contracts)))
+
+    _assert_rejection(first, "contract_symbol_uniqueness", _LONG_CALL_SYMBOL)
+    assert second == first
 
 
 def test_matching_nonstandard_multiplier_scales_payoff_by_that_multiplier() -> None:
