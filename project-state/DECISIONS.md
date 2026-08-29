@@ -512,6 +512,22 @@ belong in the trial registry or status file.
   result, and a round limit that let a blocked unit through would be exactly
   that. The limit stops automatic re-dispatch and hands the decision to a
   person; it does not lower the bar the unit has to clear.
+- Amended 2026-08-29, the same day, because the first version left the loop's
+  engine running. Counting rounds and bounding what counts as a finding did not
+  change the fact that every round re-read the unit's whole diff, `git diff
+  develop...HEAD`. A full pass is a fresh chance to find something new in code
+  two earlier passes already cleared, so the rounds had no natural end however
+  well the fixes landed. A round after the first now asks a narrower question:
+  for each recorded finding, is it fixed and what test would catch its
+  regression; what did this round's own commits break, which is where two of
+  this project's past findings actually came from; and is the unit's
+  verification green. Code that neither changed nor relates to a recorded
+  finding was read twice already and may not be raised again. Something new is
+  admissible only against a numbered acceptance criterion, with the failure
+  shown. The prompt also says outright that clearing a unit whose findings are
+  fixed is the correct outcome, because a reviewer that never clears anything is
+  not a stricter reviewer, it is a gate that does not open. Found by the user
+  asking what a third review was for.
 - Rejected: detecting a repeated finding by comparing its text across rounds.
   The wording changes between rounds, so the comparison would be fuzzy, and a
   fuzzy match that says "you already fixed this" is worse than no check.
