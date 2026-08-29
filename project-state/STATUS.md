@@ -151,10 +151,14 @@ environment.
   the turn-by-turn record does not.
 - A review that omits its `VERDICT:` line is silent on the monitor, because
   `scripts/notable.py` announces only a verdict it can see. This has now
-  happened twice, noted in each unit's own handoff notes: the UNIT-004 review
-  did exactly that, and so did UNIT-011's round three review, and both were
-  graded from their findings by the session, which is what D-018 puts on the
-  session anyway.
+  happened three times: UNIT-004's round two, UNIT-011's round three, and
+  UNIT-012's round two, each graded from its findings by the session, which is
+  what D-018 puts on the session anyway. `codex exec review` states its
+  conclusion as a prose `VERDICT:` line, as a JSON `overall_correctness` field,
+  or as neither, and only the third is a problem. `review.sh` now appends an
+  explicit "NO VERDICT STATED" notice to an artifact carrying neither shape, so
+  a reader is told rather than left to notice an absence. It still grades
+  nothing; that stays with the session on purpose.
 - No real feed is connected anywhere. Every timestamp rule, screening
   condition, and feature value is proven self consistent against fixtures, not
   against Alpaca.

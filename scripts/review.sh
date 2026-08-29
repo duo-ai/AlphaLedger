@@ -27,6 +27,24 @@ rotate_aside() {
     fi
 }
 
+# codex exec review states its conclusion in one of two shapes and sometimes in
+# neither: a prose VERDICT line, or a JSON overall_correctness field. Three
+# reviews so far ended with a confident summary and no verdict at all, which
+# reads exactly like a finished result and leaves the reader to notice an
+# absence. Say so in the artifact rather than making absence the signal. This
+# grades nothing: D-018 puts that on the session on purpose.
+note_missing_verdict() {
+    local f="$1"
+    if ! grep -q "VERDICT:" "$f" && ! grep -q "overall_correctness" "$f"; then
+        {
+            echo
+            echo "NO VERDICT STATED. This review ended without a VERDICT line and without"
+            echo "an overall_correctness field. Grade it from its findings and record the"
+            echo "grade yourself, per D-018. Do not read the absence as a clearance."
+        } >> "$f"
+    fi
+}
+
 if [ "${1:-}" = "--self-test" ]; then
     dir=$(mktemp -d)
     trap 'rm -rf "$dir"' EXIT
@@ -44,7 +62,22 @@ if [ "${1:-}" = "--self-test" ]; then
     got=$(cat "$f.1" 2>/dev/null || true)
     [ "$got" = "round one" ] || die "self-test: the second round overwrote the first"
 
-    echo "review self-test passed: 2 cases"
+    prose="$dir/prose.md"
+    echo "looks fine to me. VERDICT: clear" > "$prose"
+    note_missing_verdict "$prose"
+    grep -q "NO VERDICT STATED" "$prose" && die "self-test: a stated prose verdict was wrongly flagged"
+
+    js="$dir/json.md"
+    echo '{"overall_correctness": "patch is incorrect"}' > "$js"
+    note_missing_verdict "$js"
+    grep -q "NO VERDICT STATED" "$js" && die "self-test: a json verdict was wrongly flagged"
+
+    silent="$dir/silent.md"
+    echo "All findings are fixed and the suite passes." > "$silent"
+    note_missing_verdict "$silent"
+    grep -q "NO VERDICT STATED" "$silent" || die "self-test: a review with no verdict was not flagged"
+
+    echo "review self-test passed: 5 cases"
     exit 0
 fi
 
@@ -266,6 +299,14 @@ if [ ! -s "$OUT" ]; then
     die "the review produced no readable output. The raw stream is $STREAM; its first lines are:
 $(head -3 "$STREAM")"
 fi
+
+# `codex exec review` states its conclusion in one of two shapes and sometimes
+# in neither: a prose VERDICT line, or a JSON overall_correctness field. Three
+# reviews so far have ended with a confident summary and no verdict at all,
+# which reads exactly like a finished result and leaves the reader to notice an
+# absence. Say so in the artifact rather than making absence the signal. This
+# does not grade anything: D-018 puts that on the session on purpose.
+note_missing_verdict "$OUT"
 tail -40 "$OUT"
 
 echo
