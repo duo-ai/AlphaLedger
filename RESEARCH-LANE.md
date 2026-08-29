@@ -195,7 +195,11 @@ naming the offending field. If your pipeline silently filters it instead of
 rejecting it, that is a defect, because silent filtering is how a leak becomes
 invisible in production.
 
-## The three units
+## The three units, as originally delegated
+
+Historical. UNIT-020, UNIT-021, and UNIT-022 are all merged. Read this section
+for the reasoning behind decisions you are now standing on, not as work to do.
+The current work is in "The run plan" at the end of this file.
 
 ### UNIT-020, the point-in-time recorder
 
@@ -528,3 +532,121 @@ D-024 records that Alpaca's news `source` is an originator name such as
 in the feed. UNIT-028's intake notes it. Whoever implements that unit either
 derives a domain or the field gets renamed, and that is a decision to record
 rather than to make silently in an adapter.
+
+## The run plan, 2026-08-29
+
+Six units remain in this lane. This section orders them, says which can run at
+the same time, and gives the command for each. Every dependency and every glob
+disjointness claim below was checked with `coord.py`'s own functions, not read
+off the intakes.
+
+### The one thing that shapes everything
+
+`scripts/dispatch.sh` refuses a Claude owner, deliberately. Five of your six
+units declare `preferred_runtime: claude`, so for those the flow is claim, cut
+a worktree, and work them in your own session. Only UNIT-028 is
+`preferred_runtime: codex` and can be handed to the dispatcher.
+
+Claim from the primary clone on `develop`, never from a worktree. Push the
+claim immediately: it touches one file, so concurrent claims on different units
+never conflict.
+
+### The dependency graph
+
+The critical path is `UNIT-027 -> UNIT-025 -> UNIT-026`. Nothing shortens it,
+and the two units after UNIT-027 cannot start early, so the sooner UNIT-027
+merges the sooner the rest of the lane moves.
+
+Beside it runs an independent branch, `UNIT-030 -> UNIT-028` and
+`UNIT-030 -> UNIT-029`. It touches none of the critical path's files.
+
+### Wave 1, startable now
+
+| Unit | Runtime | State |
+|---|---|---|
+| UNIT-027 forward residual labels | claude | already claimed by you, in progress |
+| UNIT-030 article summary | claude | claimable now |
+
+Verified disjoint: UNIT-027 owns `evidence/labels.py`, UNIT-030 owns
+`evidence/news.py`. Both can be open at once.
+
+```bash
+git switch develop && git pull --rebase origin develop
+python3 scripts/coord.py claim UNIT-030 --owner mazwy/claude
+```
+
+UNIT-030 is the smallest unit in the lane and it unblocks two others, so take
+it first if UNIT-027 stalls. It adds one field to `Article`. D-025 records why
+the summary was chosen over a headline-only family and, more importantly, that
+`exclude_contentless` must never be used to build a research sample: dropping
+articles that lack content selects on a property correlated with the outcome.
+
+### Wave 2, the moment UNIT-030 merges
+
+| Unit | Runtime | How |
+|---|---|---|
+| UNIT-028 Alpaca adapter | codex | `scripts/dispatch.sh UNIT-028 mazwy/codex` |
+| UNIT-029 news labeler | claude | claim and work in a worktree |
+
+Verified disjoint from each other and from UNIT-027, so all three can run at
+once. UNIT-028 is the only unit in this lane the dispatcher will take.
+
+UNIT-028 carries the `source_domain` decision: Alpaca's `source` is an
+originator name such as `benzinga`, not a domain, so `Article.source_domain`
+has no counterpart in the feed. Derive one or rename the field, and record
+which. Do not decide it silently inside the adapter. Its reviewer is
+`alpaca-docs-researcher`, and the Codex specialist of that name exists, so a
+dispatched run reviews without mixing model families.
+
+UNIT-029 is the labeler. Its injection boundary is structural: the system
+prompt is a fixed constant that article text is never interpolated into, and
+`source_time`, `first_seen_time`, and `labeler_version` are always set from the
+adapter's own inputs so a reply cannot forge them. Keep it that way. The cache
+is keyed on content plus model and prompt version, which is what makes D-024's
+revision rule hold: a revised article misses the cache and is relabelled rather
+than served a stale label.
+
+### Wave 3, the moment UNIT-027 merges
+
+| Unit | Runtime |
+|---|---|
+| UNIT-025 pooled forecast and eligibility gate | claude |
+
+Disjoint from UNIT-028 and UNIT-029, so it runs alongside whatever of wave 2 is
+still open. This is the first unit that consumes a fold, so it is also the
+first real exercise of the trial registry UNIT-024 built. The registry has
+been proven to refuse what it should and never proven against a real research
+run.
+
+### Wave 4, the moment UNIT-025 merges
+
+| Unit | Runtime |
+|---|---|
+| UNIT-026 baselines and ablations | claude |
+
+The last unit, and the one the whole lane exists for. It runs the comparison
+that decides whether news carries information: random and shuffled, price only,
+news only, and combined, under conservative costs. Midpoint fills are not a
+headline result.
+
+Nothing in this repository has compared those families yet. Until UNIT-026
+runs, the news hypothesis is unfalsified rather than supported.
+
+### Practical notes
+
+- Maximum useful concurrency is three. Wave 2 plus UNIT-027, or wave 3 plus
+  what remains of wave 2.
+- `python3 scripts/coord.py check <UNIT> --owner mazwy/claude` answers whether
+  a claim would succeed without making it. Use it before planning a batch.
+- A unit is not merged until `coord.py state <unit> merged` runs, and that
+  refuses a unit whose last review verdict was not `clear`.
+- A review that ends without a verdict line is now flagged in the artifact with
+  `NO VERDICT STATED`. Grade it from the findings; D-018 puts that on you
+  either way.
+
+### And G0
+
+It is yours, it is blocked on access rather than effort, and it does not
+sequence with any of the above. See "G0 is yours now" earlier in this file.
+Every unit below can be built and merged without it. None of them can be
+believed without it.
