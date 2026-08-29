@@ -461,6 +461,7 @@ from pathlib import Path
 
 from alphaledger.config import load
 from alphaledger.domain import StructurePlan
+from alphaledger.execution.lifecycle import client_order_id
 from alphaledger.execution.orders import build_mleg_order
 from alphaledger.risk.approval import AccountSnapshot, SizingMode, approve
 
@@ -493,7 +494,12 @@ plan = StructurePlan(
     quote_times=(quote_time, quote_time),
     stress_pnl={"down": Decimal("-100.0000"), "up": Decimal("400.0000")},
 )
-payload = build_mleg_order(plan, 2, Decimal("1.2500"), "client-approval-001")
+payload = build_mleg_order(
+    plan,
+    2,
+    Decimal("1.2500"),
+    client_order_id(plan.plan_id, 2, Decimal("1.2500")),
+)
 snapshot = AccountSnapshot(
     equity=Decimal("60000.0000"),
     open_position_count=0,

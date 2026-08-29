@@ -1,8 +1,8 @@
 """Pure sizing gates and approval tokens bound to exact entry intent.
 
-This module performs no I/O. It consumes an order payload that the execution
-adapter already built, recomputes its canonical hash, and binds any approval or
-refusal to that payload, the account snapshot, the sizing mode, and an expiry.
+This module performs no I/O. It rebuilds the expected order payload from the
+plan, refuses a supplied payload that differs, and binds the decision to the
+rebuilt payload, account snapshot, sizing mode, and expiry.
 """
 
 from __future__ import annotations
@@ -11,20 +11,24 @@ import base64
 import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import ROUND_DOWN, Decimal
 from enum import StrEnum
 from typing import Final
 
 from alphaledger.config import FrozenConfig, RiskConfig
 from alphaledger.domain import RiskApproval, StructurePlan, money, require_utc
-from alphaledger.execution.orders import canonical_bytes, order_payload_hash
+from alphaledger.execution.lifecycle import client_order_id
+from alphaledger.execution.orders import build_mleg_order, canonical_bytes, order_payload_hash
 
 __all__ = [
     "GATE_CONCURRENT_POSITION_LIMIT",
     "GATE_CONFIG_HASH_MISMATCH",
     "GATE_ENTRY_LIMIT_BOUND_EXCEEDED",
+    "GATE_PAYLOAD_PLAN_MISMATCH",
     "GATE_QUANTITY_EXCEEDS_APPROVED_CAP",
+    "GATE_SNAPSHOT_IN_FUTURE",
+    "GATE_SNAPSHOT_STALE",
     "GATE_UNBALANCED_LEGS",
     "AccountSnapshot",
     "SizingMode",
@@ -39,6 +43,9 @@ GATE_QUANTITY_EXCEEDS_APPROVED_CAP: Final = "quantity_exceeds_approved_cap"
 GATE_UNBALANCED_LEGS: Final = "unbalanced_legs"
 GATE_CONCURRENT_POSITION_LIMIT: Final = "concurrent_position_limit_reached"
 GATE_CONFIG_HASH_MISMATCH: Final = "config_hash_mismatch"
+GATE_PAYLOAD_PLAN_MISMATCH: Final = "payload_plan_mismatch"
+GATE_SNAPSHOT_IN_FUTURE: Final = "snapshot_in_future"
+GATE_SNAPSHOT_STALE: Final = "snapshot_stale"
 
 
 class SizingMode(StrEnum):
@@ -123,20 +130,33 @@ def approve(
     mode: SizingMode,
     expires_at: datetime,
     now: datetime,
+    max_snapshot_age: timedelta,
 ) -> RiskApproval:
-    """Evaluate every computable entry gate and return its bound token."""
+    """Rebuild one entry intent, evaluate every gate, and bind the result."""
     _require_sizing_mode(mode)
     current_time = require_utc(now, "now")
     expiry_time = require_utc(expires_at, "expires_at")
     if expiry_time <= current_time:
         raise ValueError("expires_at must be strictly after now")
     _require_positive_exact_max_loss(plan)
+    _require_max_snapshot_age(max_snapshot_age)
 
     quantity = _payload_quantity(payload)
     limit_price = _payload_limit_price(payload)
-    buy_ratio, sell_ratio = _payload_leg_ratios(payload)
+    _payload_leg_ratios(payload)
+    expected_payload = build_mleg_order(
+        plan,
+        quantity,
+        limit_price,
+        client_order_id(plan.plan_id, quantity, limit_price),
+    )
+    expected_payload_hash = order_payload_hash(expected_payload)
+    supplied_payload_hash = order_payload_hash(payload)
+    buy_ratio, sell_ratio = _payload_leg_ratios(expected_payload)
 
     failed_gates: list[str] = []
+    if supplied_payload_hash != expected_payload_hash:
+        failed_gates.append(GATE_PAYLOAD_PLAN_MISMATCH)
     if limit_price > plan.entry_limit_bound:
         failed_gates.append(GATE_ENTRY_LIMIT_BOUND_EXCEEDED)
     approved_quantity = max_approved_quantity(plan, snapshot.equity, frozen_config.risk, mode)
@@ -148,15 +168,18 @@ def approve(
         failed_gates.append(GATE_CONCURRENT_POSITION_LIMIT)
     if snapshot.frozen_config_hash != frozen_config.frozen_config_hash:
         failed_gates.append(GATE_CONFIG_HASH_MISMATCH)
+    if snapshot.snapshot_time > current_time:
+        failed_gates.append(GATE_SNAPSHOT_IN_FUTURE)
+    if current_time - snapshot.snapshot_time > max_snapshot_age:
+        failed_gates.append(GATE_SNAPSHOT_STALE)
 
     failures = tuple(failed_gates)
     approved = not failures
     snapshot_hash = account_snapshot_hash(snapshot)
-    payload_hash = order_payload_hash(payload)
     approval_id = _approval_id(
         plan_id=plan.plan_id,
         quantity=quantity,
-        order_payload_hash=payload_hash,
+        order_payload_hash=expected_payload_hash,
         account_snapshot_hash=snapshot_hash,
         mode=mode,
         expires_at=expiry_time,
@@ -167,7 +190,7 @@ def approve(
         approval_id=approval_id,
         plan_id=plan.plan_id,
         account_snapshot_hash=snapshot_hash,
-        order_payload_hash=payload_hash,
+        order_payload_hash=expected_payload_hash,
         expires_at=expiry_time,
         approved=approved,
         failed_gates=failures,
@@ -215,6 +238,18 @@ def _require_sizing_mode(mode: SizingMode) -> None:
 def _require_positive_exact_max_loss(plan: StructurePlan) -> None:
     if plan.exact_max_loss <= 0:
         raise ValueError(f"exact_max_loss must be strictly positive; got {plan.exact_max_loss}")
+
+
+def _require_max_snapshot_age(max_snapshot_age: timedelta) -> None:
+    if not isinstance(max_snapshot_age, timedelta):
+        raise TypeError(
+            "max_snapshot_age must be a non-negative timedelta; "
+            f"got {type(max_snapshot_age).__name__}"
+        )
+    if max_snapshot_age < timedelta(0):
+        raise ValueError(
+            f"max_snapshot_age must be a non-negative timedelta; got {max_snapshot_age!r}"
+        )
 
 
 def _payload_field(payload: Mapping[str, object], field: str) -> object:
