@@ -1,0 +1,1 @@
+"""Typed paper-order adapters."""
