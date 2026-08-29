@@ -13,6 +13,8 @@ worktree. ``--self-test`` mirrors the convention in ``.claude/hooks/guard.py``.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import os
 import re
 import sys
@@ -243,8 +245,14 @@ def cmd_show(units: dict, unit_id: str) -> int:
     return 0
 
 
-def cmd_claim(units: dict, unit_id: str, owner: str, branch: str | None) -> int:
-    meta, order, body, path = get(units, unit_id)
+def check_claimable(units: dict, unit_id: str, owner: str) -> None:
+    """Every precondition a claim must satisfy, reading only, raising on the first failure.
+
+    `cmd_claim` and the `check` subcommand both call this, so asking whether a
+    claim would succeed and actually making it can never drift apart. Nothing
+    here writes a unit file.
+    """
+    meta, _order, body, _path = get(units, unit_id)
     if not OWNER_PATTERN.fullmatch(owner):
         raise UnitError("owner must look like handle/claude or handle/codex")
     if meta["state"] != "available":
@@ -277,6 +285,17 @@ def cmd_claim(units: dict, unit_id: str, owner: str, branch: str | None) -> int:
             f"{', '.join(clashes)}. Parallel writers are only safe while their "
             "globs are disjoint, per D-010."
         )
+
+
+def cmd_check(units: dict, unit_id: str, owner: str) -> int:
+    """Ask whether a unit would be claimable, without claiming it."""
+    check_claimable(units, unit_id, owner)
+    return 0
+
+
+def cmd_claim(units: dict, unit_id: str, owner: str, branch: str | None) -> int:
+    check_claimable(units, unit_id, owner)
+    meta, order, body, path = get(units, unit_id)
     slug = path.stem
     meta["state"] = "claimed"
     meta["owner"] = owner
@@ -640,6 +659,100 @@ def self_test() -> int:
             assert "--another-pass" in str(exc), "refusal must name the way through it"
         cases += 1
 
+        # 16. check succeeds, silently, for a unit claim would accept, and
+        # touches nothing
+        (directory / "050-first.md").write_text(
+            _sample("UNIT-050", "shared", "available", UNCLAIMED)
+        )
+        before = (directory / "050-first.md").read_bytes()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            assert cmd_check(load_all(directory), "UNIT-050", "ada/claude") == 0
+        assert buf.getvalue() == "", "check must print nothing on success"
+        assert (directory / "050-first.md").read_bytes() == before, (
+            "a successful check must not write the file it inspected"
+        )
+        cases += 1
+
+        # 17. check refuses exactly what claim refuses: an unmet dependency
+        # (UNIT-030 is still claimed, not merged, from case 12) and an
+        # undeclared path (UNIT-040, from case 14)
+        (directory / "051-second.md").write_text(
+            _sample("UNIT-051", "shared", "available", UNCLAIMED, "[UNIT-030]")
+        )
+        before = (directory / "051-second.md").read_bytes()
+        try:
+            cmd_check(load_all(directory), "UNIT-051", "ada/claude")
+            raise AssertionError("check must refuse an unmet dependency")
+        except UnitError as exc:
+            assert "UNIT-030" in str(exc), "refusal must name the blocking dependency"
+        assert (directory / "051-second.md").read_bytes() == before, (
+            "a refused check must not write the file it inspected"
+        )
+        cases += 1
+
+        before = (directory / "040-drift.md").read_bytes()
+        try:
+            cmd_check(load_all(directory), "UNIT-040", "ada/claude")
+            raise AssertionError("check must refuse an undeclared path the same as claim")
+        except UnitError as exc:
+            assert "forbid" in str(exc), "refusal must name the problem"
+        assert (directory / "040-drift.md").read_bytes() == before, (
+            "a refused check must not write the file it inspected"
+        )
+        cases += 1
+
+        # 18. check and claim must fail on the identical fixture with the
+        # identical message; a check that could drift from claim would make a
+        # dispatch dry run trustworthy in appearance only
+        try:
+            cmd_check(load_all(directory), "UNIT-051", "ada/claude")
+            raise AssertionError("check must still refuse UNIT-051")
+        except UnitError as check_exc:
+            check_message = str(check_exc)
+        try:
+            cmd_claim(load_all(directory), "UNIT-051", "ada/claude", None)
+            raise AssertionError("claim must still refuse UNIT-051")
+        except UnitError as claim_exc:
+            claim_message = str(claim_exc)
+        assert check_message == claim_message, (
+            "check and claim must refuse the same unit with the same message"
+        )
+        cases += 1
+
+        # 19. defect B, reproduced then fixed. Dispatching a batch one unit at
+        # a time claims the first before discovering the second is bad, which
+        # is exactly what left UNIT-013 claimed with no worktree and no agent
+        # when a real batch dispatch died on its second unit. Checking every
+        # unit before claiming any of them is the fix; this proves it against
+        # the same two-unit shape rather than asserting it from the code.
+        assert cmd_claim(load_all(directory), "UNIT-050", "ada/claude", None) == 0
+        try:
+            cmd_claim(load_all(directory), "UNIT-051", "ada/claude", None)
+            raise AssertionError("the second unit in the batch must still be refused")
+        except UnitError:
+            pass
+        assert load_all(directory)["UNIT-050"][0]["state"] == "claimed", (
+            "reproduction: claiming one unit at a time leaves the first claimed "
+            "even though the batch as a whole cannot proceed"
+        )
+        cmd_state(load_all(directory), "UNIT-050", "available")
+        before = (directory / "050-first.md").read_bytes()
+        try:
+            check_claimable(load_all(directory), "UNIT-050", "ada/claude")
+            check_claimable(load_all(directory), "UNIT-051", "ada/claude")
+            raise AssertionError("the batch check must still refuse UNIT-051")
+        except UnitError as exc:
+            assert "UNIT-030" in str(exc), "refusal must name the blocking dependency"
+        assert load_all(directory)["UNIT-050"][0]["state"] == "available", (
+            "fix: checking the whole batch first must leave the first unit "
+            "untouched when a later unit in the same batch is invalid"
+        )
+        assert (directory / "050-first.md").read_bytes() == before, (
+            "the batch check must not have written the first unit's file at all"
+        )
+        cases += 1
+
         (directory / "099-dupe.md").write_text(
             _sample("UNIT-001", "shared", "available", UNCLAIMED)
         )
@@ -675,6 +788,12 @@ def main(argv: list[str] | None = None) -> int:
     p_claim.add_argument("--owner", required=True, help="handle/claude or handle/codex")
     p_claim.add_argument("--branch")
 
+    p_check = sub.add_parser(
+        "check", help="ask whether a unit would be claimable, without claiming it"
+    )
+    p_check.add_argument("unit_id")
+    p_check.add_argument("--owner", required=True, help="handle/claude or handle/codex")
+
     p_review = sub.add_parser("review", help="record a review and its verdict")
     p_review.add_argument("unit_id")
     p_review.add_argument("--by", required=True, help="the reviewer that reported")
@@ -704,6 +823,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_show(units, args.unit_id)
         if args.command == "claim":
             return cmd_claim(units, args.unit_id, args.owner, args.branch)
+        if args.command == "check":
+            return cmd_check(units, args.unit_id, args.owner)
         if args.command == "review":
             return cmd_review(units, args.unit_id, args.by, args.verdict)
         if args.command == "state":

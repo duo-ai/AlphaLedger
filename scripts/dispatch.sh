@@ -47,6 +47,22 @@ STATE
 which is where the review round count lives, and the refusal after two rounds that did not clear."
 }
 
+# A dry run and a real run must agree about whether the batch is dispatchable,
+# so both call this rather than either deciding on its own. It asks coord.py
+# the exact question claim asks and writes nothing, which is what makes asking
+# safe before anything in the batch has been claimed. The held-by-$OWNER
+# shortcut mirrors the claim loop below: a unit this owner already holds is
+# not going to be claimed again, so asking whether it is claimable would only
+# fail on a question the batch does not need answered.
+require_claimable() {
+    local unit="$1" held_by
+    held_by=$(bash scripts/hook_python.sh scripts/coord.py show "$unit" \
+        | sed -n 's/^owner: //p' | head -1)
+    [ "$held_by" = "$OWNER" ] && return 0
+    bash scripts/hook_python.sh scripts/coord.py check "$unit" --owner "$OWNER" \
+        || die "$unit would not be claimable. Nothing in this batch has been claimed."
+}
+
 UNITS=()
 OWNER=""
 DRY_RUN=false
@@ -193,7 +209,11 @@ echo
 if [ "$DRY_RUN" = true ]; then
     for i in "${!UNITS[@]}"; do
         slug="${SLUGS[$i]}"
-        [ "$CONTINUE" = true ] && require_claimed "${UNITS[$i]}"
+        if [ "$CONTINUE" = true ]; then
+            require_claimed "${UNITS[$i]}"
+        else
+            require_claimable "${UNITS[$i]}"
+        fi
         build_prompt "${UNITS[$i]}" "$slug" "feature/$slug" "$LOGDIR/$slug.prompt.txt"
         echo "  ${UNITS[$i]}  ->  feature/$slug  ($LOGDIR/$slug.prompt.txt)"
     done
@@ -242,6 +262,7 @@ for i in "${!SLUGS[@]}"; do
     if [ -e "$ROOT/../AlphaLedger-wt/$slug" ]; then
         die "worktree ../AlphaLedger-wt/$slug already exists. Remove it with: git worktree remove --force ../AlphaLedger-wt/$slug"
     fi
+    require_claimable "$unit"
 done
 
 # take every unit first, so a refusal midway does not leave a half-dispatched batch
