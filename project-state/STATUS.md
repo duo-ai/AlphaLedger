@@ -155,7 +155,10 @@ environment.
 ## Not yet verified
 
 - competition paper account identity, starting balance, and options level;
-- OPRA versus indicative options entitlement and equity feed mode;
+- OPRA versus indicative options entitlement and equity feed mode, and whether
+  the account has real-time access or the documented fifteen minute delay;
+- every schema claim in D-024, which is read from the API reference and has
+  never been checked against a live payload;
 - current MLeg request behavior in the competition environment;
 - event rules on pre-kickoff code and required submission artifacts;
 - the real submission deadline, which the build plan no longer supplies;

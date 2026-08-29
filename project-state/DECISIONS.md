@@ -574,3 +574,80 @@ belong in the trial registry or status file.
 - Revisit only if: the Day-0 Alpaca smoke test shows replace semantics that make
   a stable id across ladder steps both possible and necessary. Record the
   observed behaviour before changing anything.
+
+## D-024: What the Alpaca schemas actually say, and the four defaults that would leak
+
+- Date: 2026-08-29
+- Source: the Alpaca API reference for `GET /v2/stocks/bars` and
+  `GET /v1beta1/news`, read through the market-data-only MCP server on
+  2026-08-29.
+- Status, stated precisely because this project distinguishes the two: these
+  findings come from the published API reference, not from live data. The
+  credentialed call returned 401, so no observation of a real payload has been
+  made and G0 remains unverified. Everything below is a documented contract to
+  design against and to confirm the first time credentials exist.
+
+Four defaults are the wrong ones for this project, and each would corrupt
+research silently rather than failing.
+
+1. `adjustment` defaults to `raw`, meaning no adjustment for splits,
+   dividends, or spin-offs. UNIT-027 states adjusted bars as a caller
+   obligation it cannot verify, and this is why: an adapter that omits the
+   parameter gets exactly the unadjusted series that turns a two for one split
+   into a fifty percent residual loss. The adapter must pass an explicit
+   adjustment and never rely on the default. `all` is the right choice for a
+   return-prediction label, because a cash dividend produces a real price drop
+   on the ex-date that is not information about the company, and leaving it in
+   would put a scheduled negative residual in the label on a known date.
+
+2. `asof` defaults to the current day, and it controls point-in-time symbol
+   mapping. The documentation's own example is that querying META with an
+   `asof` after the 2022 rename also returns the older FB data relabelled as
+   META. Defaulting it means the ticker identity reflects knowledge from after
+   the decision date, which is a survivorship and look-ahead vector in exactly
+   the place UNIT-021 exists to close. Research queries must pass the
+   historical date, or `-` to skip mapping, and must record which.
+
+3. Bar prices are `double` in the API. `money()` rejects `float` outright, so
+   the adapter has to carry the value as a string into `Decimal` rather than
+   converting through a float. This is a constraint the domain contract already
+   imposes and the feed will actively fight, so it is written down before the
+   adapter is built rather than discovered by a rounding difference.
+
+4. Bars paginate by symbol first, then by timestamp. The reference says
+   plainly that a multi-symbol request may return only one symbol on the first
+   page. A naive single-page fetch therefore yields a panel that looks
+   well-formed and is missing every peer, which UNIT-022 and UNIT-027 would
+   report as `no_peer_data` and demean against nothing. The adapter must follow
+   `next_page_token` to exhaustion and assert per-symbol coverage.
+
+The news schema, against what UNIT-023 assumed:
+
+- `symbols`, `headline`, and `source` exist, so the article shape holds. But
+  `source` is an originator name, for example `benzinga`, not a domain.
+  UNIT-023's `Article.source_domain` therefore has no direct counterpart and
+  the adapter must either derive one or the field must be renamed.
+- `id` is `int64`, so `article_id` is a stringification and not a passthrough.
+- There are two timestamps, `created_at` and `updated_at`, and the sort order
+  is by updated date. Articles are revised. D-014 already says a later revision
+  is a different observation, so `first_seen_time` derives from `created_at`
+  plus the documented lag, and an article whose `updated_at` exceeds its
+  `created_at` is a second observation rather than an edit to the first. A
+  historical query that sorted and filtered on `updated_at` would be reading
+  revised text as though it had been available at the original time, which is
+  the subtlest leak in this whole surface.
+- Without real-time entitlement both news and bars default to a fifteen minute
+  delay. That is a feed latency the recorder has to encode rather than assume
+  away, and it is also a G0 entitlement question.
+
+Consequence recorded because it weakens a claim already merged: UNIT-023's
+syndication clustering was designed around several outlets carrying one wire
+story. If this feed is predominantly one originator, that collapse will rarely
+fire, and the real duplicate shape is the same originator republishing, which
+appears as a revision rather than as a second article. The clustering is not
+wrong and its limitation is already documented, but it is less load-bearing
+than the unit assumed, and the revision path is the one that needs attention
+when the news adapter is built.
+
+- Revisit only if: a live payload contradicts the reference. Record the
+  observation before changing anything, and prefer the observation.
