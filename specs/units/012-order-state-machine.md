@@ -2,13 +2,14 @@
 id: UNIT-012
 title: Implement the order state machine and idempotent client order ids
 lane: execution
-state: available
-owner: -
-branch: -
+state: claimed
+owner: pablo/codex
+branch: feature/012-order-state-machine
 reviewer: execution-safety-reviewer
 preferred_runtime: codex
 depends_on: [UNIT-001, UNIT-011]
 paths: src/alphaledger/execution/lifecycle.py, tests/execution/test_lifecycle.py
+claimed_at: 2026-08-29T10:17:12Z
 ---
 
 ## Problem
