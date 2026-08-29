@@ -2,9 +2,9 @@
 id: UNIT-013
 title: Produce a risk approval token bound to the order payload
 lane: execution
-state: claimed
-owner: pablo/codex
-branch: feature/013-risk-approval-token
+state: available
+owner: -
+branch: -
 reviewer: execution-safety-reviewer
 preferred_runtime: codex
 depends_on: [UNIT-001, UNIT-004, UNIT-011]
