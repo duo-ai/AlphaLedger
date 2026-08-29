@@ -133,6 +133,7 @@ present and verified to fire inside a worktree.
 | UNIT-015 | execution | Reconcile broker truth and recover after restart | G2 |
 | UNIT-016 | execution | Append-only decision and trade ledger | G2 |
 | UNIT-017 | execution | Kill switch and emergency flatten | G2 |
+| UNIT-018 | execution | Step the bounded entry price ladder | G2 |
 | UNIT-020 | research | Record point-in-time observations with the timestamp contract | G3 |
 | UNIT-021 | research | Generate the lagged frozen universe | G3 |
 | UNIT-022 | research | Build residual price and volume features | G3 |
@@ -145,12 +146,18 @@ UNIT-017, which are backlog rows. Promoting one means writing its intake from
 rather than reading it here; this table records the decomposition, not
 progress.
 
-One gap the decomposition does not cover. Design section 11 step 4 requires a
-bounded limit price ladder on entry, and no row above owns it. UNIT-011 and
-UNIT-012 each pushed it to UNIT-013, which this table assigns to the risk
-approval token, so the reference was wrong in both and is now corrected in
-place. Whoever promotes UNIT-013 decides whether the ladder joins it or earns
-a row of its own. Do not implement it inside a unit that disclaims it.
+The ladder row, UNIT-018, was added on 2026-08-29 to close a gap the
+decomposition had left open. Design section 11 step 4 requires a bounded limit
+price ladder on entry, and no row owned it: UNIT-011 and UNIT-012 each pushed
+it to UNIT-013, which this table assigns to the risk approval token, so the
+reference was wrong in both and is corrected in place.
+
+It earns its own row rather than joining UNIT-013 because of D-023. The client
+order id is derived from `(plan_id, quantity, limit_price)`, so a ladder step
+at a new price produces a new id, a new payload, and therefore a new approval.
+The ladder is a bounded loop that calls the approval unit repeatedly, which
+puts it above UNIT-013 rather than inside it. It depends on UNIT-012 and
+UNIT-013, and it must not be implemented inside any unit that disclaims it.
 
 Specified is not the same as claimable. The execution lane is a chain:
 UNIT-011 waits on UNIT-010 and UNIT-012 waits on UNIT-011, because each
