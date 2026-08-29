@@ -2,7 +2,7 @@
 id: UNIT-027
 title: Construct forward residual return labels
 lane: research
-state: claimed
+state: in_review
 owner: mazwy/claude
 branch: feature/027-forward-residual-labels
 reviewer: backtest-auditor
@@ -224,3 +224,85 @@ uv run mypy src
 ```
 
 ## Handoff notes
+
+Implemented 2026-08-29 by mazwy/claude. Forty tests, quality gate green.
+
+### The three quant decisions this unit actually makes
+
+The entry offset. `entry_offset_sessions` defaults to one, so the label runs
+from the close of the session after the decision. The excluded move is the
+overnight gap, which is where news is repriced, so including it is the single
+easiest way to manufacture an alpha that does not survive contact with a
+broker. The fixture makes the size of that error visible on purpose: the same
+panel scores 0.20 at offset one and 0.60 at offset zero. Offset zero is
+permitted and carries `untradeable_entry`.
+
+Uniqueness weights. Daily sampling at a multi-session horizon makes consecutive
+labels share most of their outcome window, so counting rows counts the same
+information repeatedly and every significance estimate built on that count is
+inflated. `with_uniqueness` gives each label the average over its own outcome
+sessions of one over the concurrent count, per symbol and session. Two symbols
+resolving on the same dates stay independent, because sharing a date is not
+sharing an outcome. This unit measures the weight; UNIT-025 has to carry it
+into the fit, and if it does not, the weights are decoration.
+
+An incomplete horizon is `None`, never zero. A delisting scored as a flat
+return converts the worst outcome in the dataset into an average one, which is
+the most flattering error available. The return type carries this rather than a
+convention, so a caller has to handle it.
+
+### Consistency with the feature family, and how it is enforced
+
+The label demeans against the sector peer median session by session, which is
+UNIT-022's definition, and sums rather than compounds, which matches
+`cumulative_abnormal_return` and `residual_return_5s`. A geometric definition
+would be defensible alone and inconsistent here.
+
+`_returns` and `_peers` duplicate `price_volume._return_by_session` and
+`_peers`, because those are private members of a merged unit whose file this
+unit does not own. `test_the_demeaning_agrees_with_the_price_feature_family`
+pins the two against one shared fixture: the label's one-session forward
+residual must equal the price family's `residual_return_1s` for that same
+session. Unification belongs to the refactor unit owning both files, exactly as
+UNIT-023 records for `NewsFeatureBlock`.
+
+`NO_PEER_DATA`, `SECTOR_FALLBACK_MARKET`, and `AmbiguousBarError` are
+re-exported from UNIT-022 rather than redefined, so one condition keeps one
+name and an `except` clause cannot be silently partial.
+
+### What this unit cannot do
+
+It cannot verify that its bars are split and dividend adjusted. An adjustment
+is invisible in a single price series, and the only available detector is a
+magnitude threshold, which would be an unselected number inside a label
+definition. `implausible_return` therefore flags and never filters, so an
+artefact stays visible rather than being quietly removed, and the adjustment
+obligation belongs to whichever adapter feeds this unit. That is the same shape
+as the durability obligation UNIT-012 states and cannot enforce.
+
+Every default is declared, not selected. The horizon of five sessions, the
+offset of one, the two-peer floor, and the half implausibility bound have not
+been chosen on data. Design section 4 requires selection, registration as a
+trial, and a freeze before an autonomous session; `label_version` exists so the
+selection is auditable when it happens, and it is inside `label_id` so
+relabelling under a changed definition cannot collide with the old labels.
+
+### Verification actually run
+
+`uv run pytest tests/research/test_labels.py -q`, the full `uv run pytest`,
+`ruff check`, `ruff format --check`, `mypy src` under strict, and
+`scripts/verify_harness.sh`. All green.
+
+Twelve deliberate defects were injected one at a time. Nine were caught
+immediately. Two survived and both were real coverage gaps, now closed and
+each verified to fail against the mutation that exposed it: dropping peer bars
+from the outcome instant, which no test on the symbol's own timestamps could
+see, and removing `label_version` from `label_id`, which would let two
+definitions share one address. A twelfth mutation did not apply because its
+anchor was not unique; it was rewritten and then caught. The current count is
+twelve injected, twelve caught, zero survivors, which is a statement about
+these twelve and not about the suite as a whole.
+
+That distinction is drawn deliberately. On UNIT-023 the same claim was read as
+the stronger one, and `backtest-auditor` found two survivors beyond the ones
+recorded by running its own probes.
