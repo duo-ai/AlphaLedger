@@ -2,7 +2,7 @@
 id: UNIT-011
 title: Map Alpaca order schemas behind a typed adapter
 lane: execution
-state: in_review
+state: merged
 owner: pablo/codex
 branch: feature/011-order-schema-adapter
 reviewer: execution-safety-reviewer
