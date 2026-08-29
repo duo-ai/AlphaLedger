@@ -209,9 +209,15 @@ truth is unavailable so the caller fails closed and submits nothing.
   still reaches `closing` or `reconciled`, and a test proves both are reachable,
   because a machine in which they are not is incoherent.
 - AC-4: an ambiguous submit yields no state, triggers a query by client order
-  id, and no code path resubmits after it.
+  id, and no code path resubmits after it. The entry point a restarting caller
+  uses cannot return a decision to submit, whatever it is passed. This is a
+  property of the function's shape, not of the caller's diligence.
 - AC-5: invoking the same intent twice results in one broker intent. The second
-  invocation recognises the first by its id rather than creating a new one.
+  invocation recognises the first by its id rather than creating a new one. The
+  evidence that a submit was already attempted is a value a caller can only hold
+  by having recorded the attempt, never a bare `bool` that is false by default,
+  by omission, or after a crash. A caller that cannot produce it is refused, not
+  permitted to submit.
 - AC-6: `blocks_new_entries` is true for `None` and for every state in which an
   entry would be unsafe, and a test states which states those are rather than
   asserting on the implementation's own list.
@@ -220,6 +226,10 @@ truth is unavailable so the caller fails closed and submits nothing.
 - AC-8: `client_order_id` takes no approval, no clock, and no randomness, and
   its docstring states the caller's obligation that `plan_id` is unique per plan
   instance.
+- AC-9: broker truth beating local state is exercised by passing a disagreeing
+  local state into the code under test and observing the broker's answer win. A
+  local variable that is constructed in the test and never passed in does not
+  satisfy this, because the assertion holds whether or not the behaviour exists.
 
 ## Test list
 
@@ -265,3 +275,54 @@ deterministic id. A retry at the same price yields the same id, which is what
 makes an ambiguous submit safe to resolve. UNIT-013 inherits both properties.
 
 ## Handoff notes
+
+- 2026-08-29 code review round one, `execution-safety-reviewer`, verdict block.
+  One P1 finding and one unsound test, both confirmed against the code by the
+  session before being recorded here.
+
+  Finding 1, `lifecycle.py` `decide_submission`. The safety property is gated on
+  a caller-supplied `submission_attempted: bool`. When the broker lookup returns
+  `None` and that flag is false, the function returns `SUBMIT`. A process that
+  crashes after the request leaves the machine but before the caller durably
+  records the attempt restarts into exactly that branch: the broker has not yet
+  made the order visible, the flag is false again, and a second intent is
+  submitted. AC-5 does not hold across a crash, and rule bullet 3's "never
+  create a second intent implicitly" is broken by the shape of the argument.
+
+  This repository has rejected this shape once already. UNIT-010's load-bearing
+  clause is that no `paper: bool` exists anywhere, because a boolean can be set
+  to false, and D-021 records that as the reason spec-kit's what-versus-how
+  split was refused here. A safety property carried by a bare bool is the same
+  defect wearing a different name.
+
+  The correction stays inside the declared globs and adds no I/O. Provide a
+  recovery entry point that structurally cannot return `SUBMIT`, so a caller
+  resuming after a restart can only adopt or block. Replace the bare bool with a
+  value a caller can only hold by having recorded the attempt; this unit defines
+  that type and refuses without it, and the caller still owns persistence. State
+  the obligation in the docstring so the submission adapter inherits it
+  knowingly rather than by reading this file.
+
+  Finding 2, `test_restart_rebuilds_the_same_state_and_broker_truth_overrides_local_state`.
+  The test does not test its name. `stale_local_state` is assigned
+  `OrderState.WORKING` and never passed to anything, and the assertion
+  `after_restart is not stale_local_state` holds because the answer is `FILLED`.
+  Nothing in the test exercises local state losing to broker truth, and it would
+  pass unchanged against a function that had no notion of local state, which is
+  what `resolve_ambiguous_submit` currently is. AC-9 above now states what the
+  test has to do instead, which requires a path that actually accepts a recorded
+  local state and refuses to prefer it.
+
+  Finding 3, minor, not blocking on its own. The transition table is hand rolled.
+  `AGENTS.md` asks that a package which already solves a problem be named and
+  ruled in or out before bespoke code is written, and `transitions` and
+  `python-statemachine` both solve state machines. A fixed table of twenty six
+  entries is very likely the right answer here, but the reasoning has to be
+  written down rather than skipped. Record it in these notes.
+
+  Deliberately not carried into this unit. The review's closing paragraph lists
+  a next-gate matrix covering host assertion, approval and hash binding, sizing,
+  stale data, exits and flattening, and ledger completeness. None of those is an
+  acceptance criterion of UNIT-012 and none is actionable inside its two
+  declared paths. They belong to UNIT-010, UNIT-013 onward, and UNIT-016. Per
+  D-022 they carry no severity here and must not be implemented in this unit.
