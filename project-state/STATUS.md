@@ -4,13 +4,14 @@ Last updated: 2026-08-29
 
 ## Current phase
 
-Released as v0.1.0, and `develop` has moved well past it. Ten of twelve units
-are merged. UNIT-004 and UNIT-011 each went through three implementation
+Released as v0.1.0, and `develop` has moved well past it. Eleven of twelve
+units are merged. UNIT-004 and UNIT-011 each went through three implementation
 passes and three review rounds, the first two returning `block` and the third
-`clear`, and both merged into `develop` today. UNIT-012, the order state
-machine and idempotent client order ids, is claimed by pablo/codex and being
-implemented in a separate worktree. UNIT-023 is available in the research
-lane. The research lane delegated in `RESEARCH-LANE.md` is complete, and the
+`clear`. UNIT-012, the order state machine and idempotent client order ids,
+took two rounds: `block` on a duplicate submit that survived a crash, then
+`clear`. All three merged into `develop` on 2026-08-29. UNIT-023 is the only
+unit left unmerged and it is available in the research lane, which belongs to
+mazwy. The research lane delegated in `RESEARCH-LANE.md` is complete, and the
 validation discipline that has to exist before any model is fit is in place:
 point-in-time recording, the lagged frozen universe, the residual price and
 volume baseline, chronological purged splits, and the trial registry. The
@@ -38,12 +39,14 @@ environment.
 
 ## Verified artifacts
 
-- `specs/`: the SDD intake, the unit template, and twelve unit intakes. Ten
-  merged. UNIT-012 is claimed by pablo/codex and in progress in its own
-  worktree, and UNIT-023 is available in the research lane. UNIT-013,
-  UNIT-014, and UNIT-015 are referenced by D-023 and by the UNIT-012 intake,
-  but no intake file exists for any of them yet, verified against
-  `ls specs/units/`.
+- `specs/`: the SDD intake, the unit template, and twelve unit intakes. Eleven
+  merged, with UNIT-023 available in the research lane. UNIT-013 through
+  UNIT-017 are backlog rows in `specs/000-INTAKE.md` with no intake file yet.
+  That file is the master decomposition and it assigns UNIT-013 to the risk
+  approval token; UNIT-011 and UNIT-012 had both named it as the limit price
+  ladder, which was wrong in each and is corrected in place. The ladder design
+  section 11 step 4 requires is consequently owned by no row at all, which is
+  recorded there as a gap rather than resolved by inventing a unit.
 - `src/alphaledger/domain/`: the five records from design section 14 plus
   `ObservationTimestamps`. Money is `Decimal`, not the `float` the design
   sketched; the conflict and its resolution are recorded in the UNIT-001
@@ -182,28 +185,30 @@ environment.
   reasoning for not adding an untested lock is in the UNIT-024 intake.
 - No model consumes a fold and no result is ever recorded, so the registry is
   proven to refuse what it should and never proven against a real research run.
-- No news, model, structure, risk, order lifecycle, or ledger code exists. The
-  order schema adapter merged with UNIT-011, but nothing manages an order
-  through its states until UNIT-012 lands. Every G1 to G6 artifact is open.
+- No news, model, structure, risk, or ledger code exists. The order lifecycle
+  now exists, per UNIT-012, but nothing submits through it: there is no
+  transport, no risk approval, and no durable store behind
+  `RecordedSubmissionAttempt`, whose durability is a caller obligation this
+  unit states and cannot enforce. Every G1 to G6 artifact is open.
 
 ## Next three tasks
 
-1. Take UNIT-012 through review once pablo/codex's implementation lands:
-   `scripts/review.sh UNIT-012`, then `coord.py review` and merge if clear. Its
-   intake carries the corrected transition table and the identifier ordering
-   settled in D-023, so a clean first pass is plausible but not assumed.
-2. Record the real competition dates and account facts in the run manifest,
-   then pass or block G0. It is the oldest open item and the only thing holding
-   the shape of everything after it. It needs facts only the user has.
-3. Write intakes for UNIT-013, UNIT-014, and UNIT-015, referenced by D-023 and
-   by the UNIT-012 intake, none of which has an intake file yet. UNIT-014 is
-   building legs from a real chain and UNIT-015 is the scheduled reconcile
-   loop, both named consistently wherever they appear. UNIT-013 is not: UNIT-011
-   and UNIT-012 call it the limit price and its ladder, while UNIT-004's own
-   Out list calls it the arm state and what it binds to. That disagreement is
-   unresolved and belongs to whoever writes the intake, not to this file.
-   UNIT-023 is claimable in parallel in the research lane; it shares no file
-   with UNIT-012.
+1. Record the real competition dates and account facts in the run manifest,
+   then pass or block G0. It is now the oldest open item by a wide margin and
+   the only thing holding the shape of everything after it. It needs facts only
+   the user has, and no amount of further unit work substitutes for it.
+2. Decide what UNIT-013 is, then write its intake. `specs/000-INTAKE.md`
+   assigns it the risk approval token, and that is the assignment to follow.
+   The open question is the bounded limit price ladder from design section 11
+   step 4, which no backlog row owns: it either joins UNIT-013 or earns a row
+   of its own. Decide before writing, because two merged units already disclaim
+   it and a third unit that also disclaims it would leave it homeless for good.
+3. Write intakes for UNIT-014, enumerating real chains and exact payoffs, and
+   UNIT-015, reconciling broker truth after restart. UNIT-015 inherits the
+   durability obligation UNIT-012 states and cannot enforce, namely that a
+   submission attempt is recorded before transport and restored after a
+   restart. UNIT-023 is claimable in parallel in the research lane and shares
+   no file with any of these.
 
 ## Read first next session
 
