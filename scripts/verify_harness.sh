@@ -82,6 +82,23 @@ py scripts/coord.py --units-dir "$probe_units" claim UNIT-010 --owner other/clau
     >/dev/null 2>&1
 [ $? -ne 0 ]; check $? "a second owner cannot claim a held unit"
 
+# `check` must ask the identical question `claim` asks and never write, or a
+# dispatch dry run that calls it could not be trusted either.
+release_unit "$probe_units"/010-*.md
+cp "$probe_units"/010-*.md "$probe_units/010.before"
+py scripts/coord.py --units-dir "$probe_units" check UNIT-010 --owner probe/codex \
+    >/dev/null 2>&1
+[ $? -eq 0 ] && cmp -s "$probe_units/010.before" "$probe_units"/010-*.md
+check $? "check succeeds for a claimable unit and does not write it"
+
+rewrite_state "$probe_units"/001-*.md 'merged' 'available'
+cp "$probe_units"/010-*.md "$probe_units/010.before"
+py scripts/coord.py --units-dir "$probe_units" check UNIT-010 --owner probe/codex \
+    >/dev/null 2>&1
+[ $? -ne 0 ] && cmp -s "$probe_units/010.before" "$probe_units"/010-*.md
+check $? "check refuses an unmet dependency, same as claim, and still does not write"
+rewrite_state "$probe_units"/001-*.md 'available' 'merged'
+
 rm -r "$probe_units"
 [ "$registry_before" = "$(git status --porcelain specs/ | sort)" ]
 check $? "the probe never touched the real registry"
@@ -126,7 +143,13 @@ if command -v codex >/dev/null 2>&1; then
     check $? "dispatch dry run builds a prompt"
     bash scripts/dispatch.sh UNIT-010 pablo/claude --dry-run >/dev/null 2>&1
     [ $? -ne 0 ]; check $? "dispatch refuses a claude owner"
-    bash scripts/dispatch.sh UNIT-010 UNIT-020 UNIT-021 pablo/codex --dry-run >/dev/null 2>&1
+    # UNIT-020 and UNIT-021 are merged and owned by mazwy/claude, so a dry run
+    # now correctly refuses to plan them for pablo/codex: a dry run asks the
+    # same claimability question a real dispatch would. UNIT-004, UNIT-010,
+    # and UNIT-012 are merged, disjoint, and owned by pablo/codex, so the
+    # already-held shortcut lets this stay a check of parallel path planning
+    # rather than of claimability.
+    bash scripts/dispatch.sh UNIT-004 UNIT-010 UNIT-012 pablo/codex --dry-run >/dev/null 2>&1
     check $? "dispatch plans three disjoint units in parallel"
 
     # compare before and after rather than demanding a clean tree, so an
