@@ -2,13 +2,14 @@
 id: UNIT-015
 title: Reconcile broker truth and recover after restart
 lane: execution
-state: available
-owner: -
-branch: -
+state: claimed
+owner: pablo/codex
+branch: feature/015-broker-reconciliation
 reviewer: execution-safety-reviewer
 preferred_runtime: codex
 depends_on: [UNIT-001, UNIT-011, UNIT-012]
 paths: src/alphaledger/execution/reconcile.py, tests/execution/test_reconcile.py
+claimed_at: 2026-08-29T11:43:30Z
 ---
 
 ## Problem
