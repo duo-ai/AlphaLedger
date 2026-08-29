@@ -2,13 +2,14 @@
 id: UNIT-027
 title: Construct forward residual return labels
 lane: research
-state: available
-owner: -
-branch: -
+state: claimed
+owner: mazwy/claude
+branch: feature/027-forward-residual-labels
 reviewer: backtest-auditor
 preferred_runtime: claude
 depends_on: [UNIT-001, UNIT-020, UNIT-021, UNIT-022, UNIT-024]
 paths: src/alphaledger/evidence/labels.py, tests/research/test_labels.py
+claimed_at: 2026-08-29T15:16:48Z
 ---
 
 ## Problem
