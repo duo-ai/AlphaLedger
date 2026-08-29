@@ -35,7 +35,7 @@ def _frozen_config() -> FrozenConfig:
 
 def _plan(
     *,
-    plan_id: str = "plan-risk-001",
+    plan_id: str = "plan-approval-001",
     entry_limit_bound: Decimal = Decimal("1.2500"),
     exact_max_loss: Decimal = Decimal("100.0000"),
 ) -> StructurePlan:
@@ -72,7 +72,7 @@ def _payload(
     *,
     quantity: int = 2,
     limit_price: Decimal = Decimal("1.2500"),
-    client_order_id: str = "client-risk-001",
+    client_order_id: str = "client-approval-001",
 ) -> dict[str, object]:
     return dict(build_mleg_order(plan, quantity, limit_price, client_order_id))
 
@@ -256,7 +256,7 @@ def test_snapshot_hash_changes_under_every_single_field_mutation(
 @pytest.mark.parametrize(
     ("field", "replacement"),
     [
-        ("plan_id", "plan-risk-002"),
+        ("plan_id", "plan-approval-002"),
         ("quantity", 2),
         ("order_payload_hash", "payload-hash-002"),
         ("account_snapshot_hash", "snapshot-hash-002"),
@@ -272,7 +272,7 @@ def test_approval_id_changes_under_every_single_bound_field_mutation(
 ) -> None:
     api = _risk_api()
     values = {
-        "plan_id": "plan-risk-001",
+        "plan_id": "plan-approval-001",
         "quantity": 1,
         "order_payload_hash": "payload-hash-001",
         "account_snapshot_hash": "snapshot-hash-001",
@@ -306,7 +306,7 @@ expires_at = datetime(2026, 8, 29, 14, 5, tzinfo=UTC)
 quote_time = datetime(2026, 8, 29, 13, 59, tzinfo=UTC)
 config = load(Path(sys.argv[1]))
 plan = StructurePlan(
-    plan_id="plan-risk-001",
+    plan_id="plan-approval-001",
     candidate_id="candidate-spy-001",
     legs=(
         {
@@ -330,7 +330,7 @@ plan = StructurePlan(
     quote_times=(quote_time, quote_time),
     stress_pnl={"down": Decimal("-100.0000"), "up": Decimal("400.0000")},
 )
-payload = build_mleg_order(plan, 2, Decimal("1.2500"), "client-risk-001")
+payload = build_mleg_order(plan, 2, Decimal("1.2500"), "client-approval-001")
 snapshot = AccountSnapshot(
     equity=Decimal("60000.0000"),
     open_position_count=0,
