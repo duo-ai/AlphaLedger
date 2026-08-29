@@ -144,6 +144,7 @@ present and verified to fire inside a worktree.
 | UNIT-027 | research | Construct forward residual return labels | G3 |
 | UNIT-028 | research | Fetch Alpaca bars and news into point-in-time records | G3 |
 | UNIT-029 | research | Label news through a cached LLM adapter | G3 |
+| UNIT-030 | research | Carry the article summary on the news record | G3 |
 
 Every row above has an intake file in `specs/units/` except UNIT-016,
 UNIT-017, UNIT-018, and UNIT-029, which are backlog rows. Promoting

@@ -7,7 +7,7 @@ owner: -
 branch: -
 reviewer: alpaca-docs-researcher
 preferred_runtime: codex
-depends_on: [UNIT-001, UNIT-020, UNIT-022, UNIT-023]
+depends_on: [UNIT-001, UNIT-020, UNIT-022, UNIT-023, UNIT-030]
 paths: src/alphaledger/data/alpaca.py, src/alphaledger/data/pagination.py, tests/research/test_alpaca_adapter.py, tests/research/test_pagination.py
 ---
 
@@ -194,3 +194,11 @@ uv run mypy src
 ```
 
 ## Handoff notes
+
+- 2026-08-29, D-025: `Article` gains a summary field, so this adapter maps
+  Alpaca's `summary` into it. That field is required on every article in the
+  reference, so a payload without one is a contract violation rather than a
+  normal case. Do not set `include_content` and do not use
+  `exclude_contentless`: the first pulls HTML this project has not decided to
+  accept, and the second selects the research sample on a property correlated
+  with the outcome. UNIT-030 widens the record and this unit now depends on it.
