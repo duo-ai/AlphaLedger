@@ -271,6 +271,26 @@ def _low_precision_projection() -> str:
     return _project_plans(result.candidates)
 
 
+def _low_precision_relative_spread_projection() -> str:
+    chains = _chains()
+    contracts = (
+        _contract(chains, bid=Decimal("1.30"), ask=Decimal("1.50")),
+        _call_contracts(chains)[1],
+    )
+    rules = _rules(chains, max_relative_spread=Decimal("0.14285712"))
+    with localcontext() as context:
+        context.prec = 7
+        result, _ = _enumerate(chains, contracts, rules=rules)
+    return json.dumps(
+        {
+            "candidate_ids": [plan.plan_id for plan in result.candidates],
+            "rejection_reasons": result.rejection_reasons,
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
 def _call_projection() -> str:
     chains = _chains()
     result, _ = _enumerate(chains, _call_contracts(chains))
@@ -585,6 +605,32 @@ def test_relative_spread_gate_excludes_contract_and_names_gate_and_symbol() -> N
     result, _ = _enumerate(chains, contracts, rules=rules)
 
     _assert_rejection(result, "relative_spread", _LONG_CALL_SYMBOL)
+
+
+def test_relative_spread_gate_is_exact_across_decimal_contexts_and_processes() -> None:
+    chains = _chains()
+    contracts = (
+        _contract(chains, bid=Decimal("1.30"), ask=Decimal("1.50")),
+        _call_contracts(chains)[1],
+    )
+    rules = _rules(chains, max_relative_spread=Decimal("0.14285712"))
+    default_result, _ = _enumerate(chains, contracts, rules=rules)
+    with localcontext() as context:
+        context.prec = 7
+        low_precision_result, _ = _enumerate(chains, contracts, rules=rules)
+
+    _assert_rejection(default_result, "relative_spread", _LONG_CALL_SYMBOL)
+    _assert_rejection(low_precision_result, "relative_spread", _LONG_CALL_SYMBOL)
+    assert low_precision_result == default_result
+    expected_projection = json.dumps(
+        {
+            "candidate_ids": [],
+            "rejection_reasons": default_result.rejection_reasons,
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    assert _subprocess_helper("_low_precision_relative_spread_projection") == (expected_projection)
 
 
 def test_absolute_spread_gate_excludes_contract_and_names_gate_and_symbol() -> None:
