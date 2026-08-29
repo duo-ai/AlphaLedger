@@ -2,7 +2,7 @@
 id: UNIT-018
 title: Step the bounded entry price ladder
 lane: execution
-state: claimed
+state: in_review
 owner: pablo/codex
 branch: feature/018-entry-price-ladder
 reviewer: execution-safety-reviewer
