@@ -204,4 +204,14 @@ them honest.
   arm and risk binding, sizing caps, idempotent retries, reconciliation,
   staleness, flattening, and ledger transitions, belongs to UNIT-010 and
   UNIT-012 onward and must not be implemented here.
+- 2026-08-29 code review round three, `execution-safety-reviewer`, verdict
+  clear. Both round-two findings are fixed: `_decimal_string` now preserves
+  every digit rather than passing a value through `Decimal.normalize()`,
+  covered by `test_distinct_high_precision_decimal_values_produce_distinct_frozen_hashes`,
+  and the freeze test compares loaded fields against independent literals in
+  `test_full_load_preserves_every_value_and_hashes_content` instead of through
+  the class under test. Commit `d55cbcb` introduces no new defect, AC-1
+  through AC-6 remain met, and nothing unrequested was added. `uv run pytest`
+  (77 tests), ruff, and mypy all passed. This unit merged into `develop` the
+  same day.
 

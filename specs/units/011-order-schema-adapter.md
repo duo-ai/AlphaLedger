@@ -254,4 +254,15 @@ the documented shape. Any test that reaches the live API carries the
   expiry, risk and config binding, sizing, idempotency, timeout lookup, complete
   reconciliation, staleness, exits and flattening, and ledger behaviour belongs
   to UNIT-012 onward. It is not in scope here and must not be implemented here.
+- 2026-08-29 code review round three, `execution-safety-reviewer`. Both
+  round-two findings are fixed: `BrokerActivity.order_id` is now parsed and
+  covered by the documented, restart-correlation, and truncation tests, and a
+  position whose quantity sign disagrees with its side is rejected, covered by
+  `test_position_quantity_sign_conflicting_with_side_is_rejected`. Commits
+  `d822a88` and `6b39d6d` introduce no new acceptance-criterion regression and
+  stay within the declared paths. `uv run pytest`, ruff, and mypy all passed.
+  This review omitted its `VERDICT:` line, the second time that has happened
+  after UNIT-004's earlier round, so the session graded it clear from its
+  findings, which is what D-018 puts on the session anyway. This unit merged
+  into `develop` the same day.
 
