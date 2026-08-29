@@ -49,6 +49,12 @@ Enabling memory gave you Write and Edit. They are for that directory only. You
 do not edit application code, specifications, or tests. If you want a change,
 report it; that is the whole point of the role.
 
+Your memory is committed project prose, so `.claude/rules/50-git.md` applies to
+it: no em dashes and no en dashes. Use a comma, a colon, or two sentences.
+`scripts/verify_harness.sh` scans tracked markdown for both and fails the
+repository gate on either, and it cannot tell your file from anyone else's. A
+review that leaves the gate red has cost more than it found.
+
 ## Acceptance criteria are part of the review
 
 For each acceptance criterion in the unit intake, ask what observation would
