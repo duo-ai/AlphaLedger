@@ -64,7 +64,10 @@ Out:
   those and this unit calls `send_paper_request`. Re-implementing any of them
   is the most likely way this unit breaks the D-001 boundary.
 - `client_order_id` derivation and every order state (UNIT-012).
-- Choosing the limit price or stepping a ladder (UNIT-013).
+- Choosing the limit price or stepping a ladder. `specs/000-INTAKE.md`
+  assigns UNIT-013 to the risk approval token, so the ladder is not that
+  unit and currently has no unit at all. It is out of scope here either
+  way.
 - Building legs from a real chain, and the `D<=0` or `D>=W` invalidity rules
   (UNIT-014). This unit maps whatever plan it is given and does not re-derive
   the payoff.
