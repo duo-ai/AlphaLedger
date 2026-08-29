@@ -445,3 +445,47 @@ uv run mypy src
 ```
 
 ## Handoff notes
+
+- 2026-08-29 code review round one, `execution-safety-reviewer`, verdict block.
+  One P1, confirmed against the code by the session before being recorded here.
+
+  `record_order_state` coalesces against every prior entry for an id, not
+  against the most recent one. The loop scans the whole history and returns the
+  first entry whose state matches, appending nothing. So the legal sequence
+  `partial`, then `cancel_pending`, then `partial` again records only the first
+  two: the third observation finds the first `partial` and is dropped.
+  `latest_order_state_for` then answers `cancel_pending` after a restart, which
+  is not where the order is, and the ledger has no record that the transition
+  happened.
+
+  That sequence is not exotic. UNIT-012's transition table admits
+  `cancel_pending` to `partial` deliberately, because a cancel can lose the race
+  against a fill, and a machine that refused it would raise on something the
+  broker really produces. The ledger has to hold what the state machine allows.
+
+  This is worse here than a wrong answer would be elsewhere. An append-only
+  audit path exists so that a decision can be reconstructed afterwards, and
+  `.claude/rules/01-safety.md` requires it. A ledger that silently drops a real
+  transition is not a shorter ledger, it is one that cannot be trusted to be
+  complete, and nothing downstream can tell the difference.
+
+  The correction is to coalesce only an immediate duplicate, comparing against
+  the last appended entry for that id rather than searching the history. An
+  idempotent retry of the same observation still writes once, which is the
+  behaviour AC-7 wants, and a genuine recurrence appends.
+
+  The regression must use a legal recurrence, `partial`, `cancel_pending`,
+  `partial`, and assert both that the history holds three entries and that
+  `latest_order_state_for` answers `partial` after reopening the store. Two
+  existing order-state tests pass today without exercising recurrence at all.
+
+  Three further test weaknesses were named and are worth fixing in the same
+  pass, though none is blocking on its own: the immediate-retrieval test would
+  pass against memory-only durability, and the Decimal and datetime retry test
+  reuses one ledger, so it cannot see a normalisation defect that only appears
+  on reopening. Both want a fresh ledger opened from the same path.
+
+  Deliberately not carried into this unit, per D-022: live transport, the arm
+  state, sizing, broker timeouts, stale data, and flattening. None is an
+  acceptance criterion here and none is actionable inside
+  `src/alphaledger/ledger/**`.
