@@ -2,13 +2,14 @@
 id: UNIT-014
 title: Enumerate real chains and compute exact payoffs
 lane: execution
-state: available
-owner: -
-branch: -
+state: claimed
+owner: pablo/codex
+branch: feature/014-structure-enumeration
 reviewer: execution-safety-reviewer
 preferred_runtime: codex
 depends_on: [UNIT-001, UNIT-011]
 paths: src/alphaledger/structure/**, tests/structure/**
+claimed_at: 2026-08-29T11:43:30Z
 ---
 
 ## Problem
