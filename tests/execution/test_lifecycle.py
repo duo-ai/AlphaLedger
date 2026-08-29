@@ -177,7 +177,13 @@ def test_reconciled_refuses_every_further_transition() -> None:
 def test_ambiguous_submit_queries_once_by_id_and_never_submits_a_second_intent() -> None:
     lifecycle = _lifecycle()
     stable_id = lifecycle.client_order_id("ambiguous-plan", 1, Decimal("1.25"))
-    assert "submission_attempted" in inspect.signature(lifecycle.decide_submission).parameters
+    recorded_attempt = lifecycle.RecordedSubmissionAttempt(
+        client_order_id=stable_id,
+        record_id="attempt-record-001",
+    )
+    assert "submission_attempted" not in inspect.signature(
+        lifecycle.decide_submission
+    ).parameters
 
     class AmbiguousBroker(MemoryLookup):
         def __init__(self) -> None:
@@ -191,36 +197,47 @@ def test_ambiguous_submit_queries_once_by_id_and_never_submits_a_second_intent()
     first = lifecycle.decide_submission(
         broker,
         stable_id,
-        submission_attempted=False,
+        recorded_attempt=recorded_attempt,
     )
     if first.action is lifecycle.SubmissionAction.SUBMIT:
         broker.submit(stable_id)
 
     state = lifecycle.resolve_ambiguous_submit(broker, stable_id)
-    duplicate = lifecycle.decide_submission(
+    recovery = lifecycle.recover_submission(
         broker,
         stable_id,
-        submission_attempted=True,
+        recorded_attempt=recorded_attempt,
+        local_state=lifecycle.OrderState.SUBMITTED,
     )
-    after_restart = lifecycle.decide_submission(
+    after_restart = lifecycle.recover_submission(
         MemoryLookup(None),
         stable_id,
-        submission_attempted=True,
+        recorded_attempt=recorded_attempt,
+        local_state=lifecycle.OrderState.SUBMITTED,
     )
 
     assert first.action is lifecycle.SubmissionAction.SUBMIT
     assert state is None
-    assert duplicate.action is lifecycle.SubmissionAction.BLOCK
-    assert duplicate.reason == "ambiguous_submission"
-    assert after_restart.action is lifecycle.SubmissionAction.BLOCK
+    assert recovery.action is lifecycle.RecoveryAction.BLOCK
+    assert recovery.reason == "ambiguous_submission"
+    assert after_restart.action is lifecycle.RecoveryAction.BLOCK
     assert after_restart.reason == "ambiguous_submission"
     assert broker.queries == [stable_id, stable_id, stable_id]
     assert broker.submissions == [stable_id]
+    assert {action.value for action in lifecycle.RecoveryAction} == {
+        "adopt_existing",
+        "block",
+    }
 
 
 def test_two_invocations_of_one_intent_create_one_broker_intent() -> None:
     lifecycle = _lifecycle()
     stable_id = lifecycle.client_order_id("duplicate-plan", 1, Decimal("0.80"))
+    durable_records = [stable_id]
+    recorded_attempt = lifecycle.RecordedSubmissionAttempt(
+        client_order_id=durable_records[0],
+        record_id="attempt-record-002",
+    )
 
     class RecordingBroker(MemoryLookup):
         def __init__(self) -> None:
@@ -231,7 +248,7 @@ def test_two_invocations_of_one_intent_create_one_broker_intent() -> None:
             decision = lifecycle.decide_submission(
                 self,
                 stable_id,
-                submission_attempted=bool(self.submissions),
+                recorded_attempt=recorded_attempt,
             )
             if decision.action is lifecycle.SubmissionAction.SUBMIT:
                 self.submissions.append(stable_id)
@@ -280,18 +297,24 @@ def test_order_state_has_exactly_the_eleven_per_order_members() -> None:
 def test_restart_rebuilds_the_same_state_and_broker_truth_overrides_local_state() -> None:
     lifecycle = _lifecycle()
     recorded_id = lifecycle.client_order_id("restart-plan", 1, Decimal("1.10"))
+    recorded_attempt = lifecycle.RecordedSubmissionAttempt(
+        client_order_id=recorded_id,
+        record_id="attempt-record-003",
+    )
     broker_order = _broker_order(recorded_id, BrokerOrderStatus.FILLED)
     before_restart = lifecycle.resolve_ambiguous_submit(MemoryLookup(broker_order), recorded_id)
-    stale_local_state = lifecycle.OrderState.WORKING
 
-    after_restart = lifecycle.resolve_ambiguous_submit(
+    after_restart = lifecycle.recover_submission(
         MemoryLookup(broker_order),
         recorded_id,
+        recorded_attempt=recorded_attempt,
+        local_state=lifecycle.OrderState.WORKING,
     )
 
     assert before_restart is lifecycle.OrderState.FILLED
-    assert after_restart is before_restart
-    assert after_restart is not stale_local_state
+    assert after_restart.action is lifecycle.RecoveryAction.ADOPT_EXISTING
+    assert after_restart.state is before_restart
+    assert after_restart.state is lifecycle.OrderState.FILLED
 
 
 def test_subprocess_rederives_recorded_id_after_crash_before_submission() -> None:
@@ -309,11 +332,15 @@ def test_subprocess_rederives_recorded_id_after_crash_before_submission() -> Non
 def test_unknown_order_state_blocks_entry_and_records_the_no_trade_reason() -> None:
     lifecycle = _lifecycle()
     stable_id = lifecycle.client_order_id("unknown-plan", 1, Decimal("0.50"))
+    recorded_attempt = lifecycle.RecordedSubmissionAttempt(
+        client_order_id=stable_id,
+        record_id="attempt-record-004",
+    )
     unknown_order = _broker_order(stable_id, BrokerOrderStatus.UNKNOWN)
     decision = lifecycle.decide_submission(
         MemoryLookup(unknown_order),
         stable_id,
-        submission_attempted=False,
+        recorded_attempt=recorded_attempt,
     )
 
     class UnavailableLookup:
@@ -323,7 +350,13 @@ def test_unknown_order_state_blocks_entry_and_records_the_no_trade_reason() -> N
     unavailable = lifecycle.decide_submission(
         UnavailableLookup(),
         stable_id,
-        submission_attempted=False,
+        recorded_attempt=recorded_attempt,
+    )
+    unrecorded_lookup = MemoryLookup(None)
+    unrecorded = lifecycle.decide_submission(
+        unrecorded_lookup,
+        stable_id,
+        recorded_attempt=None,
     )
     explicitly_unsafe = {
         None,
@@ -347,3 +380,7 @@ def test_unknown_order_state_blocks_entry_and_records_the_no_trade_reason() -> N
     assert unavailable.action is lifecycle.SubmissionAction.BLOCK
     assert unavailable.state is None
     assert unavailable.reason == "broker_truth_unavailable"
+    assert unrecorded.action is lifecycle.SubmissionAction.BLOCK
+    assert unrecorded.state is None
+    assert unrecorded.reason == "submission_attempt_record_required"
+    assert unrecorded_lookup.queries == []
