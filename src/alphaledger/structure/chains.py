@@ -284,9 +284,17 @@ def enumerate_candidates(
     short_contracts: list[ChainContract] = []
     for contract in screened:
         assert contract.delta is not None
-        absolute_delta = abs(contract.delta)
-        fits_long = rules.long_abs_delta_min <= absolute_delta <= rules.long_abs_delta_max
-        fits_short = rules.short_abs_delta_min <= absolute_delta <= rules.short_abs_delta_max
+        absolute_delta = abs(Fraction(contract.delta))
+        fits_long = (
+            Fraction(rules.long_abs_delta_min)
+            <= absolute_delta
+            <= Fraction(rules.long_abs_delta_max)
+        )
+        fits_short = (
+            Fraction(rules.short_abs_delta_min)
+            <= absolute_delta
+            <= Fraction(rules.short_abs_delta_max)
+        )
         if fits_long:
             long_contracts.append(contract)
         if fits_short:
@@ -294,7 +302,8 @@ def enumerate_candidates(
         if not fits_long and not fits_short:
             reasons.append(
                 "delta_band: "
-                f"{contract.symbol} absolute delta {absolute_delta} matches neither "
+                f"{contract.symbol} absolute delta "
+                f"{absolute_delta.numerator}/{absolute_delta.denominator} matches neither "
                 "the long-leg nor short-leg band"
             )
 
