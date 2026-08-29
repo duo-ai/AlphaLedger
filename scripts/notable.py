@@ -45,8 +45,13 @@ from pathlib import Path
 STOP_PHRASES = re.compile(
     r"(?:am|is|are|was|were)\s+blocked\b"
     r"|\bblocked\s+by\b"
-    r"|\bcannot\s+(?:proceed|continue|complete|be\s+resolved|be\s+satisfied)"
-    r"|\bunable\s+to\s+(?:proceed|continue|complete)"
+    # "I cannot proceed" is a refusal. "the boundary cases cannot proceed until
+    # that API exists" is an agent narrating a TDD red phase, which is the
+    # healthiest thing it does all run. The subject is what separates them, so
+    # this family requires the agent itself as the subject.
+    r"|\b(?:I|we)\s+(?:cannot|can not|could\s+not|am\s+unable\s+to|are\s+unable\s+to)"
+    r"\s+(?:proceed|continue|complete)"
+    r"|\bcannot\s+be\s+(?:resolved|satisfied)"
     r"|\bstopping\s+(?:here|now|because)"
     r"|\brefus(?:e|ing)\s+to\b"
     r"|\brequires?\s+(?:approval|a\s+human)"
@@ -219,6 +224,10 @@ NOT_STOPS = (
     " activity-to-order correlation, reject position quantity/side contradictions.",
     "The TDD red phase is decisive: 5 failures, all for the intended defects."
     " Both contradictory position variants are accepted.",
+    "Red is confirmed for the expected contract gap: the updated suite reports 23"
+    " failures because approve does not yet accept the required max_snapshot_age."
+    " The new payload and boundary cases cannot proceed until that API change"
+    " exists, while 20 unaffected cases remain green.",
     "AC-1 through AC-10 are supported, but AC-5 fails for contradictory positions"
     " and restart recovery loses activity-to-order identity.",
 )
