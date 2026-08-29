@@ -420,3 +420,111 @@ amend an intake after a review, grep it for the criterion the finding touches.
 Your 401 is the recorded evidence that it is blocked on access rather than on
 effort, and D-024 says so in those terms. Until it clears, nothing in either
 lane has been observed against a real payload.
+
+## G0 is yours now, 2026-08-29
+
+Pablo has handed you the G0 gate. This section is what you need to discharge
+it; nothing else in this brief changes.
+
+### What G0 is
+
+`hackathon-build-plan.md` defines it as: correct competition account, paper
+endpoint, balance, permissions, feed mode, and submission rules recorded. Its
+failure action is stated in the same row and is not advisory: stop
+implementation assumptions and resolve, do not trade.
+
+It is the oldest open item in the project and it gates everything after it.
+Both lanes are complete in the sense that their code passes its own tests, and
+neither has been observed against a real payload, so every number in this
+repository currently comes from a fixture.
+
+### The concrete artifact
+
+`run_manifest.example.yaml` is the deliverable. It is checked in, it contains
+no secrets, and it already carries every field G0 has to settle. The build plan
+is explicit that G0 remains unpassed until every required field matches the
+actual competition environment and the frozen copy has a recorded hash.
+
+The fields sitting at `null` today, which is the working list:
+
+- `competition.pre_kickoff_code_allowed`, `judging_weights`,
+  `required_artifacts`
+- `broker.account_id_hash`, `expected_starting_equity_usd`, `options_level`,
+  `multi_leg_enabled`, `verified_at_utc`
+- `integrations.execution_adapter`, `execution_sdk_or_api_version`,
+  `mleg_contract_test_artifact`
+- `data.equities_feed`, `options_feed`, `opra_entitled`,
+  `historical_news_first_seen_policy`
+
+Note `broker.account_id_hash`, not an account id. The field is a hash on
+purpose.
+
+### Do not trust the dates already in that file
+
+`competition.kickoff_utc` and `submission_deadline_utc` are populated, and they
+are not verified. The user confirmed on 2026-08-28 that the calendar in
+`hackathon-build-plan.md` is stale, and `project-state/STATUS.md` records that
+the real submission deadline is one of the facts G0 has to establish. Treat
+both values as placeholders that look settled, which is the more dangerous
+shape.
+
+### What is already known, and what it is worth
+
+D-024 is yours and it is the best evidence in the repository about the data
+side. Read it before doing anything here, because it separates two things this
+gate keeps confusing: the published API reference, and an observation of a real
+payload. Everything in D-024 is the former. The one credentialed call made on
+2026-08-29 returned 401.
+
+That 401 is the useful fact for G0. It says the gate is blocked on access, not
+on further reading. No amount of additional schema research moves it.
+
+D-025, recorded today, adds one reference-read finding to the same pile:
+`summary` is a required field on every Alpaca news article, so the news family
+does not depend on entitlement. `content` is fetched only under
+`include_content` and was deliberately not adopted.
+
+### A constraint on how you can verify any of this
+
+Per D-006, every coding-agent Alpaca MCP connection in this repository is
+market-data-only. It omits the `account` and `trading` toolsets deliberately
+and that must never be widened in a committed file. So the MCP server cannot
+read account identity, equity, options level, or positions, which is most of
+the broker block above.
+
+Those facts have to come from the Alpaca console or from the application's own
+adapter running with real credentials. That is a human-in-the-loop step, not
+something to automate around. If you find yourself wanting to add a toolset to
+make this easier, that is the boundary working, not a problem to solve.
+
+Never read, print, log, commit, or copy a key, a secret, a dotfile, or a
+credential while doing this. The manifest is committed, which is exactly why it
+holds a hash rather than an identifier.
+
+### The MLeg question, which is the one with teeth
+
+`integrations.mleg_contract_test_artifact` is not paperwork. The build plan
+says to inspect the current `place_option_order` schema and test the documented
+`legs` array shape in a disposable environment, because the MCP repository has
+had a reported multi-leg serialization issue and untested docstrings are not
+evidence.
+
+The execution lane has been built against the documented shape and has never
+sent one. `src/alphaledger/execution/orders.py` `build_mleg_order` produces
+what the reference describes, and UNIT-011's tests pin it against fixtures.
+Whatever you observe live outranks that, per D-024's own revisit rule: record
+the observation first and prefer it.
+
+The unverified replace semantics matter here too. UNIT-012 and UNIT-018 both
+implement the fail-closed interim default, cancel and then resubmit under a new
+deterministic id, precisely because nobody has confirmed whether Alpaca's
+replace preserves a client order id. A live answer to that is worth recording
+even though it changes nothing until it is decided.
+
+### One small decision sitting in your path
+
+D-024 records that Alpaca's news `source` is an originator name such as
+`benzinga`, not a domain, so `Article.source_domain` has no direct counterpart
+in the feed. UNIT-028's intake notes it. Whoever implements that unit either
+derives a domain or the field gets renamed, and that is a decision to record
+rather than to make silently in an adapter.
