@@ -505,3 +505,48 @@ uv run mypy src
   This is the same defect D-021 records from UNIT-010: a corrected criterion
   left its old premise standing elsewhere in the same file. Writing the
   criterion and the test list in one pass is not a check on either.
+
+- 2026-08-29 code review round one, `execution-safety-reviewer`, verdict block.
+  Two findings, both confirmed against the code by the session before being
+  recorded here, and both are refinements of the round-zero rebuild rather than
+  new territory.
+
+  Finding 1, P1, `approve` in `src/alphaledger/risk/approval.py`. The mutable
+  payload hole is not fully closed. `order_payload_hash` reads the supplied
+  mapping field by field, so a mapping that changes an already-consumed field
+  while a later field is still being read produces a hash equal to the expected
+  one, while rehashing the same mapping immediately afterwards produces a
+  different one. `approve` then returns an approved token for a payload that no
+  longer exists. The rebuild answered mutation before the read and mutation
+  after it, and left mutation during it.
+
+  The correction is to stop reading the supplied mapping more than once. Take
+  one stable snapshot of it before any gate or hash looks at it, by
+  materialising it through `canonical_bytes` or into an immutable structure,
+  and evaluate every gate and every hash from that snapshot alone. A mapping
+  that cannot be snapshotted is refused. The regression must mutate a field
+  that has already been hashed, because the existing test mutates before
+  hashing and stays green against the defect.
+
+  Finding 2, P2, the same function. A supplied payload whose sell ratio differs
+  from its buy ratio is read and then discarded, because the balance gate runs
+  against the rebuilt payload, which is balanced by construction. The refusal
+  therefore records `payload_plan_mismatch` alone and omits `unbalanced_legs`,
+  which AC-5 requires. One refused approval is supposed to name every gate that
+  failed, because the ledger's value is the completeness of the refusal, not the
+  fact of it. Evaluate the balance gate against the snapshot from finding 1, so
+  the supplied payload's own imbalance is recorded alongside the mismatch.
+
+  Four tests were also named as weaker than they read, and each is worth fixing
+  because a test that cannot fail is worse than an absent one:
+  `test_standard_sizing_floors_risk_budget_below_the_frozen_cap` never exercises
+  the standard cap; `test_approval_id_changes_under_every_single_bound_field_mutation`
+  bypasses the public `approve`; `test_payload_mutating_after_gate_reads_cannot_change_decision_binding`
+  mutates before hashing and so cannot see finding 1; and
+  `test_every_failed_gate_is_recorded_together_in_one_refused_token` mutates the
+  plan as well as the payload, which masks finding 2.
+
+  Deliberately not carried into this unit, per D-022: the review's closing
+  paragraph lists live transport, arm state, ambiguous submit recovery,
+  reconciliation, exits, flattening, and ledger behaviour. None is an
+  acceptance criterion here and none is actionable inside `src/alphaledger/risk/**`.
