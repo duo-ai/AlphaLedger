@@ -1,0 +1,3 @@
+- [Mutation-testing discipline](mutation_testing.md), always re-probe an implementer's "N defects injected, M caught" claim independently; don't trust the count.
+- [UNIT-023 news features](unit-023-news-features.md), two extra surviving mutations found beyond the two the handoff notes disclosed; clustering windowing gap and fix.
+- [D-022 bounded review mandate in practice](d022-bounded-mandate.md), how "actionable + bears on a numbered AC" cashes out when a finding is a coverage gap on correct-but-undertested behavior, not a functional bug.
