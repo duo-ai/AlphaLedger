@@ -140,10 +140,11 @@ present and verified to fire inside a worktree.
 | UNIT-023 | research | Encode point-in-time news into features | G3 |
 | UNIT-024 | research | Split chronologically and register every trial | G3 |
 | UNIT-025 | research | Fit the pooled forecast and emit the Forecast record | G3 |
+| UNIT-027 | research | Construct forward residual return labels | G3 |
 | UNIT-026 | research | Run the required baselines and ablations | G3 |
 
 Every row above has an intake file in `specs/units/` except UNIT-016,
-UNIT-017, UNIT-018, UNIT-025, and UNIT-026, which are backlog rows. Promoting
+UNIT-017, UNIT-018, UNIT-026, and UNIT-027, which are backlog rows. Promoting
 one means writing its intake from `specs/TEMPLATE.md`. Run
 `uv run python scripts/coord.py list` for current state rather than reading it
 here; this table records the decomposition, not progress. Use `uv run python`
@@ -179,6 +180,22 @@ match the table would have edited files belonging to closed units in order to
 preserve a row that was wrong. The forecast model was consequently owned by no
 row at all, which is exactly the gap UNIT-018 was created to close, so it gets
 a row rather than an assumption.
+
+UNIT-027 was added on 2026-08-29 for the third time this decomposition has
+had to close a hole of the same shape. Writing the UNIT-025 intake surfaced
+that nothing owned forward residual label construction. UNIT-022 emits features
+and no outcome, UNIT-023 the same, and UNIT-024 consumes a label's identity,
+its prediction instant, and its outcome instant, but never its value. A model
+cannot be fitted without labelled outcomes, so the work was required by a unit
+and owned by none.
+
+It earns its own row rather than joining UNIT-025 because a label is
+point-in-time evidence, not modelling. Folding it into the fit would put the
+definition of the correct answer inside the thing being judged, and UNIT-026
+compares models against exactly these labels, so a label built by one of the
+things it discriminates between could not be trusted by the other. It is placed
+before UNIT-025 in dependency order and after it in numbering, the same way
+UNIT-018 sits above UNIT-013.
 
 Specified is not the same as claimable. The execution lane is a chain:
 UNIT-011 waits on UNIT-010 and UNIT-012 waits on UNIT-011, because each

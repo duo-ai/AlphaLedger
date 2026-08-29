@@ -7,7 +7,7 @@ owner: -
 branch: -
 reviewer: backtest-auditor
 preferred_runtime: claude
-depends_on: [UNIT-001, UNIT-022, UNIT-023, UNIT-024]
+depends_on: [UNIT-001, UNIT-022, UNIT-023, UNIT-024, UNIT-027]
 paths: src/alphaledger/forecast/model.py, src/alphaledger/forecast/eligibility.py, tests/research/test_model.py, tests/research/test_eligibility.py
 ---
 
@@ -63,15 +63,13 @@ Out:
 - threshold selection on development data. This unit takes thresholds as frozen
   configuration and does not choose them; choosing them is a registered trial
   and a separate act.
-- the label construction that produces forward residual returns.
-
-  [NEEDS CLARIFICATION: which unit owns forward residual label construction.
-  UNIT-022 emits features but no outcome, UNIT-024 consumes only `label_id`,
-  `prediction_time`, and `outcome_time` and never a value, and no backlog row
-  names it. This unit cannot be fitted without labelled outcomes, so either it
-  absorbs label construction and its paths and acceptance criteria grow, or a
-  new row owns it and this unit depends on that row. Decide before claiming;
-  the same gap left the price ladder homeless until UNIT-018 was created.]
+- the label construction that produces forward residual returns (UNIT-027).
+  Writing this intake surfaced that no row owned it, and the resolution was to
+  give it one rather than absorb it here. A label is point-in-time evidence,
+  not modelling, and UNIT-026 compares models against exactly these labels, so
+  a label built inside one of the things being discriminated between could not
+  be trusted by the other. `outcomes` therefore arrives as an input to `fit`
+  and this unit never derives it.
 
 ## Contract
 
