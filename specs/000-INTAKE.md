@@ -122,6 +122,9 @@ present and verified to fire inside a worktree.
 | Id | Lane | Title | Gate |
 |---|---|---|---|
 | UNIT-001 | shared | Freeze the domain contracts | G1 |
+| UNIT-002 | shared | Amend the news label contract to hold what the labeler emits | G1 |
+| UNIT-003 | shared | Enumerate the news category on the label | G1 |
+| UNIT-004 | shared | Load the frozen configuration and hash it | G1 |
 | UNIT-010 | execution | Assert the paper endpoint and make live impossible | G1 |
 | UNIT-011 | execution | Map Alpaca order schemas behind a typed adapter | G1 |
 | UNIT-012 | execution | Implement the order state machine and idempotent client ids | G1 |
@@ -133,10 +136,21 @@ present and verified to fire inside a worktree.
 | UNIT-020 | research | Record point-in-time observations with the timestamp contract | G3 |
 | UNIT-021 | research | Generate the lagged frozen universe | G3 |
 | UNIT-022 | research | Build residual price and volume features | G3 |
+| UNIT-023 | research | Encode point-in-time news into features | G3 |
+| UNIT-024 | research | Split chronologically and register every trial | G3 |
 
-Rows with an intake file in `specs/units/` are specified: UNIT-001 (merged),
-UNIT-010, UNIT-011, UNIT-012, UNIT-020, UNIT-021, and UNIT-022. The rest are
-backlog rows; promoting one means writing its intake from `specs/TEMPLATE.md`.
+Every row above has an intake file in `specs/units/` except UNIT-013 through
+UNIT-017, which are backlog rows. Promoting one means writing its intake from
+`specs/TEMPLATE.md`. Run `python3 scripts/coord.py list` for current state
+rather than reading it here; this table records the decomposition, not
+progress.
+
+One gap the decomposition does not cover. Design section 11 step 4 requires a
+bounded limit price ladder on entry, and no row above owns it. UNIT-011 and
+UNIT-012 each pushed it to UNIT-013, which this table assigns to the risk
+approval token, so the reference was wrong in both and is now corrected in
+place. Whoever promotes UNIT-013 decides whether the ladder joins it or earns
+a row of its own. Do not implement it inside a unit that disclaims it.
 
 Specified is not the same as claimable. The execution lane is a chain:
 UNIT-011 waits on UNIT-010 and UNIT-012 waits on UNIT-011, because each

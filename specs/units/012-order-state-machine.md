@@ -65,8 +65,10 @@ Out:
 - The scheduled reconcile loop across orders, activities and positions, and
   orphan-position recovery (UNIT-015). This unit owns query-by-client-id as a
   primitive and the unknown-fails-closed rule. It must not grow into UNIT-015.
-- Choosing or stepping a limit price (UNIT-013). This unit may model
-  `cancel_pending`, but it does not decide prices.
+- Choosing or stepping a limit price. `specs/000-INTAKE.md` assigns
+  UNIT-013 to the risk approval token, so an earlier draft of this line
+  named the wrong unit; the ladder has no unit assigned yet. This unit may
+  model `cancel_pending`, but it does not decide prices.
 - Building or parsing the payload (UNIT-011).
 - Endpoint assertion and transport (UNIT-010). This unit performs no I/O. The
   broker is reached only through the lookup protocol below, which a test
