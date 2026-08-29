@@ -305,29 +305,41 @@ environment.
 
 ## Next three tasks
 
-1. Record the real competition dates and account facts, then pass or block
-   G0. It is the single largest open item in the project by a wide margin:
-   account identity, starting balance, options level, entitlement, and the
-   real submission deadline are all still missing, and each one needs a fact
-   only the user has. The credentialed call recorded in D-024 returned 401,
-   which confirms this gate is blocked on access, not on remaining effort; no
-   amount of further unit work substitutes for it.
-2. Write the UNIT-029 intake, the LLM labeler adapter. It is the last row in
-   `specs/000-INTAKE.md` with no intake file, and `AGENTS.md` assigns intake
-   authoring to `pablo/claude` rather than to the research lane that will
-   implement it. D-024's news schema findings bear on it directly, so read
-   that decision before writing the contract.
-3. Move the two unblocked pieces of the research lane. UNIT-028, the Alpaca
-   market-data adapter, has every dependency merged and is claimable now.
-   UNIT-027, forward residual labels, is claimed by `mazwy/claude` and in
-   progress; UNIT-025 and UNIT-026 both depend on it and stay unclaimable
-   until it merges.
+1. G0 is owned by `mazwy` as of 2026-08-29, handed over by the user. It is the
+   single largest open item in the project by a wide margin: account identity,
+   starting balance, options level, entitlement, MLeg behaviour, and the real
+   submission deadline are all still missing. The credentialed call recorded in
+   D-024 returned 401, which confirms this gate is blocked on access rather
+   than on remaining effort, so no amount of further unit work substitutes for
+   it. The deliverable is `run_manifest.example.yaml` with every null field
+   settled and the frozen copy hashed; the working list, the constraint that
+   D-006 keeps the agent MCP market-data-only so account facts cannot be read
+   through it, and the MLeg contract test are written up for the owner in
+   `RESEARCH-LANE.md` under "G0 is yours now". Note that the kickoff and
+   deadline already populated in that manifest are unverified placeholders, not
+   settled values.
+2. Claim UNIT-030, which widens `Article` to carry the summary. It is small,
+   it is claimable now, and both UNIT-028 and UNIT-029 depend on it, so it is
+   the single thing standing between the research lane and the news family.
+   D-025 records why the summary was chosen over a headline-only family, and
+   records that `exclude_contentless` must never be used to build a research
+   sample because it selects on a property correlated with the outcome.
+3. Then UNIT-028, the Alpaca market-data adapter, which populates that field
+   and carries the `source_domain` question D-024 raised: Alpaca's `source` is
+   an originator name, not a domain, so the field is either derived or renamed,
+   and that is a decision to record rather than to make inside an adapter.
+   UNIT-027 is claimed by `mazwy/claude` and in progress; UNIT-025 and UNIT-026
+   depend on it and stay unclaimable until it merges. UNIT-029 is specified and
+   waits on UNIT-030.
+
+Every intake now exists. `specs/000-INTAKE.md` has no backlog row without a
+file, so the next unit of work is a claim rather than an authoring step.
 
 ## Read first next session
 
 1. `AGENTS.md`, including the parallel work protocol
 2. `specs/000-INTAKE.md`
-3. `project-state/DECISIONS.md`, D-009 through D-024
+3. `project-state/DECISIONS.md`, D-009 through D-025
 4. `RESEARCH-LANE.md`, then the handoff notes in the five merged research
    unit intakes, which carry the findings and the open questions
 5. `options-alpha-agent-design.md` sections 0 to 5 and 14
