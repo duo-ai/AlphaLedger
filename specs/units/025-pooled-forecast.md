@@ -121,8 +121,22 @@ be a second set of unselected hyperparameters.
   constructing a fold, passing one label from its test window, and observing
   that the fit succeeds.
 - AC-2: nothing from the test window reaches the fit or the calibration.
-  Falsified by mutating a test-window outcome after fitting and observing any
-  emitted `Forecast` change.
+  `Fold` carries `test_labels`, so `fit` is handed them and must ignore them.
+  Falsified by building two folds identical in every respect except the
+  contents of their test windows, fitting both, and observing that
+  `model_version` or any emitted `Forecast` value differs. A fit that reads
+  test labels cannot pass that; one that ignores them cannot fail it.
+
+  This criterion was rewritten on 2026-08-29, before the unit was ever
+  claimable, because the first version was unfalsifiable. It said to mutate a
+  test-window outcome after fitting and observe whether a forecast changed,
+  which cannot happen either way once the model object is built, so the
+  observation was true unconditionally. It also contradicted AC-1: a fit
+  containing an out-of-window instant raises, so the leaking fit the mutation
+  was supposed to expose could never be constructed. D-021 records this exact
+  failure against UNIT-010, where a criterion that read as considered was
+  unsatisfiable in principle and the test list faithfully reproduced its false
+  premise.
 - AC-3: every fit registers a trial before its result is computed, and the
   registered configuration includes the feature versions of both families and
   the fold hash. Falsified by fitting and observing the registry count is
@@ -147,9 +161,12 @@ be a second set of unselected hyperparameters.
   separately, and the two attributions are computable independently of each
   other. Falsified by an attribution that changes when a family the candidate
   does not use is added to the configuration.
-- AC-9: a fold with too few usable labels to calibrate emits no forecast and
-  says why, rather than emitting one with a fabricated `calibration_error`.
-  Falsified by observing a `Forecast` from an empty calibration window.
+- AC-9: a fold whose calibration window holds no usable label raises from
+  `fit` rather than returning a model, because `predict` returns a `Forecast`
+  and has no way to return nothing, and a record carrying an invented
+  `calibration_error` is worse than no record. `EMPTY_CALIBRATION_WINDOW`
+  already exists in UNIT-024's `splits.py`, so the fold is constructible.
+  Falsified by observing `fit` return a model from such a fold.
 
 ## Test list
 
@@ -165,6 +182,9 @@ be a second set of unselected hyperparameters.
   research rules require.
 - failure: a calibration input from the test window raises, separately from the
   training case, so the two leaks are distinguishable.
+- failure: two folds differing only in the contents of their test windows
+  produce the same `model_version` and the same forecasts, which is the
+  observation AC-2 names. A fit that read `Fold.test_labels` would fail it.
 - failure: `predict` before calibration raises `UncalibratedModelError` rather
   than returning an uncalibrated probability.
 - failure: fitting against a registry that refuses the registration propagates
@@ -177,9 +197,9 @@ be a second set of unselected hyperparameters.
   `model_version` and every emitted `Forecast` field, under two hash seeds.
 - restart: a model persisted and reloaded emits identical forecasts, so a
   frozen run can be replayed.
-- no-trade: a fold whose calibration window holds no usable label emits no
-  forecast and records the reason, and the caller reads that as ineligible
-  rather than as a neutral prediction.
+- no-trade: a fold whose calibration window holds no usable label raises from
+  `fit`, naming the fold and the window, rather than returning a model whose
+  `calibration_error` no data supports.
 - no-trade: a candidate missing the news family entirely does not silently
   downgrade to a price-only eligible trade, per section 6, and is recorded as
   shadow rather than eligible.
