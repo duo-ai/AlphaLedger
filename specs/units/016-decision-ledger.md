@@ -2,7 +2,7 @@
 id: UNIT-016
 title: Append-only decision and trade ledger
 lane: execution
-state: claimed
+state: in_review
 owner: pablo/codex
 branch: feature/016-decision-ledger
 reviewer: execution-safety-reviewer
