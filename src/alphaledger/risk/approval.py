@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import ROUND_DOWN, Decimal
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Final
 
 from alphaledger.config import FrozenConfig, RiskConfig
@@ -141,9 +142,10 @@ def approve(
     _require_positive_exact_max_loss(plan)
     _require_max_snapshot_age(max_snapshot_age)
 
-    quantity = _payload_quantity(payload)
-    limit_price = _payload_limit_price(payload)
-    _payload_leg_ratios(payload)
+    supplied_payload = _immutable_payload_snapshot(payload)
+    quantity = _payload_quantity(supplied_payload)
+    limit_price = _payload_limit_price(supplied_payload)
+    buy_ratio, sell_ratio = _payload_leg_ratios(supplied_payload)
     expected_payload = build_mleg_order(
         plan,
         quantity,
@@ -151,8 +153,7 @@ def approve(
         client_order_id(plan.plan_id, quantity, limit_price),
     )
     expected_payload_hash = order_payload_hash(expected_payload)
-    supplied_payload_hash = order_payload_hash(payload)
-    buy_ratio, sell_ratio = _payload_leg_ratios(expected_payload)
+    supplied_payload_hash = order_payload_hash(supplied_payload)
 
     failed_gates: list[str] = []
     if supplied_payload_hash != expected_payload_hash:
@@ -250,6 +251,43 @@ def _require_max_snapshot_age(max_snapshot_age: timedelta) -> None:
         raise ValueError(
             f"max_snapshot_age must be a non-negative timedelta; got {max_snapshot_age!r}"
         )
+
+
+def _immutable_payload_snapshot(payload: Mapping[str, object]) -> Mapping[str, object]:
+    """Read an arbitrary payload once into recursively detached containers."""
+    try:
+        return _immutable_mapping_snapshot(payload, "payload")
+    except ValueError:
+        raise
+    except Exception as error:
+        raise ValueError("payload could not be snapshotted") from error
+
+
+def _immutable_mapping_snapshot(
+    value: Mapping[str, object],
+    field: str,
+) -> Mapping[str, object]:
+    snapshot: dict[str, object] = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise ValueError(f"{field} contains a non-string key")
+        child_field = f"{field}.{key}"
+        snapshot[key] = _immutable_value_snapshot(item, child_field)
+    return MappingProxyType(snapshot)
+
+
+def _immutable_value_snapshot(value: object, field: str) -> object:
+    if value is None or isinstance(value, str | bool | int | Decimal):
+        return value
+    if isinstance(value, float):
+        raise ValueError(f"{field} must never contain float")
+    if isinstance(value, Mapping):
+        return _immutable_mapping_snapshot(value, field)
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
+        return tuple(
+            _immutable_value_snapshot(item, f"{field}[{index}]") for index, item in enumerate(value)
+        )
+    raise ValueError(f"{field} contains unsupported type {type(value).__name__}")
 
 
 def _payload_field(payload: Mapping[str, object], field: str) -> object:

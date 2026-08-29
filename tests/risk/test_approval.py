@@ -83,17 +83,19 @@ def _payload(
     return dict(build_mleg_order(plan, quantity, limit_price, resolved_order_id))
 
 
-class _PayloadMutatingAfterLegRead(Mapping[str, object]):
-    """Expose a payload that changes after the final gate input is read."""
+class _PayloadMutatingAfterConsumedFieldRead(Mapping[str, object]):
+    """Change an already-consumed field while a later field is snapshotted."""
 
     def __init__(self, payload: dict[str, object]) -> None:
         self._payload = payload
+        self.read_counts = dict.fromkeys(payload, 0)
         self.mutated = False
 
     def __getitem__(self, key: str) -> object:
         value = self._payload[key]
-        if key == "legs" and not self.mutated:
-            self._payload["client_order_id"] = "changed-after-gate-input-read"
+        self.read_counts[key] += 1
+        if key == "legs" and self.read_counts["order_class"] > 0 and not self.mutated:
+            self._payload["qty"] = "4"
             self.mutated = True
         return value
 
@@ -162,19 +164,28 @@ def test_every_gate_passes_and_token_binds_independently_recomputed_hashes() -> 
     assert approval.expires_at == _EXPIRES_AT
 
 
-def test_standard_sizing_floors_risk_budget_below_the_frozen_cap() -> None:
+@pytest.mark.parametrize(
+    ("equity", "expected"),
+    [
+        (Decimal("60000.0000"), 2),
+        (Decimal("200000.0000"), 3),
+    ],
+)
+def test_standard_sizing_floors_below_and_caps_above_the_frozen_cap(
+    equity: Decimal,
+    expected: int,
+) -> None:
     api = _risk_api()
     config = _frozen_config()
 
     quantity = api.max_approved_quantity(
         _plan(),
-        Decimal("60000.0000"),
+        equity,
         config.risk,
         api.SizingMode.STANDARD,
     )
 
-    assert quantity == 2
-    assert quantity < config.risk.max_contracts_per_structure
+    assert quantity == expected
 
 
 def test_smoke_test_sizing_caps_quantity_that_standard_mode_allows() -> None:
@@ -310,13 +321,13 @@ def test_readable_payload_mismatch_is_refused_with_a_named_gate(mismatch: str) -
     assert approval.failed_gates == (api.GATE_PAYLOAD_PLAN_MISMATCH,)
 
 
-def test_payload_mutating_after_gate_reads_cannot_change_decision_binding() -> None:
+def test_payload_is_read_once_when_a_later_read_mutates_a_consumed_field() -> None:
     api = _risk_api()
     config = _frozen_config()
     plan = _plan()
     canonical_payload = _payload(plan)
     expected_payload_hash = order_payload_hash(canonical_payload)
-    mutating_payload = _PayloadMutatingAfterLegRead(canonical_payload)
+    mutating_payload = _PayloadMutatingAfterConsumedFieldRead(canonical_payload)
 
     approval = api.approve(
         plan,
@@ -330,9 +341,12 @@ def test_payload_mutating_after_gate_reads_cannot_change_decision_binding() -> N
     )
 
     assert mutating_payload.mutated is True
-    assert approval.approved is False
-    assert approval.failed_gates == (api.GATE_PAYLOAD_PLAN_MISMATCH,)
+    assert set(mutating_payload.read_counts.values()) == {1}
+    assert canonical_payload["qty"] == "4"
+    assert approval.approved is True
+    assert approval.failed_gates == ()
     assert approval.order_payload_hash == expected_payload_hash
+    assert order_payload_hash(canonical_payload) != approval.order_payload_hash
 
 
 @pytest.mark.parametrize(
@@ -417,36 +431,79 @@ def test_snapshot_hash_changes_under_every_single_field_mutation(
 
 
 @pytest.mark.parametrize(
-    ("field", "replacement"),
+    "bound_input",
     [
-        ("plan_id", "plan-approval-002"),
-        ("quantity", 2),
-        ("order_payload_hash", "payload-hash-002"),
-        ("account_snapshot_hash", "snapshot-hash-002"),
-        ("mode", "smoke_test"),
-        ("expires_at", _EXPIRES_AT + timedelta(microseconds=1)),
-        ("approved", False),
-        ("failed_gates", ("one_failed_gate",)),
+        "plan_id",
+        "quantity",
+        "order_payload_hash",
+        "account_snapshot_hash",
+        "mode",
+        "expires_at",
+        "approved",
+        "failed_gates",
     ],
 )
-def test_approval_id_changes_under_every_single_bound_field_mutation(
-    field: str,
-    replacement: object,
+def test_public_approval_id_changes_under_every_bound_input_mutation(
+    bound_input: str,
 ) -> None:
     api = _risk_api()
-    values = {
-        "plan_id": "plan-approval-001",
-        "quantity": 1,
-        "order_payload_hash": "payload-hash-001",
-        "account_snapshot_hash": "snapshot-hash-001",
-        "mode": "standard",
-        "expires_at": _EXPIRES_AT,
-        "approved": True,
-        "failed_gates": (),
-    }
-    changed = values | {field: replacement}
+    config = _frozen_config()
+    plan = _plan()
+    payload = _payload(plan, quantity=1)
+    snapshot = _snapshot(api, config)
+    mode = api.SizingMode.STANDARD
+    expires_at = _EXPIRES_AT
 
-    assert api._approval_id(**changed) != api._approval_id(**values)
+    if bound_input == "failed_gates":
+        snapshot = _snapshot(
+            api,
+            config,
+            open_position_count=config.risk.maximum_concurrent_positions,
+        )
+    baseline = api.approve(
+        plan,
+        payload,
+        snapshot,
+        config,
+        mode,
+        expires_at,
+        _NOW,
+        _MAX_SNAPSHOT_AGE,
+    )
+
+    if bound_input == "plan_id":
+        plan = replace(plan, plan_id="plan-approval-002")
+        payload = _payload(plan, quantity=1)
+    elif bound_input == "quantity":
+        payload = _payload(plan, quantity=2)
+    elif bound_input == "order_payload_hash":
+        changed_legs = [dict(leg) for leg in plan.legs]
+        changed_legs[1]["symbol"] = "SPY260918C00510000"
+        plan = replace(plan, legs=tuple(changed_legs))
+        payload = _payload(plan, quantity=1)
+    elif bound_input == "account_snapshot_hash":
+        snapshot = _snapshot(api, config, equity=Decimal("60001.0000"))
+    elif bound_input == "mode":
+        mode = api.SizingMode.SMOKE_TEST
+    elif bound_input == "expires_at":
+        expires_at += timedelta(microseconds=1)
+    elif bound_input == "approved":
+        plan = replace(plan, entry_limit_bound=Decimal("1.2400"))
+    else:
+        plan = replace(plan, entry_limit_bound=Decimal("1.2400"))
+
+    changed = api.approve(
+        plan,
+        payload,
+        snapshot,
+        config,
+        mode,
+        expires_at,
+        _NOW,
+        _MAX_SNAPSHOT_AGE,
+    )
+
+    assert changed.approval_id != baseline.approval_id
 
 
 def test_identical_approval_inputs_reproduce_all_bound_ids_after_restart() -> None:
@@ -611,10 +668,12 @@ def test_every_failed_gate_is_recorded_together_in_one_refused_token() -> None:
     api = _risk_api()
     config = _frozen_config()
     plan = _plan()
-    unbalanced_legs = [dict(leg) for leg in plan.legs]
-    unbalanced_legs[1]["ratio_qty"] = 2
-    plan = replace(plan, legs=tuple(unbalanced_legs))
     payload = _payload(plan, quantity=4, limit_price=Decimal("1.2600"))
+    raw_legs = payload["legs"]
+    assert isinstance(raw_legs, list)
+    unbalanced_legs = [dict(leg) for leg in raw_legs]
+    unbalanced_legs[1]["ratio_qty"] = "2"
+    payload["legs"] = unbalanced_legs
     snapshot = _snapshot(
         api,
         config,
@@ -640,8 +699,9 @@ def test_every_failed_gate_is_recorded_together_in_one_refused_token() -> None:
         api.GATE_UNBALANCED_LEGS,
         api.GATE_CONCURRENT_POSITION_LIMIT,
         api.GATE_CONFIG_HASH_MISMATCH,
+        api.GATE_PAYLOAD_PLAN_MISMATCH,
     }
-    assert len(approval.failed_gates) == 5
+    assert len(approval.failed_gates) == 6
 
 
 def test_smoke_mode_refuses_quantity_that_standard_mode_approves() -> None:
