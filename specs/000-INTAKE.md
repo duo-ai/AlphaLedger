@@ -140,11 +140,13 @@ present and verified to fire inside a worktree.
 | UNIT-023 | research | Encode point-in-time news into features | G3 |
 | UNIT-024 | research | Split chronologically and register every trial | G3 |
 | UNIT-025 | research | Fit the pooled forecast and emit the Forecast record | G3 |
-| UNIT-027 | research | Construct forward residual return labels | G3 |
 | UNIT-026 | research | Run the required baselines and ablations | G3 |
+| UNIT-027 | research | Construct forward residual return labels | G3 |
+| UNIT-028 | research | Fetch Alpaca bars and news into point-in-time records | G3 |
+| UNIT-029 | research | Label news through a cached LLM adapter | G3 |
 
 Every row above has an intake file in `specs/units/` except UNIT-016,
-UNIT-017, and UNIT-018, which are backlog rows. Promoting
+UNIT-017, UNIT-018, and UNIT-029, which are backlog rows. Promoting
 one means writing its intake from `specs/TEMPLATE.md`. Run
 `uv run python scripts/coord.py list` for current state rather than reading it
 here; this table records the decomposition, not progress. Use `uv run python`
@@ -196,6 +198,24 @@ compares models against exactly these labels, so a label built by one of the
 things it discriminates between could not be trusted by the other. It is placed
 before UNIT-025 in dependency order and after it in numbering, the same way
 UNIT-018 sits above UNIT-013.
+
+UNIT-028 and UNIT-029 were added on 2026-08-29, and they close the same class
+of hole as UNIT-018 and UNIT-027 did. Nothing in the decomposition fetched
+anything. UNIT-020 records an observation once it exists and UNIT-011 maps
+order schemas in the execution lane, so the path from Alpaca into a
+point-in-time record was required by every research unit and owned by none.
+That is why `project-state/STATUS.md` can say that no real feed is connected
+anywhere while eight research units are merged.
+
+UNIT-029 is the labeler adapter UNIT-023 disclaims by name: the LLM client, its
+caching by article and prompt hash, and the validation of Prompt B's
+consistency rules. UNIT-023 shipped a `NewsLabeler` protocol precisely so this
+unit could be written later without touching it.
+
+The two are separate because one needs Alpaca credentials and the other needs
+model credentials, and because the failure modes share nothing. D-024 records
+what the Alpaca schemas actually say and is the reason UNIT-028 is specified
+the way it is.
 
 Specified is not the same as claimable. The execution lane is a chain:
 UNIT-011 waits on UNIT-010 and UNIT-012 waits on UNIT-011, because each
