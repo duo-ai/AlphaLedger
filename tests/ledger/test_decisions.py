@@ -79,8 +79,14 @@ def test_the_latest_order_state_follows_append_order_without_hiding_prior_states
     ledger.record_order_state("client-order-1", OrderState.WORKING, T0)
     assert ledger.latest_order_state_for("client-order-1") is OrderState.WORKING
 
-    ledger.record_order_state("client-order-1", OrderState.FILLED, T0 + timedelta(minutes=1))
+    filled = ledger.record_order_state(
+        "client-order-1", OrderState.FILLED, T0 + timedelta(minutes=1)
+    )
+    filled_retry = ledger.record_order_state(
+        "client-order-1", OrderState.FILLED, T0 + timedelta(minutes=2)
+    )
 
+    assert filled_retry == filled
     assert ledger.latest_order_state_for("client-order-1") is OrderState.FILLED
     assert tuple(entry.payload["state"] for entry in ledger.entries_for("client-order-1")) == (
         OrderState.WORKING.value,
