@@ -2,7 +2,7 @@
 id: UNIT-017
 title: Evaluate the equity kill switch and report flatten completion
 lane: execution
-state: claimed
+state: in_review
 owner: pablo/codex
 branch: feature/017-kill-switch
 reviewer: execution-safety-reviewer
