@@ -147,8 +147,17 @@ if command -v codex >/dev/null 2>&1; then
     # through anything the owner held, which was itself the defect. Discover
     # them instead, and say plainly when there are none rather than asserting
     # against whatever the registry happens to hold.
-    mapfile -t AVAILABLE < <(py scripts/coord.py list --state available 2>/dev/null \
-        | awk 'NR > 1 {print $1}')
+    # Available is not the same as claimable: a unit can be unowned and still
+    # blocked by an unmerged dependency, which is how this block failed once
+    # already. Ask the same question a dispatch asks, and keep only the units
+    # that answer yes.
+    AVAILABLE=()
+    while read -r candidate; do
+        [ -n "$candidate" ] || continue
+        if py scripts/coord.py check "$candidate" --owner pablo/codex >/dev/null 2>&1; then
+            AVAILABLE+=("$candidate")
+        fi
+    done < <(py scripts/coord.py list --state available 2>/dev/null | awk 'NR > 1 {print $1}')
 
     if [ "${#AVAILABLE[@]}" -ge 1 ]; then
         bash scripts/dispatch.sh "${AVAILABLE[0]}" pablo/codex --dry-run >/dev/null 2>&1
