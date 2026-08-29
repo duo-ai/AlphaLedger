@@ -2,7 +2,7 @@
 id: UNIT-014
 title: Enumerate real chains and compute exact payoffs
 lane: execution
-state: in_review
+state: merged
 owner: pablo/codex
 branch: feature/014-structure-enumeration
 reviewer: execution-safety-reviewer
