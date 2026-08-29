@@ -5,8 +5,10 @@ Last updated: 2026-08-29
 ## Current phase
 
 Released as v0.1.0, and `develop` has moved well past it. Eight units are
-merged, and two more are in a second pass after their first review returned
-`block`. The research lane delegated in `RESEARCH-LANE.md` is complete, and the
+merged. UNIT-004 and UNIT-011 have each been through three implementation
+passes and two reviews, both of which returned `block`, and their round three
+work is committed and unreviewed. The next action on both is one narrowed
+follow-up review each, which is the only thing between them and `develop`. The research lane delegated in `RESEARCH-LANE.md` is complete, and the
 validation discipline that has to exist before any model is fit is in place:
 point-in-time recording, the lagged frozen universe, the residual price and
 volume baseline, chronological purged splits, and the trial registry. The
@@ -169,8 +171,11 @@ environment.
 
 ## Next three tasks
 
-1. Land UNIT-004 and UNIT-011. Both are in a second pass against recorded
-   findings, both must be reviewed again, and UNIT-012 cannot be claimed until
+1. Land UNIT-004 and UNIT-011. Round three is committed on both branches and
+   both are `in_review` with no round three verdict recorded. Start with
+   `scripts/review.sh UNIT-004` and `scripts/review.sh UNIT-011`, which now ask
+   the narrower follow-up question rather than rereading the whole diff, then
+   `coord.py review` and merge if clear. UNIT-012 cannot be claimed until
    UNIT-011 merges.
 2. Record the real competition dates and account facts in the run manifest,
    then pass or block G0. It is the oldest open item and the only thing holding
