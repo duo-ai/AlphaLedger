@@ -2,7 +2,7 @@
 id: UNIT-015
 title: Reconcile broker truth and recover after restart
 lane: execution
-state: in_review
+state: merged
 owner: pablo/codex
 branch: feature/015-broker-reconciliation
 reviewer: execution-safety-reviewer
