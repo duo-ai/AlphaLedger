@@ -15,15 +15,24 @@ set -euo pipefail
 
 die() { echo "review: $*" >&2; exit 1; }
 
-[ $# -ge 1 ] || die "usage: scripts/review.sh <UNIT-ID> [--base <branch>]"
+[ $# -ge 1 ] || die "usage: scripts/review.sh <UNIT-ID> [--base <branch>] [--dry-run]"
 UNIT="$1"
 BASE="develop"
-[ "${2:-}" = "--base" ] && BASE="${3:?--base needs a branch}"
+DRY_RUN=false
+shift
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --base) BASE="${2:?--base needs a branch}"; shift ;;
+        --dry-run) DRY_RUN=true ;;
+        *) die "unknown argument $1" ;;
+    esac
+    shift
+done
 
 ROOT=$(git rev-parse --show-toplevel) || die "not a git repository"
 cd "$ROOT"
 
-read -r SLUG REVIEWER OWNER BRANCH <<EOF
+read -r SLUG REVIEWER OWNER BRANCH ROUNDS <<EOF
 $(bash scripts/hook_python.sh - "$UNIT" <<'PY'
 import pathlib
 import sys
@@ -37,7 +46,15 @@ for path in sorted(pathlib.Path("specs/units").glob("*.md")):
     for line in text.split("---", 2)[1].splitlines():
         key, _, value = line.partition(":")
         fields[key.strip()] = value.strip()
-    print(path.stem, fields.get("reviewer", "-"), fields.get("owner", "-"), fields.get("branch", "-"))
+    log = fields.get("review_log", "")
+    rounds = len([v for v in log.strip("[]").split(",") if v.strip()])
+    print(
+        path.stem,
+        fields.get("reviewer", "-"),
+        fields.get("owner", "-"),
+        fields.get("branch", "-"),
+        rounds,
+    )
     break
 else:
     sys.exit(1)
@@ -52,6 +69,7 @@ OUT="$ROOT/.dispatch/$SLUG.review.md"
 mkdir -p "$ROOT/.dispatch"
 
 echo "unit      $UNIT"
+echo "round     $((ROUNDS + 1))"
 echo "reviewer  $REVIEWER"
 echo "owner     $OWNER"
 echo "base      $BASE"
@@ -132,6 +150,44 @@ Then state which commands you actually ran, and what remains unverified. Never
 call a path verified when it was only inspected.
 EOF
 } > "$PROMPT"
+
+# A unit that has been reviewed before does not need its whole diff read again.
+# Rereading it is how a unit stays open forever: every full pass is a fresh
+# chance to find something new in code two earlier passes already cleared, so
+# the rounds have no natural end. A follow-up round asks a narrower question,
+# which is the one that actually decides whether the unit is done.
+if [ "${ROUNDS:-0}" -gt 0 ]; then
+    cat >> "$PROMPT" <<FOLLOWUP
+
+THIS IS REVIEW ROUND $((ROUNDS + 1)). The $ROUNDS round(s) before it already read
+this unit's full diff, and every finding they produced is recorded in the intake
+under "Handoff notes". Answer these, and only these:
+
+  1. For each recorded finding, is it fixed? Name the code that fixes it and the
+     test that would fail if it regressed. A finding that is not fixed is still
+     a finding, and saying so is the most useful thing you can do here.
+  2. Read the commits this round added, the most recent ones on the branch. Two
+     of this project's past findings were defects introduced by the previous
+     round's own fix, so a new defect is likeliest here.
+  3. Is the unit's own verification green.
+
+Code that neither changed this round nor relates to a recorded finding has been
+read twice already. Do not raise it again. You may raise something new only if
+you can name the numbered acceptance criterion it breaks and show the failure.
+A preference, a style, or work that belongs to a later unit is not that.
+
+If every recorded finding is fixed and this round introduced nothing, the
+verdict is clear, and saying so is the correct outcome. A reviewer that never
+clears anything is not a stricter reviewer, it is a gate that does not open.
+FOLLOWUP
+fi
+
+if [ "$DRY_RUN" = true ]; then
+    echo
+    echo "dry run: prompt built, nothing dispatched."
+    echo "  $PROMPT"
+    exit 0
+fi
 
 echo
 echo "reviewing with the Codex specialist $(basename "$AGENT_FILE" .toml)"
