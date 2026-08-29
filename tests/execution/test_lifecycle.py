@@ -285,6 +285,12 @@ def test_unknown_order_state_blocks_entry_and_records_the_no_trade_reason() -> N
     stable_id = lifecycle.client_order_id("unknown-plan", 1, Decimal("0.50"))
     unknown_order = _broker_order(stable_id, BrokerOrderStatus.UNKNOWN)
     decision = lifecycle.decide_submission(MemoryLookup(unknown_order), stable_id)
+
+    class UnavailableLookup:
+        def order_by_client_id(self, client_order_id: str) -> BrokerOrder | None:
+            raise ConnectionError(client_order_id)
+
+    unavailable = lifecycle.decide_submission(UnavailableLookup(), stable_id)
     explicitly_unsafe = {
         None,
         lifecycle.OrderState.PROPOSED,
@@ -304,3 +310,6 @@ def test_unknown_order_state_blocks_entry_and_records_the_no_trade_reason() -> N
     assert decision.action is lifecycle.SubmissionAction.BLOCK
     assert decision.state is None
     assert decision.reason == "unknown_order_state"
+    assert unavailable.action is lifecycle.SubmissionAction.BLOCK
+    assert unavailable.state is None
+    assert unavailable.reason == "broker_truth_unavailable"
