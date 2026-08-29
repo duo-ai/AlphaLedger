@@ -7,7 +7,7 @@ owner: -
 branch: -
 reviewer: backtest-auditor
 preferred_runtime: claude
-depends_on: [UNIT-001, UNIT-002, UNIT-003, UNIT-020, UNIT-023]
+depends_on: [UNIT-001, UNIT-002, UNIT-003, UNIT-020, UNIT-023, UNIT-030]
 paths: src/alphaledger/evidence/llm_labeler.py, tests/research/test_llm_labeler.py
 ---
 
@@ -199,25 +199,26 @@ a safety property and not a nicety:
 
 ## When you do not know
 
-[NEEDS CLARIFICATION: `Article` (`evidence/news.py`, merged by UNIT-023)
-carries `article_id`, `symbols`, `headline`, `source_domain`, and
-`timestamps`, and nothing else. UNIT-028's own intake (not yet merged) maps an
-Alpaca news article straight into this same `Article`. Prompt B lists
-"summary/body, which may be empty" as an input, and design section 4 says to
-"prefer immutable headline/summary fields", so the feed plausibly carries body
-text that never reaches this record today. Labeling on the headline alone
-versus the headline plus a summary is a materially different news family, and
-this is the one unit whose output feeds the comparison the whole research lane
-exists to make, so this is a "what the unit is for" question, not an
-implementation detail. Three resolutions, three different scopes: (a)
-headline-only becomes the system's stated news family, permanently; (b)
-`Article` gains a summary field, which is UNIT-023's file and outside this
-unit's lane; (c) this unit takes article text through a channel of its own
-that a future adapter populates, never touching `Article`. The Contract above
-assumes headline-only, matching the status quo across UNIT-023 and UNIT-028,
-so the rest of this intake is not blocked on the answer, but the payload's
-`summary` field and the cache key both already have a place for real text the
-day this is decided.]
+Resolved on 2026-08-29 by D-025: the news family carries the summary, and
+`Article` gains the field. Resolution (b) of the three that were on the table,
+chosen because this unit's output feeds the price-only against news-only
+against combined comparison the research lane exists to make, and a label
+derived from a headline alone would answer a smaller question than the one
+being asked.
+
+The Alpaca reference was read to settle it rather than assumed: `summary` is a
+required field on every article, so this does not wait on entitlement or on G0.
+`content` was deliberately not adopted; it is HTML, it is fetched only under
+`include_content`, and it enlarges an input surface Prompt B already treats as
+hostile. D-025 records both, and records that `exclude_contentless` must not be
+used to build a research sample, because dropping articles that lack content
+selects on a property correlated with the outcome.
+
+UNIT-030 widens `Article` and UNIT-028 populates the field. This unit consumes
+it. One consequence for the labeler: the reference's own example shows a
+headline-only article whose summary restates the headline, so a summary that
+adds nothing to the headline is normal input, and this adapter must label it
+rather than treat it as missing text.
 
 ## Assumptions
 

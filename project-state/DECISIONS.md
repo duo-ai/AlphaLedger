@@ -651,3 +651,48 @@ when the news adapter is built.
 
 - Revisit only if: a live payload contradicts the reference. Record the
   observation before changing anything, and prefer the observation.
+
+## D-025: The news family carries the article summary, not the headline alone
+
+- Date: 2026-08-29
+- Origin: writing the UNIT-029 intake surfaced that `Article`, merged by
+  UNIT-023, carries `article_id`, `symbols`, `headline`, `source_domain`, and
+  `timestamps`, and nothing else, while Prompt B expects a summary or body. The
+  intake carried a `[NEEDS CLARIFICATION]` marker rather than guessing, which
+  made it unclaimable until this was answered.
+- Decision: the news family carries the article summary. `Article` gains a
+  summary field, UNIT-028 populates it from the feed, and UNIT-029 sends it to
+  the labeler. A headline-only family was the smaller change and was rejected.
+- Rationale: this is the unit whose output feeds the price-only against
+  news-only against combined comparison that the whole research lane exists to
+  make. A label derived from a headline alone is a materially weaker signal,
+  and a weak news family would not falsify the news hypothesis so much as fail
+  to test it.
+- Schema facts, read from the Alpaca API reference for `GET /v1beta1/news`
+  through the market-data-only MCP server on 2026-08-29, and stated precisely
+  because this project separates the reference from an observation: no live
+  payload has been seen, and G0 remains unverified.
+  - `summary` is a REQUIRED field on every article, described as "Summary text
+    for the article (may be first sentence of content)". It is not optional and
+    not entitlement gated, so this decision does not depend on G0 clearing.
+  - `content` is also required in the schema but is fetched only when
+    `include_content` is set, and it "might contain HTML". It is deliberately
+    not adopted here. It is a second decision, and it enlarges an untrusted
+    input surface that Prompt B already treats as hostile.
+  - The reference's own example shows a "headline-only article" whose summary
+    restates the headline. So the summary is guaranteed present and not
+    guaranteed informative, and the labeler must treat a summary that adds
+    nothing as normal rather than as a fault.
+- Research integrity rule that falls out of the same schema, recorded because
+  it would be easy to reach for: the `exclude_contentless` parameter must not
+  be used to build a research sample. Dropping articles that lack content
+  selects the sample on a property correlated with the outcome being studied,
+  which is a selection effect, not a cleaning step. If contentless articles are
+  ever excluded, that is a registered trial with its own baseline, per
+  `.claude/rules/20-research-integrity.md`.
+- Consequence: UNIT-030 widens `Article`, because UNIT-028 declares only
+  `src/alphaledger/data/**` and cannot touch `evidence/news.py`, and UNIT-029
+  uses a new file of its own. UNIT-028 and UNIT-029 both depend on UNIT-030.
+- Revisit only if: a live payload shows `summary` absent or empty in practice,
+  which would contradict the reference. Record the observation first and prefer
+  it, per D-024.
