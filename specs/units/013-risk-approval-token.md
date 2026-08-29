@@ -550,3 +550,36 @@ uv run mypy src
   paragraph lists live transport, arm state, ambiguous submit recovery,
   reconciliation, exits, flattening, and ledger behaviour. None is an
   acceptance criterion here and none is actionable inside `src/alphaledger/risk/**`.
+
+- 2026-08-29 code review round two, `execution-safety-reviewer`, verdict
+  conditional. Both production findings from round one are fixed and confirmed:
+  `_immutable_payload_snapshot` detaches the supplied mapping once before any
+  gate or hash reads it, and the balance gate now evaluates the supplied
+  snapshot, so a supplied-only imbalance records `unbalanced_legs` alongside
+  `payload_plan_mismatch`. The sizing cap test is meaningful now. Nothing in the
+  production code is outstanding.
+
+  One test remains unable to fail, and it is the round-one approval id weakness
+  in a new form.
+  `test_approval_id_changes_under_every_single_bound_field_mutation` spies on
+  `_approval_id`, and the spy returns `derive_approval_id(**bound_fields)`. The
+  test then asserts `approval.approval_id == derive_approval_id(**captured)`,
+  which compares the function against itself and holds by construction. If
+  `approve` passed a constant quantity, the wrong payload hash, or the wrong
+  mode, the spy would capture that wrong value and both assertions would still
+  pass. What the test proves is that `_approval_id` is sensitive to its own
+  arguments. What AC-12 requires is that `approve` binds the real ones.
+
+  The correction is to compare `captured` against independently computed public
+  inputs before the mutation assertions run: the quantity the caller passed, the
+  payload hash computed separately from the rebuilt payload, the snapshot hash
+  from `account_snapshot_hash`, the mode, the expiry, and the decision. Then
+  keep the existing per-field mutation checks, which are correct once the inputs
+  are pinned.
+
+  Third round justification, recorded because D-022 requires the decision to be
+  a deliberate one. The finding is actionable inside `tests/risk/**`, bears on
+  numbered AC-12, and is one test. It is not a reviewer widening scope: this
+  project has already been bitten by a test asserting on a double incapable of
+  the failure it names, on UNIT-010. Spending one round to make AC-12 falsifiable
+  is worth it; the production code is not being reopened.
