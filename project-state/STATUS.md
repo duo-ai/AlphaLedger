@@ -4,8 +4,12 @@ Last updated: 2026-08-29
 
 ## Current phase
 
-Released as v0.1.0, and `develop` has moved well past it. Eleven of twelve
-units are merged. UNIT-004 and UNIT-011 each went through three implementation
+Released as v0.1.0, and `develop` has moved well past it. Eleven units are
+merged: UNIT-001 through UNIT-004, UNIT-010 through UNIT-012, UNIT-014,
+UNIT-015, and UNIT-020 through UNIT-022 and UNIT-024. UNIT-013, the risk
+approval token, is claimed by `pablo/codex`. UNIT-023, the news feature family,
+is implemented and at `in_review` on `feature/023-news-features` awaiting its
+`backtest-auditor` verdict. UNIT-004 and UNIT-011 each went through three implementation
 passes and three review rounds, the first two returning `block` and the third
 `clear`. UNIT-012, the order state machine and idempotent client order ids,
 took two rounds: `block` on a duplicate submit that survived a crash, then
@@ -196,19 +200,27 @@ environment.
 1. Record the real competition dates and account facts in the run manifest,
    then pass or block G0. It is now the oldest open item by a wide margin and
    the only thing holding the shape of everything after it. It needs facts only
-   the user has, and no amount of further unit work substitutes for it.
-2. Decide what UNIT-013 is, then write its intake. `specs/000-INTAKE.md`
-   assigns it the risk approval token, and that is the assignment to follow.
-   The open question is the bounded limit price ladder from design section 11
-   step 4, which no backlog row owns: it either joins UNIT-013 or earns a row
-   of its own. Decide before writing, because two merged units already disclaim
-   it and a third unit that also disclaims it would leave it homeless for good.
-3. Write intakes for UNIT-014, enumerating real chains and exact payoffs, and
-   UNIT-015, reconciling broker truth after restart. UNIT-015 inherits the
-   durability obligation UNIT-012 states and cannot enforce, namely that a
-   submission attempt is recorded before transport and restored after a
-   restart. UNIT-023 is claimable in parallel in the research lane and shares
-   no file with any of these.
+   the user has, and no amount of further unit work substitutes for it. This
+   item has been first on the list for three checkpoints and has not moved.
+2. Write the UNIT-025 intake, the pooled forecast model that consumes a fold
+   and emits the `Forecast` record. It is the single change that turns four
+   merged research units into an answer. Nothing currently consumes a fold and
+   no result is ever recorded, so the trial registry is proven to refuse what
+   it should and never proven against a real research run. UNIT-025 is the
+   unit that first exercises it.
+3. Write the UNIT-026 intake, the required baselines. Design section 4 and
+   `.claude/rules/20-research-integrity.md` demand random/shuffled, price-only,
+   news-only, and combined baselines on one split under one conservative cost
+   model. Nothing compares the price family against the news family today,
+   which is the comparison the whole research lane exists to make, so until
+   UNIT-026 lands the lane has built two families and answered nothing. It
+   depends on UNIT-025.
+
+The execution lane's open backlog rows are UNIT-016, the append-only decision
+and trade ledger, UNIT-017, the kill switch and emergency flatten, and
+UNIT-018, the bounded entry price ladder. None has an intake. `AGENTS.md`
+assigns intake authoring to `pablo/claude`, so they are noted here rather than
+claimed from the research lane.
 
 ## Read first next session
 
