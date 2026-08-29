@@ -15,7 +15,40 @@ set -euo pipefail
 
 die() { echo "review: $*" >&2; exit 1; }
 
-[ $# -ge 1 ] || die "usage: scripts/review.sh <UNIT-ID> [--base <branch>] [--dry-run]"
+# A second review round would otherwise truncate the artifact the round before
+# it wrote, which is the evidence a merge gate depends on. Move it aside first,
+# matching the rotation scripts/dispatch.sh already does for its own log.
+rotate_aside() {
+    local f="$1"
+    if [ -s "$f" ]; then
+        local n=1
+        while [ -e "$f.$n" ]; do n=$((n + 1)); done
+        mv "$f" "$f.$n"
+    fi
+}
+
+if [ "${1:-}" = "--self-test" ]; then
+    dir=$(mktemp -d)
+    trap 'rm -rf "$dir"' EXIT
+    f="$dir/probe.review.md"
+
+    echo "round one" > "$f"
+    rotate_aside "$f"
+    got=$(cat "$f.1" 2>/dev/null || true)
+    [ "$got" = "round one" ] || die "self-test: the first round was not moved aside as $f.1"
+
+    echo "round two" > "$f"
+    rotate_aside "$f"
+    got=$(cat "$f.2" 2>/dev/null || true)
+    [ "$got" = "round two" ] || die "self-test: the second round did not take the next free number"
+    got=$(cat "$f.1" 2>/dev/null || true)
+    [ "$got" = "round one" ] || die "self-test: the second round overwrote the first"
+
+    echo "review self-test passed: 2 cases"
+    exit 0
+fi
+
+[ $# -ge 1 ] || die "usage: scripts/review.sh <UNIT-ID> [--base <branch>] [--dry-run] [--self-test]"
 UNIT="$1"
 BASE="develop"
 DRY_RUN=false
@@ -194,6 +227,7 @@ echo "reviewing with the Codex specialist $(basename "$AGENT_FILE" .toml)"
 # --json so the run is watchable like any dispatch. scripts/watch.sh picks
 # up *.review.jsonl and marks it a review rather than an implementation.
 STREAM="$ROOT/.dispatch/$SLUG.review.jsonl"
+rotate_aside "$STREAM"
 ( cd "$WORKTREE" && codex exec review --json -c model_reasoning_effort=xhigh \
     - < "$PROMPT" ) > "$STREAM" 2>&1 || true
 
@@ -201,6 +235,7 @@ STREAM="$ROOT/.dispatch/$SLUG.review.jsonl"
 # message, not the last one: the UNIT-011 review carried its summary and its
 # findings, and an extractor that overwrote on each message would have kept
 # whichever came last and silently dropped the other.
+rotate_aside "$OUT"
 bash scripts/hook_python.sh - "$STREAM" > "$OUT" <<'EXTRACT'
 import json
 import sys

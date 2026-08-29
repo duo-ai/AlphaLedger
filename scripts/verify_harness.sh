@@ -206,6 +206,8 @@ fi
 
 bash scripts/watch.sh --self-test >/dev/null 2>&1
 check $? "watch follows a log across a dispatch rotation"
+bash scripts/review.sh --self-test >/dev/null 2>&1
+check $? "review rotates an existing artifact aside instead of truncating it"
 bash scripts/hook_python.sh scripts/notable.py --self-test >/dev/null 2>&1
 check $? "a stop is announced and a topic word is not"
 
