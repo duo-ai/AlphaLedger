@@ -121,7 +121,7 @@ class DecisionLedger:
         state: OrderState,
         recorded_at: datetime,
     ) -> LedgerEntryId:
-        """Append a caller-validated state, idempotent over the state itself."""
+        """Append a caller-validated state, coalescing an immediate retry."""
         subject = _non_blank(client_order_id, "client_order_id")
         if not isinstance(state, OrderState):
             raise TypeError(f"state must be OrderState; got {type(state).__name__}")
@@ -131,9 +131,10 @@ class DecisionLedger:
             for entry in self.entries_for(subject)
             if entry.kind == ORDER_STATE_KIND
         )
-        for entry, observed_state in entries:
-            if observed_state is state:
-                return entry.entry_id
+        if entries:
+            latest_entry, latest_state = entries[-1]
+            if latest_state is state:
+                return latest_entry.entry_id
         return self._append_new(
             subject,
             ORDER_STATE_KIND,
