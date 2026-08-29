@@ -312,9 +312,16 @@ if the supplied one does not match. Every part of this uses already merged code:
 
 Everything after the comparison, the gates and the hash that binds the
 approval, is evaluated against `expected`, the payload this unit built, never
-against the caller's mapping. A supplied payload that cannot be read, that is
-missing `qty` or `limit_price`, or whose hash differs for any reason including a
-hand-made `client_order_id`, is refused with `GATE_PAYLOAD_PLAN_MISMATCH`.
+against the caller's mapping.
+
+Two different failures live here and they get two different outcomes, which is
+deliberate. A payload missing `qty`, `limit_price`, or `legs`, or holding values
+those keys cannot be read from, is structurally invalid: the caller has a bug,
+no risk question has been asked, and `approve` raises `ValueError` as it already
+does for the caller errors in AC-11. A payload that reads cleanly but is not the
+one this unit rebuilds, for any reason including a hand-made `client_order_id`,
+is a risk decision and is refused with `GATE_PAYLOAD_PLAN_MISMATCH`, so the
+refusal appears in the approval and reaches the ledger.
 
 Rebuilding also validates the client order id, which matters beyond this unit:
 idempotent recovery in UNIT-012 depends on that id being the derived one, and
@@ -385,13 +392,15 @@ UNIT-004's files and belongs to whoever wires it, not here.
   `account_snapshot_hash`, `mode`, `expires_at`, `approved`, or `failed_gates`
   differs, tested one field at a time.
 
-- AC-13: a payload that is not identical to the one rebuilt from `plan` at the
-  same quantity and limit price is refused with `GATE_PAYLOAD_PLAN_MISMATCH`.
-  Tested with a payload carrying a different plan's legs, one carrying a
-  hand-made `client_order_id`, one missing `qty`, and one mutated after
-  construction. A test must show that mutating the supplied mapping after
+- AC-13: a readable payload that is not identical to the one rebuilt from
+  `plan` at the same quantity and limit price is refused with
+  `GATE_PAYLOAD_PLAN_MISMATCH`. Tested with a payload carrying a different
+  plan's legs, one carrying a hand-made `client_order_id`, and one mutated
+  after construction. A test must show that mutating the supplied mapping after
   `approve` reads it cannot change either the gate outcome or
-  `order_payload_hash` on the returned approval.
+  `order_payload_hash` on the returned approval. A structurally invalid payload
+  is not this gate: missing `qty`, `limit_price`, or `legs` raises `ValueError`
+  per AC-11's rule for caller errors, and the test list already pins that.
 - AC-14: `snapshot_time` strictly after `now` is refused with
   `GATE_SNAPSHOT_IN_FUTURE`, tested strictly before, at, and strictly after
   `now`, where equal to `now` is not refused on this gate.
@@ -476,3 +485,19 @@ uv run mypy src
   The rebuild closes a fourth hole nobody raised: nothing previously checked
   that the payload's `client_order_id` was the derived one, and UNIT-012's
   idempotent recovery depends on exactly that.
+
+- 2026-08-29 second pass stopped before editing, on a conflict the amendment
+  above introduced. AC-13 said a payload missing `qty` or `limit_price` is
+  refused with `GATE_PAYLOAD_PLAN_MISMATCH`, while the test list already
+  required those same inputs to raise `ValueError`. One call cannot do both,
+  and the unit's globs do not let an implementer repair its own intake, so
+  stopping was correct.
+
+  The test list was right and the amendment over-reached. A structurally
+  invalid payload is a caller bug and raises; a readable payload that is not
+  the rebuilt one is a risk decision and gates. AC-13 and the rebuild section
+  now say so, and nothing else changed.
+
+  This is the same defect D-021 records from UNIT-010: a corrected criterion
+  left its old premise standing elsewhere in the same file. Writing the
+  criterion and the test list in one pass is not a check on either.
