@@ -209,6 +209,27 @@ way that matters. Failing either half makes the position unexplained.
 contributed, in the order first observed. `blocks_new_entries` is true
 exactly when `reasons` is non-empty.
 
+Because every `ADOPT_EXISTING` order contributes `ORDER_NOT_RECONCILED_REASON`,
+`blocks_new_entries` is already true in any call carrying at least one known
+order, independent of whether unexplained-order or unexplained-position
+detection exists at all. A test for either of those two behaviors therefore
+has to assert on membership in `unexplained_orders` or `unexplained_positions`
+and on the specific reason string; asserting only `blocks_new_entries` in a
+scenario that also carries a known order proves nothing about the behavior it
+names.
+
+Two obligations fall on the caller building `KnownOrder` and
+`BrokerTruthSource`, not on this function, which cannot check either.
+`covered_symbols` must list every leg symbol the order actually touches.
+Listing too many is merely overcautious, since it can only turn an explained
+position into a false unexplained one and fail closed. Listing too few can
+silently explain a real orphan, which is the one failure direction this unit
+exists to prevent. `truth.activities()` must return enough history to
+attribute every position currently held, not just recent activity; a feed
+scoped to "since the last cycle" would flag a stable multi-day position as
+unexplained on every single call and disarm entries permanently, which is
+fail closed but makes the unit unusable rather than unsafe.
+
 ## Assumptions
 
 - The durable store for `RecordedSubmissionAttempt` and for a known order's
@@ -245,9 +266,12 @@ exactly when `reasons` is non-empty.
   `RECONCILED`, both yield the broker's answer. `local_state` never appears
   in the returned decision's `state` in either case.
 - AC-4: an open broker order whose `client_order_id` matches no
-  `KnownOrder` is reported in `unexplained_orders` with
-  `UNEXPLAINED_ORDER_REASON`, and forces `blocks_new_entries` true even when
-  every supplied `KnownOrder` resolves cleanly to `RecoveryAction.ADOPT_EXISTING`.
+  `KnownOrder` appears in `unexplained_orders` with `UNEXPLAINED_ORDER_REASON`,
+  tested with every supplied `KnownOrder` resolving cleanly to
+  `RecoveryAction.ADOPT_EXISTING`. Asserting only that `blocks_new_entries` is
+  true does not satisfy this: that boolean is already true in this exact
+  scenario from `order_not_reconciled` alone, whether or not unexplained-order
+  detection exists.
 - AC-5: a broker position whose `symbol` is covered by no `KnownOrder` is
   reported in `unexplained_positions` with `UNEXPLAINED_POSITION_REASON`.
 - AC-6: a broker position whose `symbol` is covered by a `KnownOrder`, but for
@@ -255,22 +279,43 @@ exactly when `reasons` is non-empty.
   `broker_id` or to none at all, is also reported unexplained. The test
   exercising this constructs such an activity; it does not merely omit
   activities, which would leave the symbol-coverage half of AC-5 doing all
-  the work and the attribution half unproven.
+  the work and the attribution half unproven. As in AC-4, asserting only
+  `blocks_new_entries` does not satisfy this: the scenario's `KnownOrder` is
+  itself unreconciled, so the boolean is already true from
+  `order_not_reconciled` regardless of whether the attribution check exists;
+  the test must assert on membership in `unexplained_positions` and on
+  `UNEXPLAINED_POSITION_REASON` specifically.
 - AC-7: `truth.open_orders()`, `truth.positions()`, `truth.activities()`, and
   `order_lookup.order_by_client_id` each independently raising are four
-  separate test cases, and each alone forces `blocks_new_entries` true;
-  correcting the other three fixtures while one still raises does not clear
-  the report.
+  separate test cases. `truth.open_orders()` and `truth.positions()` are
+  exercised with otherwise-empty `known_orders` and truth, since both are
+  queried on every call regardless of what else is present. `truth.activities()`
+  is exercised with at least one `KnownOrder` and at least one position whose
+  symbol that order covers, since an implementation may only need to consult
+  activities when there is a covered position to attribute, and a fixture
+  with no position could pass this case without ever reaching the call.
+  `order_lookup.order_by_client_id` is exercised with at least one
+  `KnownOrder`, since an empty `known_orders` never calls it. In every one of
+  the four, `reasons` contains `BROKER_TRUTH_UNAVAILABLE_REASON`. Asserting
+  only `blocks_new_entries` is not sufficient for the `truth.activities()`
+  case: that `KnownOrder`'s own lookup succeeds and independently contributes
+  `order_not_reconciled`, so the boolean is already true whether or not the
+  activities failure is handled at all.
 - AC-8: empty `truth.open_orders()`, empty `truth.positions()`, empty
   `truth.activities()`, and an empty `known_orders` together produce a
   report with `blocks_new_entries` false and an empty `reasons`. Broker
   silence on every axis permits entries and is not conflated with AC-7's
   failure case; a test asserting only one of the two is not sufficient.
 - AC-9: this module calls `alphaledger.execution.lifecycle.blocks_new_entries`
-  and defines no second predicate over which states are unsafe; a test
-  parameterized over every `OrderState` confirms `ORDER_NOT_RECONCILED_REASON`
-  is contributed exactly where that predicate is true and never where it is
-  false.
+  and defines no second predicate over which states are unsafe. A test
+  parameterized over every `BrokerOrderStatus` that `recover_submission` can
+  adopt, `SUBMITTED`, `WORKING`, `PARTIAL`, `FILLED`, `CANCEL_PENDING`,
+  `CANCELED`, `EXPIRED`, and `REJECTED`, confirms `ORDER_NOT_RECONCILED_REASON`
+  is contributed for every one, `FILLED` included, since none of them is
+  `OrderState.RECONCILED`. That state is unreachable from broker truth by
+  construction: no `BrokerOrderStatus` maps to it, so no test can observe its
+  absence from the negative side, and this intake records that reasoning
+  rather than asserting an unobservable case.
 - AC-10: calling `reconcile` twice with two separately constructed but
   equal-by-value `BrokerTruthSource` fixtures and equal `known_orders`
   produces two equal `ReconciliationReport` values. The function takes no
@@ -281,22 +326,33 @@ exactly when `reasons` is non-empty.
 
 - success: reconciling three known orders in one call resolves each
   independently and returns one `OrderReconciliation` per input, in order.
-- success: an open broker order with no matching known order is reported
-  unexplained and blocks entries even though every known order resolves
-  cleanly.
+- success: an open broker order with no matching known order appears in
+  `unexplained_orders` with `unexplained_order`, tested with every known
+  order resolving cleanly; asserting only `blocks_new_entries` does not pass,
+  since a known order already makes it true on its own.
 - failure: a `KnownOrder` with `recorded_attempt=None` blocks with
   `submission_attempt_record_required`.
-- failure: `truth.open_orders()` raising blocks entries on its own; the other
-  two truth-source methods and the order lookup are healthy in this case.
-- failure: `truth.positions()` raising blocks entries on its own.
-- failure: `truth.activities()` raising blocks entries on its own.
-- failure: `order_lookup.order_by_client_id` raising blocks entries on its
-  own.
-- failure: a position whose symbol matches no known order is reported
-  unexplained.
+- failure: `truth.open_orders()` raising, with empty `known_orders` and an
+  otherwise-empty truth, puts `broker_truth_unavailable` in `reasons`; the
+  same empty scenario without the raise is AC-8's no-trade case, so the pair
+  proves the raise is what changed the outcome.
+- failure: `truth.positions()` raising, under the same empty scenario, puts
+  `broker_truth_unavailable` in `reasons`.
+- failure: `truth.activities()` raising, with one `KnownOrder` and one
+  position whose symbol it covers so the call is actually reached, puts
+  `broker_truth_unavailable` in `reasons`; asserting only `blocks_new_entries`
+  does not pass, since that known order's own successful lookup already makes
+  it true.
+- failure: `order_lookup.order_by_client_id` raising, with one `KnownOrder`
+  so the lookup is actually reached, puts `broker_truth_unavailable` in
+  `reasons`.
+- failure: a position whose symbol matches no known order appears in
+  `unexplained_positions` with `unexplained_position`.
 - failure: a position whose symbol matches a known order, but whose only
-  same-symbol activity attributes to a different order's `broker_id`, is
-  reported unexplained.
+  same-symbol activity attributes to a different order's `broker_id`, appears
+  in `unexplained_positions` with `unexplained_position`; asserting only
+  `blocks_new_entries` does not pass, since the matching known order already
+  makes it true through `order_not_reconciled`.
 - restart: local state `WORKING` against broker truth `FILLED` yields
   `FILLED`.
 - restart: local state `RECONCILED` against broker truth that is not
@@ -308,10 +364,11 @@ exactly when `reasons` is non-empty.
 - no-trade: empty open orders, empty positions, empty activities, and no
   known orders together produce `blocks_new_entries=False` and an empty
   `reasons`.
-- no-trade: a known order that resolves to `RecoveryAction.ADOPT_EXISTING` in
-  any state other than `RECONCILED` still blocks new entries, with
-  `order_not_reconciled`, even though nothing is actually wrong with it; it
-  is simply not finished.
+- no-trade: a known order that resolves to `RecoveryAction.ADOPT_EXISTING`
+  still blocks new entries with `order_not_reconciled`, even though nothing
+  is actually wrong with it; it is simply not finished. Parameterized over
+  every `BrokerOrderStatus` `recover_submission` can adopt, `FILLED` included,
+  rather than asserted on one example.
 
 ## Verification
 
