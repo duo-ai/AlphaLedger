@@ -157,6 +157,7 @@ def test_last_valid_rung_returns_a_step_before_exhaustion() -> None:
     assert decision.step is not None
     assert decision.step.step_index == len(_PRICE_LADDER) - 1
     assert decision.reasons == ()
+    _assert_step_reason_invariant(decision)
 
 
 def test_returned_approval_matches_independent_approval_over_rebuilt_inputs() -> None:
@@ -179,15 +180,25 @@ def test_returned_approval_matches_independent_approval_over_rebuilt_inputs() ->
     assert decision.step.approval == expected
 
 
-def test_rung_above_entry_limit_bound_raises_before_any_approval() -> None:
+def test_rung_above_entry_limit_bound_raises_before_any_approval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     api = _ladder_api()
     inputs = _valid_inputs(
         api,
         price_ladder=(Decimal("0.7500"), Decimal("1.2501")),
     )
+    approval_calls = 0
+
+    def record_unexpected_approval(*args: object, **kwargs: object) -> None:
+        nonlocal approval_calls
+        approval_calls += 1
+
+    monkeypatch.setattr(api, "approve", record_unexpected_approval)
 
     with pytest.raises(ValueError, match=r"price_ladder.*entry_limit_bound"):
         api.step_ladder(**inputs)
+    assert approval_calls == 0
 
 
 def test_equal_adjacent_rungs_raise_instead_of_reusing_one_intent() -> None:
