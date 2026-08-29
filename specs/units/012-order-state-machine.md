@@ -2,7 +2,7 @@
 id: UNIT-012
 title: Implement the order state machine and idempotent client order ids
 lane: execution
-state: claimed
+state: in_review
 owner: pablo/codex
 branch: feature/012-order-state-machine
 reviewer: execution-safety-reviewer
