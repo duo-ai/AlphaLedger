@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 from enum import StrEnum
 from fractions import Fraction
 from typing import Literal, Protocol
@@ -370,17 +370,20 @@ def _contract_rejection(
     if contract.delta is None:
         return f"delta_required: {contract.symbol} has no delta for delta-band selection"
 
-    spread = contract.ask - contract.bid
-    relative_spread = (Decimal(2) * spread) / (contract.ask + contract.bid)
-    if relative_spread > rules.max_relative_spread:
+    bid = Fraction(contract.bid)
+    ask = Fraction(contract.ask)
+    spread = ask - bid
+    relative_spread = Fraction(2) * spread / (ask + bid)
+    if relative_spread > Fraction(rules.max_relative_spread):
         return (
-            f"relative_spread: {contract.symbol} relative width {relative_spread} exceeds "
+            f"relative_spread: {contract.symbol} relative width "
+            f"{relative_spread.numerator}/{relative_spread.denominator} exceeds "
             f"{rules.max_relative_spread}"
         )
-    if spread > rules.max_absolute_spread:
+    if spread > Fraction(rules.max_absolute_spread):
         return (
-            f"absolute_spread: {contract.symbol} absolute width {spread} exceeds "
-            f"{rules.max_absolute_spread}"
+            f"absolute_spread: {contract.symbol} absolute width "
+            f"{_terminating_decimal(spread)} exceeds {rules.max_absolute_spread}"
         )
     if (
         isinstance(contract.bid_size, bool)
@@ -427,60 +430,45 @@ def _build_ranked_plan(
         )
         return None
 
+    long_strike = Fraction(long_leg.strike)
+    short_strike = Fraction(short_leg.strike)
     if kind == "bull_call_debit_vertical":
-        if long_leg.strike >= short_leg.strike:
+        if long_strike >= short_strike:
             return None
-        width = short_leg.strike - long_leg.strike
+        width = short_strike - long_strike
     else:
-        if long_leg.strike <= short_leg.strike:
+        if long_strike <= short_strike:
             return None
-        width = long_leg.strike - short_leg.strike
+        width = long_strike - short_strike
 
-    net_debit = long_leg.ask - short_leg.bid
+    net_debit = Fraction(long_leg.ask) - Fraction(short_leg.bid)
     if net_debit <= 0 or net_debit >= width:
         reasons.append(
             f"payoff_invariant: {pair} requires 0 < net debit < width; "
-            f"got debit {net_debit} and width {width}"
+            f"got debit {_terminating_decimal(net_debit)} and "
+            f"width {_terminating_decimal(width)}"
         )
         return None
 
-    multiplier = Decimal(long_leg.multiplier)
+    multiplier = long_leg.multiplier
     exact_max_loss = multiplier * net_debit
     exact_max_profit = multiplier * (width - net_debit)
     if kind == "bull_call_debit_vertical":
-        expiry_breakeven = long_leg.strike + net_debit
+        expiry_breakeven = long_strike + net_debit
     else:
-        expiry_breakeven = long_leg.strike - net_debit
-    plan = StructurePlan(
-        plan_id=f"{candidate_id}/{long_leg.symbol}/{short_leg.symbol}",
-        candidate_id=candidate_id,
-        legs=(
-            {
-                "symbol": long_leg.symbol,
-                "ratio_qty": 1,
-                "side": "buy",
-                "position_intent": "buy_to_open",
-            },
-            {
-                "symbol": short_leg.symbol,
-                "ratio_qty": 1,
-                "side": "sell",
-                "position_intent": "sell_to_open",
-            },
-        ),
-        quantity=quantity,
-        entry_limit_bound=net_debit,
-        exact_max_loss=exact_max_loss,
-        exact_max_profit=exact_max_profit,
-        expiry_breakeven=expiry_breakeven,
-        quote_times=(long_leg.quote_time, short_leg.quote_time),
-        stress_pnl={
-            "max_loss_scenario": -exact_max_loss,
-            "max_profit_scenario": exact_max_profit,
-        },
+        expiry_breakeven = long_strike - net_debit
+    plan = _structure_plan(
+        candidate_id,
+        quantity,
+        long_leg,
+        short_leg,
+        net_debit,
+        exact_max_loss,
+        exact_max_profit,
+        expiry_breakeven,
     )
     return _RankedPlan(
-        cost_drag_ratio=Fraction(net_debit) / Fraction(width),
+        cost_drag_ratio=net_debit / width,
         expiry=long_leg.expiry,
         long_strike=long_leg.strike,
         long_symbol=long_leg.symbol,
@@ -488,6 +476,87 @@ def _build_ranked_plan(
         short_symbol=short_leg.symbol,
         plan=plan,
     )
+
+
+def _structure_plan(
+    candidate_id: str,
+    quantity: int,
+    long_leg: ChainContract,
+    short_leg: ChainContract,
+    net_debit: Fraction,
+    exact_max_loss: Fraction,
+    exact_max_profit: Fraction,
+    expiry_breakeven: Fraction,
+) -> StructurePlan:
+    entry_decimal = _terminating_decimal(net_debit)
+    max_loss_decimal = _terminating_decimal(exact_max_loss)
+    max_profit_decimal = _terminating_decimal(exact_max_profit)
+    breakeven_decimal = _terminating_decimal(expiry_breakeven)
+    money_values = (
+        entry_decimal,
+        max_loss_decimal,
+        max_profit_decimal,
+        breakeven_decimal,
+    )
+    with localcontext() as context:
+        context.prec = max(28, *(_quantized_digits(value) for value in money_values))
+        return StructurePlan(
+            plan_id=f"{candidate_id}/{long_leg.symbol}/{short_leg.symbol}",
+            candidate_id=candidate_id,
+            legs=(
+                {
+                    "symbol": long_leg.symbol,
+                    "ratio_qty": 1,
+                    "side": "buy",
+                    "position_intent": "buy_to_open",
+                },
+                {
+                    "symbol": short_leg.symbol,
+                    "ratio_qty": 1,
+                    "side": "sell",
+                    "position_intent": "sell_to_open",
+                },
+            ),
+            quantity=quantity,
+            entry_limit_bound=entry_decimal,
+            exact_max_loss=max_loss_decimal,
+            exact_max_profit=max_profit_decimal,
+            expiry_breakeven=breakeven_decimal,
+            quote_times=(long_leg.quote_time, short_leg.quote_time),
+            stress_pnl={
+                "max_loss_scenario": -max_loss_decimal,
+                "max_profit_scenario": max_profit_decimal,
+            },
+        )
+
+
+def _terminating_decimal(value: Fraction) -> Decimal:
+    denominator = value.denominator
+    powers_of_two = 0
+    powers_of_five = 0
+    while denominator % 2 == 0:
+        denominator //= 2
+        powers_of_two += 1
+    while denominator % 5 == 0:
+        denominator //= 5
+        powers_of_five += 1
+    if denominator != 1:
+        raise StructureError(f"exact payoff is not a terminating decimal: {value}")
+
+    scale = max(powers_of_two, powers_of_five)
+    coefficient = abs(value.numerator)
+    coefficient *= 2 ** (scale - powers_of_two)
+    coefficient *= 5 ** (scale - powers_of_five)
+    digits = tuple(int(digit) for digit in str(coefficient))
+    return Decimal((value.numerator < 0, digits, -scale))
+
+
+def _quantized_digits(value: Decimal) -> int:
+    decimal_tuple = value.as_tuple()
+    exponent = decimal_tuple.exponent
+    if not isinstance(exponent, int):
+        raise StructureError(f"money value must be finite; got {value!r}")
+    return len(decimal_tuple.digits) + max(0, exponent + 4)
 
 
 def _deduplicate_contracts(
