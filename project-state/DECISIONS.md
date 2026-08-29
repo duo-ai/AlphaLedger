@@ -535,3 +535,42 @@ belong in the trial registry or status file.
   that `--another-pass` becomes reflexive. That would mean units are too large,
   and the answer is a narrower decomposition, not a higher limit.
 
+
+## D-023: The client order id is derived before the risk approval, not from it
+
+- Date: 2026-08-29
+- Origin: reading the UNIT-012 intake before dispatching it. Its contract named
+  `client_order_id(plan_id, approval_id, intent)`, which cannot be implemented.
+- The cycle: `build_mleg_order` places `client_order_id` inside the payload,
+  `order_payload_hash` hashes that payload, and `RiskApproval.order_payload_hash`
+  binds to that hash. An id derived from `approval_id` needs the approval first,
+  and the approval needs the payload, and the payload needs the id.
+- Decision: the id is derived from `(plan_id, quantity, limit_price)`, all of
+  which are fixed before an approval exists. The order of operations is id, then
+  payload, then payload hash, then approval. The approval therefore binds the
+  exact bytes that will be submitted, id included.
+- The conflict this resolves, recorded because two sources genuinely disagreed.
+  `options-alpha-agent-design.md` section 11 step 3 and
+  `orchestrator-system-prompt.md` both describe approval first, with the adapter
+  owning the id and the caller observing it only after submission. UNIT-011,
+  merged and reviewed clear, requires the id inside the hashed payload, and its
+  AC-10 exists precisely so that an approval cannot authorise a changed
+  quantity, price, or id. UNIT-011 wins. The alternative was to hash an economic
+  payload that excludes the id, which reopens a merged acceptance criterion
+  written to close that exact hole.
+- Rejected alternative: dropping `order_payload_hash` from `RiskApproval` and
+  re-deriving at submit time. That amends a frozen domain contract from UNIT-001
+  and changes every consumer, to buy nothing the chosen ordering does not
+  already give.
+- Consequence that falls out rather than needing a mechanism: because
+  `limit_price` is an input, a price ladder step yields a new deterministic id by
+  construction, which is the fail-closed default UNIT-012 already prescribed for
+  the unverified replace semantics. A retry at the same price yields the same
+  id, which is what makes resolving an ambiguous submit safe.
+- Obligation this creates: `plan_id` must be unique per plan instance. Two
+  distinct decisions carrying one `plan_id` at the same quantity and price would
+  derive one id and the second would be silently collapsed into the first.
+  UNIT-012 AC-8 pins this as a stated precondition.
+- Revisit only if: the Day-0 Alpaca smoke test shows replace semantics that make
+  a stable id across ladder steps both possible and necessary. Record the
+  observed behaviour before changing anything.
