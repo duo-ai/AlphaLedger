@@ -4,28 +4,34 @@ Last updated: 2026-08-29
 
 ## Current phase
 
-Released as v0.1.0, and `develop` has moved well past it. Eleven units are
+Released as v0.1.0, and `develop` has moved well past it. Fourteen units are
 merged: UNIT-001 through UNIT-004, UNIT-010 through UNIT-012, UNIT-014,
-UNIT-015, and UNIT-020 through UNIT-022 and UNIT-024. UNIT-013, the risk
-approval token, is claimed by `pablo/codex`. UNIT-023, the news feature family,
-is implemented and at `in_review` on `feature/023-news-features` awaiting its
-`backtest-auditor` verdict. UNIT-004 and UNIT-011 each went through three implementation
-passes and three review rounds, the first two returning `block` and the third
-`clear`. UNIT-012, the order state machine and idempotent client order ids,
-took two rounds: `block` on a duplicate submit that survived a crash, then
-`clear`. All three merged into `develop` on 2026-08-29. UNIT-023 is the only
-unit left unmerged and it is available in the research lane, which belongs to
-mazwy. The research lane delegated in `RESEARCH-LANE.md` is complete, and the
-validation discipline that has to exist before any model is fit is in place:
-point-in-time recording, the lagged frozen universe, the residual price and
-volume baseline, chronological purged splits, and the trial registry. The
-frozen label contract now holds what the labeler emits, and every enumerated
-field on it is checked at run time.
+UNIT-015, and UNIT-020 through UNIT-024. UNIT-013, the risk approval token, is
+claimed by `pablo/codex` and is the only unit in flight. UNIT-025 exists as an
+intake and is not claimable, because it depends on UNIT-027, which is a backlog
+row with no intake file; `coord.py` refuses the claim by name rather than
+letting it through.
 
-The execution lane now has the paper endpoint assertion and the order schema
-adapter merged, and the order state machine is being implemented against them.
-No news, model, structure, risk, order lifecycle, or ledger code exists on
-`develop` yet.
+UNIT-004 and UNIT-011 each took three implementation passes and three review
+rounds, the first two returning `block` and the third `clear`. UNIT-012 took
+two, `block` on a duplicate submit that survived a crash, then `clear`.
+UNIT-023 cleared on its first round, and its review still found a real gap: a
+rewrite of the clustering from anchor-relative to chained windowing passed the
+entire suite, so a correct design choice had no regression guard. It has one
+now.
+
+The research lane delegated in `RESEARCH-LANE.md` is complete, and both feature
+families now exist. The validation discipline that has to exist before any
+model is fit is in place: point-in-time recording, the lagged frozen universe,
+the residual price and volume family, the point-in-time news family,
+chronological purged splits, and the trial registry. The frozen label contract
+holds what the labeler emits, and every enumerated field on it is checked at
+run time.
+
+The execution lane has the paper endpoint assertion, the order schema adapter,
+the order state machine, chain enumeration with exact payoffs, and broker
+reconciliation merged. No risk, ledger, kill switch, or price ladder code
+exists on `develop` yet, and no transport submits anything.
 
 Every number in the research lane comes from a fixture. Nothing has touched
 Alpaca.
@@ -90,6 +96,14 @@ environment.
   merge and one same-bar leak. Two of those were regressions introduced by an
   earlier round's own fix, which is the pattern `RESEARCH-LANE.md` predicts.
   Sixty-eight injected defects are each caught by a named test.
+- `src/alphaledger/evidence/news.py` and `labeler.py`, UNIT-023. Eight features
+  encoded from labels alone, every ratio dividing by one weight so the family
+  is commensurable. Syndication clustering is exact after canonicalisation
+  rather than a similarity threshold, because a threshold would be an
+  unregistered trial inside a feature definition, and the limitation is stated
+  rather than hidden. An article and its label are both checked against
+  `as_of`; `event_time` stays exempt per D-014. Cleared by `backtest-auditor`
+  on round one.
 - `src/alphaledger/domain/contracts.py`, UNIT-003. `category` is checked at
   run time against a literal list, closing the last enumerated label field that
   a `Literal` alone could not defend once the value came out of a model's JSON.
@@ -189,11 +203,14 @@ environment.
   reasoning for not adding an untested lock is in the UNIT-024 intake.
 - No model consumes a fold and no result is ever recorded, so the registry is
   proven to refuse what it should and never proven against a real research run.
-- No news, model, structure, risk, or ledger code exists. The order lifecycle
-  now exists, per UNIT-012, but nothing submits through it: there is no
+- No model, risk, or ledger code exists. News features exist per UNIT-023, but
+  nothing labels an article: the LLM client, its caching, and its output
+  validation are deliberately out of that unit and belong to a later one, so
+  the news family cannot run on real data at all yet. The order lifecycle and
+  chain enumeration exist, but nothing submits through them: there is no
   transport, no risk approval, and no durable store behind
-  `RecordedSubmissionAttempt`, whose durability is a caller obligation this
-  unit states and cannot enforce. Every G1 to G6 artifact is open.
+  `RecordedSubmissionAttempt`, whose durability is a caller obligation UNIT-012
+  states and cannot enforce. Every G1 to G6 artifact is open.
 
 ## Next three tasks
 
@@ -202,19 +219,18 @@ environment.
    the only thing holding the shape of everything after it. It needs facts only
    the user has, and no amount of further unit work substitutes for it. This
    item has been first on the list for three checkpoints and has not moved.
-2. Write the UNIT-025 intake, the pooled forecast model that consumes a fold
-   and emits the `Forecast` record. It is the single change that turns four
-   merged research units into an answer. Nothing currently consumes a fold and
-   no result is ever recorded, so the trial registry is proven to refuse what
-   it should and never proven against a real research run. UNIT-025 is the
-   unit that first exercises it.
+2. Write the UNIT-027 intake, forward residual label construction. It is the
+   nearest thing to the critical path: UNIT-025 is specified and blocked on it
+   by name, and nothing else in the research lane can move until labelled
+   outcomes exist. The row was created on 2026-08-29 after writing UNIT-025
+   surfaced that no unit owned the work, which is the third hole of that shape
+   this decomposition has had to close.
 3. Write the UNIT-026 intake, the required baselines. Design section 4 and
    `.claude/rules/20-research-integrity.md` demand random/shuffled, price-only,
    news-only, and combined baselines on one split under one conservative cost
-   model. Nothing compares the price family against the news family today,
-   which is the comparison the whole research lane exists to make, so until
-   UNIT-026 lands the lane has built two families and answered nothing. It
-   depends on UNIT-025.
+   model. Nothing compares the two families today, which is the comparison the
+   whole research lane exists to make, so until UNIT-026 lands the lane has
+   built two families and answered nothing. It depends on UNIT-025.
 
 The execution lane's open backlog rows are UNIT-016, the append-only decision
 and trade ledger, UNIT-017, the kill switch and emergency flatten, and
