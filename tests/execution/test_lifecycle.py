@@ -177,6 +177,7 @@ def test_reconciled_refuses_every_further_transition() -> None:
 def test_ambiguous_submit_queries_once_by_id_and_never_submits_a_second_intent() -> None:
     lifecycle = _lifecycle()
     stable_id = lifecycle.client_order_id("ambiguous-plan", 1, Decimal("1.25"))
+    assert "submission_attempted" in inspect.signature(lifecycle.decide_submission).parameters
 
     class AmbiguousBroker(MemoryLookup):
         def __init__(self) -> None:
@@ -187,12 +188,33 @@ def test_ambiguous_submit_queries_once_by_id_and_never_submits_a_second_intent()
             self.submissions.append(client_order_id)
 
     broker = AmbiguousBroker()
-    broker.submit(stable_id)
+    first = lifecycle.decide_submission(
+        broker,
+        stable_id,
+        submission_attempted=False,
+    )
+    if first.action is lifecycle.SubmissionAction.SUBMIT:
+        broker.submit(stable_id)
 
     state = lifecycle.resolve_ambiguous_submit(broker, stable_id)
+    duplicate = lifecycle.decide_submission(
+        broker,
+        stable_id,
+        submission_attempted=True,
+    )
+    after_restart = lifecycle.decide_submission(
+        MemoryLookup(None),
+        stable_id,
+        submission_attempted=True,
+    )
 
+    assert first.action is lifecycle.SubmissionAction.SUBMIT
     assert state is None
-    assert broker.queries == [stable_id]
+    assert duplicate.action is lifecycle.SubmissionAction.BLOCK
+    assert duplicate.reason == "ambiguous_submission"
+    assert after_restart.action is lifecycle.SubmissionAction.BLOCK
+    assert after_restart.reason == "ambiguous_submission"
+    assert broker.queries == [stable_id, stable_id, stable_id]
     assert broker.submissions == [stable_id]
 
 
@@ -206,7 +228,11 @@ def test_two_invocations_of_one_intent_create_one_broker_intent() -> None:
             self.submissions: list[str] = []
 
         def invoke(self) -> object:
-            decision = lifecycle.decide_submission(self, stable_id)
+            decision = lifecycle.decide_submission(
+                self,
+                stable_id,
+                submission_attempted=bool(self.submissions),
+            )
             if decision.action is lifecycle.SubmissionAction.SUBMIT:
                 self.submissions.append(stable_id)
                 self.order = _broker_order(stable_id, BrokerOrderStatus.NEW)
@@ -284,13 +310,21 @@ def test_unknown_order_state_blocks_entry_and_records_the_no_trade_reason() -> N
     lifecycle = _lifecycle()
     stable_id = lifecycle.client_order_id("unknown-plan", 1, Decimal("0.50"))
     unknown_order = _broker_order(stable_id, BrokerOrderStatus.UNKNOWN)
-    decision = lifecycle.decide_submission(MemoryLookup(unknown_order), stable_id)
+    decision = lifecycle.decide_submission(
+        MemoryLookup(unknown_order),
+        stable_id,
+        submission_attempted=False,
+    )
 
     class UnavailableLookup:
         def order_by_client_id(self, client_order_id: str) -> BrokerOrder | None:
             raise ConnectionError(client_order_id)
 
-    unavailable = lifecycle.decide_submission(UnavailableLookup(), stable_id)
+    unavailable = lifecycle.decide_submission(
+        UnavailableLookup(),
+        stable_id,
+        submission_attempted=False,
+    )
     explicitly_unsafe = {
         None,
         lifecycle.OrderState.PROPOSED,
