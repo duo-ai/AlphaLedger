@@ -7,7 +7,10 @@ Last updated: 2026-08-29
 Released as v0.1.0, and `develop` has moved well past it. Fourteen units are
 merged: UNIT-001 through UNIT-004, UNIT-010 through UNIT-012, UNIT-014,
 UNIT-015, and UNIT-020 through UNIT-024. UNIT-013, the risk approval token, is
-claimed by `pablo/codex` and is the only unit in flight. UNIT-025 exists as an
+held by `pablo/codex` and is the only unit in flight. It is at `in_review`
+with a first-round verdict of `block`, so it needs a second pass, and D-022
+bounds that pass: a finding counts only if it is actionable inside UNIT-013's
+own path globs and bears on one of its numbered acceptance criteria. UNIT-025 exists as an
 intake and is not claimable, because it depends on UNIT-027, which is a backlog
 row with no intake file; `coord.py` refuses the claim by name rather than
 letting it through.
