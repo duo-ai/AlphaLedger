@@ -839,3 +839,22 @@ def test_the_protocol_is_satisfied_structurally_without_inheritance() -> None:
     """The seam exists so a test double needs no import from this module."""
     labeler: NewsLabeler = Honest()
     assert labeler.label(article("n10", "Acme beats"), SYMBOL, ()).article_id == "n10"
+
+
+def test_a_chain_of_republications_beyond_the_window_still_splits() -> None:
+    """AC-2, pinning the anchor-relative choice a refactor could silently undo.
+
+    A cluster's span is bounded by the window because every article is
+    compared with the anchor. Comparing each article with its predecessor
+    instead would let a story republished every window-minus-a-moment chain
+    without limit, and the source count would understate corroboration by
+    however long the chain ran. Both readings pass every other test here.
+    """
+    config = NewsFeatureConfig(cluster_window_hours=48.0, lookback_hours=200.0)
+    first = article("ch1", "Acme beats earnings", age_hours=80.0, domain="one.example")
+    middle = article("ch2", "Acme beats earnings", age_hours=40.0, domain="two.example")
+    last = article("ch3", "Acme beats earnings", age_hours=0.0, domain="three.example")
+    labels = keyed(label(first), label(middle), label(last))
+    block = build(SYMBOL, AS_OF, (first, middle, last), labels, config)
+    assert block.features["independent_source_count"] == pytest.approx(2.0)
+    assert SYNDICATION_COLLAPSED in block.quality_flags

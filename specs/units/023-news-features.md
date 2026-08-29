@@ -259,3 +259,41 @@ also survived, and that one is correct: the digest is a grouping key that is
 never emitted, and representatives are re-sorted by time and id afterwards, so
 the output genuinely does not change. The docstring claimed otherwise and has
 been corrected to say what is actually true.
+
+### Review round one, backtest-auditor, 2026-08-29
+
+Verdict clear. All six acceptance criteria hold and were independently
+falsified, the gate was re-run rather than taken on trust, and the eight
+feature values, the D-014 exemption, and the two-process determinism were
+checked by hand and by an independent subprocess run.
+
+One finding, non-blocking, acted on. The reviewer ran four mutations of its own
+and found two survivors beyond the two recorded above, which means the claim in
+those notes describes the twelve defects that were injected and should not be
+read as a statement about the suite as a whole. It has been left as written
+rather than revised, because it was true of what it described, and this
+paragraph is the correction.
+
+The reportable survivor: `_clusters` compares every article with the cluster
+anchor, and rewriting it to compare each article with its predecessor instead,
+which is chained or transitive windowing, passed the entire suite. The two
+readings differ materially. Three articles sharing a headline at eighty, forty
+and zero hours before `as_of` under a forty-eight hour window give two
+independent sources under anchor-relative windowing and one under chained,
+because each consecutive gap is inside the window while the span is not.
+
+Anchor-relative is the correct reading and is what was implemented: it bounds a
+cluster's span to the configured window, whereas chained windowing lets a story
+republished every window-minus-a-moment chain without limit and understate
+corroboration by however long the chain runs. So this was a missing regression
+guard on correct behaviour rather than a live defect, and it bears on AC-2
+because a later refactor of `_clusters` could flip the semantics silently.
+`test_a_chain_of_republications_beyond_the_window_still_splits` now pins it,
+and it is the only test in the file that fails against that mutation.
+
+The second survivor, `age > horizon` widened to `age >= horizon` on the
+lookback boundary, was filed by the reviewer as out of scope and is not acted
+on. Both operators keep the article at or before `as_of`, so it is not a
+leakage control, and no numbered acceptance criterion governs the exact
+boundary. Recorded here so a later reader does not rediscover it and assume it
+was missed.
