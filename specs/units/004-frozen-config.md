@@ -2,7 +2,7 @@
 id: UNIT-004
 title: Load the frozen configuration and hash it
 lane: shared
-state: in_review
+state: merged
 owner: pablo/codex
 branch: feature/004-frozen-config
 reviewer: execution-safety-reviewer
