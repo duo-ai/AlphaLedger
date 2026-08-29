@@ -4,6 +4,7 @@ import importlib
 import json
 import subprocess
 import sys
+from collections.abc import Iterator, Mapping
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -15,11 +16,13 @@ import pytest
 
 from alphaledger.config import FrozenConfig, load
 from alphaledger.domain import RiskApproval, StructurePlan
+from alphaledger.execution.lifecycle import client_order_id
 from alphaledger.execution.orders import build_mleg_order, order_payload_hash
 
 _CONFIG_DIRECTORY = Path(__file__).parents[2] / "config"
 _NOW = datetime(2026, 8, 29, 14, 0, tzinfo=UTC)
 _EXPIRES_AT = _NOW + timedelta(minutes=5)
+_MAX_SNAPSHOT_AGE = timedelta(minutes=2)
 
 
 def _risk_api() -> ModuleType:
@@ -72,9 +75,33 @@ def _payload(
     *,
     quantity: int = 2,
     limit_price: Decimal = Decimal("1.2500"),
-    client_order_id: str = "client-approval-001",
+    order_id: str | None = None,
 ) -> dict[str, object]:
-    return dict(build_mleg_order(plan, quantity, limit_price, client_order_id))
+    resolved_order_id = (
+        order_id if order_id is not None else client_order_id(plan.plan_id, quantity, limit_price)
+    )
+    return dict(build_mleg_order(plan, quantity, limit_price, resolved_order_id))
+
+
+class _PayloadMutatingAfterLegRead(Mapping[str, object]):
+    """Expose a payload that changes after the final gate input is read."""
+
+    def __init__(self, payload: dict[str, object]) -> None:
+        self._payload = payload
+        self.mutated = False
+
+    def __getitem__(self, key: str) -> object:
+        value = self._payload[key]
+        if key == "legs" and not self.mutated:
+            self._payload["client_order_id"] = "changed-after-gate-input-read"
+            self.mutated = True
+        return value
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._payload)
+
+    def __len__(self) -> int:
+        return len(self._payload)
 
 
 def _snapshot(
@@ -105,6 +132,7 @@ def _approved_token(api: ModuleType) -> RiskApproval:
         api.SizingMode.STANDARD,
         _EXPIRES_AT,
         _NOW,
+        _MAX_SNAPSHOT_AGE,
     )
 
 
@@ -123,6 +151,7 @@ def test_every_gate_passes_and_token_binds_independently_recomputed_hashes() -> 
         api.SizingMode.STANDARD,
         _EXPIRES_AT,
         _NOW,
+        _MAX_SNAPSHOT_AGE,
     )
 
     assert approval.approved is True
@@ -187,6 +216,7 @@ def test_expiry_at_or_before_now_raises_instead_of_returning_a_token(
             api.SizingMode.STANDARD,
             expires_at,
             _NOW,
+            _MAX_SNAPSHOT_AGE,
         )
 
 
@@ -207,6 +237,7 @@ def test_nonpositive_exact_max_loss_raises_and_names_the_field(
             api.SizingMode.STANDARD,
             _EXPIRES_AT,
             _NOW,
+            _MAX_SNAPSHOT_AGE,
         )
 
 
@@ -229,7 +260,139 @@ def test_missing_payload_field_raises_value_error_and_names_the_field(
             api.SizingMode.STANDARD,
             _EXPIRES_AT,
             _NOW,
+            _MAX_SNAPSHOT_AGE,
         )
+
+
+@pytest.mark.parametrize(
+    "mismatch",
+    ["foreign_plan_legs", "handmade_client_order_id", "post_build_mutation"],
+)
+def test_readable_payload_mismatch_is_refused_with_a_named_gate(mismatch: str) -> None:
+    api = _risk_api()
+    config = _frozen_config()
+    plan = _plan()
+    quantity = 2
+    limit_price = Decimal("1.2500")
+
+    if mismatch == "foreign_plan_legs":
+        foreign_legs = [dict(leg) for leg in plan.legs]
+        foreign_legs[1]["symbol"] = "SPY260918C00510000"
+        foreign_plan = replace(
+            plan,
+            plan_id="foreign-plan-approval-001",
+            legs=tuple(foreign_legs),
+        )
+        payload = _payload(
+            foreign_plan,
+            quantity=quantity,
+            limit_price=limit_price,
+            order_id=client_order_id(plan.plan_id, quantity, limit_price),
+        )
+    elif mismatch == "handmade_client_order_id":
+        payload = _payload(plan, order_id="handmade-client-order-id")
+    else:
+        payload = _payload(plan)
+        payload["time_in_force"] = "gtc"
+
+    approval = api.approve(
+        plan,
+        payload,
+        _snapshot(api, config),
+        config,
+        api.SizingMode.STANDARD,
+        _EXPIRES_AT,
+        _NOW,
+        _MAX_SNAPSHOT_AGE,
+    )
+
+    assert approval.approved is False
+    assert approval.failed_gates == (api.GATE_PAYLOAD_PLAN_MISMATCH,)
+
+
+def test_payload_mutating_after_gate_reads_cannot_change_decision_binding() -> None:
+    api = _risk_api()
+    config = _frozen_config()
+    plan = _plan()
+    canonical_payload = _payload(plan)
+    expected_payload_hash = order_payload_hash(canonical_payload)
+    mutating_payload = _PayloadMutatingAfterLegRead(canonical_payload)
+
+    approval = api.approve(
+        plan,
+        mutating_payload,
+        _snapshot(api, config),
+        config,
+        api.SizingMode.STANDARD,
+        _EXPIRES_AT,
+        _NOW,
+        _MAX_SNAPSHOT_AGE,
+    )
+
+    assert mutating_payload.mutated is True
+    assert approval.approved is False
+    assert approval.failed_gates == (api.GATE_PAYLOAD_PLAN_MISMATCH,)
+    assert approval.order_payload_hash == expected_payload_hash
+
+
+@pytest.mark.parametrize(
+    ("snapshot_time", "is_refused"),
+    [
+        (_NOW - timedelta(microseconds=1), False),
+        (_NOW, False),
+        (_NOW + timedelta(microseconds=1), True),
+    ],
+)
+def test_future_snapshot_gate_is_strictly_after_now(
+    snapshot_time: datetime,
+    is_refused: bool,
+) -> None:
+    api = _risk_api()
+    config = _frozen_config()
+    plan = _plan()
+
+    approval = api.approve(
+        plan,
+        _payload(plan),
+        _snapshot(api, config, snapshot_time=snapshot_time),
+        config,
+        api.SizingMode.STANDARD,
+        _EXPIRES_AT,
+        _NOW,
+        _MAX_SNAPSHOT_AGE,
+    )
+
+    assert (api.GATE_SNAPSHOT_IN_FUTURE in approval.failed_gates) is is_refused
+
+
+@pytest.mark.parametrize(
+    ("snapshot_time", "is_refused"),
+    [
+        (_NOW - _MAX_SNAPSHOT_AGE + timedelta(microseconds=1), False),
+        (_NOW - _MAX_SNAPSHOT_AGE, False),
+        (_NOW - _MAX_SNAPSHOT_AGE - timedelta(microseconds=1), True),
+    ],
+)
+def test_stale_snapshot_gate_is_strictly_outside_the_age_boundary(
+    snapshot_time: datetime,
+    is_refused: bool,
+) -> None:
+    api = _risk_api()
+    config = _frozen_config()
+    plan = _plan()
+
+    approval = api.approve(
+        plan,
+        _payload(plan),
+        _snapshot(api, config, snapshot_time=snapshot_time),
+        config,
+        api.SizingMode.STANDARD,
+        _EXPIRES_AT,
+        _NOW,
+        _MAX_SNAPSHOT_AGE,
+    )
+
+    assert (api.GATE_SNAPSHOT_STALE in approval.failed_gates) is is_refused
 
 
 @pytest.mark.parametrize(
@@ -292,7 +455,7 @@ def test_identical_approval_inputs_reproduce_all_bound_ids_after_restart() -> No
     script = """
 import json
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -337,7 +500,16 @@ snapshot = AccountSnapshot(
     frozen_config_hash=config.frozen_config_hash,
     snapshot_time=now,
 )
-token = approve(plan, payload, snapshot, config, SizingMode.STANDARD, expires_at, now)
+token = approve(
+    plan,
+    payload,
+    snapshot,
+    config,
+    SizingMode.STANDARD,
+    expires_at,
+    now,
+    timedelta(minutes=2),
+)
 print(json.dumps([
     token.approval_id,
     token.account_snapshot_hash,
@@ -433,10 +605,10 @@ def test_every_failed_gate_is_recorded_together_in_one_refused_token() -> None:
     api = _risk_api()
     config = _frozen_config()
     plan = _plan()
+    unbalanced_legs = [dict(leg) for leg in plan.legs]
+    unbalanced_legs[1]["ratio_qty"] = 2
+    plan = replace(plan, legs=tuple(unbalanced_legs))
     payload = _payload(plan, quantity=4, limit_price=Decimal("1.2600"))
-    legs = [dict(leg) for leg in payload["legs"]]
-    legs[1]["ratio_qty"] = "2"
-    payload["legs"] = legs
     snapshot = _snapshot(
         api,
         config,
@@ -452,6 +624,7 @@ def test_every_failed_gate_is_recorded_together_in_one_refused_token() -> None:
         api.SizingMode.STANDARD,
         _EXPIRES_AT,
         _NOW,
+        _MAX_SNAPSHOT_AGE,
     )
 
     assert approval.approved is False
@@ -480,6 +653,7 @@ def test_smoke_mode_refuses_quantity_that_standard_mode_approves() -> None:
         api.SizingMode.STANDARD,
         _EXPIRES_AT,
         _NOW,
+        _MAX_SNAPSHOT_AGE,
     )
     smoke_test = api.approve(
         plan,
@@ -489,6 +663,7 @@ def test_smoke_mode_refuses_quantity_that_standard_mode_approves() -> None:
         api.SizingMode.SMOKE_TEST,
         _EXPIRES_AT,
         _NOW,
+        _MAX_SNAPSHOT_AGE,
     )
 
     assert standard.approved is True
