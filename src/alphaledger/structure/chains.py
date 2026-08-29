@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
+from fractions import Fraction
 from typing import Literal, Protocol
 
 from alphaledger.domain import StructurePlan, money, require_utc
@@ -195,7 +196,7 @@ class StructureEnumerationResult:
 
 @dataclass(frozen=True, slots=True)
 class _RankedPlan:
-    cost_drag_ratio: Decimal
+    cost_drag_ratio: Fraction
     expiry: date
     long_strike: Decimal
     long_symbol: str
@@ -232,6 +233,16 @@ def enumerate_candidates(
     observed = tuple(chains.contracts_for(underlying_symbol, observed_at))
     if not observed:
         return _no_trade(f"no_contracts: {underlying_symbol} chain returned no contracts")
+    observed, symbol_conflicts = _deduplicate_contracts(observed)
+    if symbol_conflicts:
+        return _no_trade(
+            *(
+                "contract_symbol_uniqueness: "
+                f"{symbol} has conflicting observations at the same as_of; "
+                "enumeration failed closed"
+                for symbol in symbol_conflicts
+            )
+        )
 
     reasons: list[str] = []
     matching_underlying: list[ChainContract] = []
@@ -469,7 +480,7 @@ def _build_ranked_plan(
         },
     )
     return _RankedPlan(
-        cost_drag_ratio=net_debit / width,
+        cost_drag_ratio=Fraction(net_debit) / Fraction(width),
         expiry=long_leg.expiry,
         long_strike=long_leg.strike,
         long_symbol=long_leg.symbol,
@@ -477,6 +488,20 @@ def _build_ranked_plan(
         short_symbol=short_leg.symbol,
         plan=plan,
     )
+
+
+def _deduplicate_contracts(
+    contracts: tuple[ChainContract, ...],
+) -> tuple[tuple[ChainContract, ...], tuple[str, ...]]:
+    by_symbol: dict[str, ChainContract] = {}
+    conflicts: set[str] = set()
+    for contract in contracts:
+        prior = by_symbol.get(contract.symbol)
+        if prior is None:
+            by_symbol[contract.symbol] = contract
+        elif prior != contract:
+            conflicts.add(contract.symbol)
+    return tuple(by_symbol.values()), tuple(sorted(conflicts))
 
 
 def _no_trade(*reasons: str) -> StructureEnumerationResult:
