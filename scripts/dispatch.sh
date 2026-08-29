@@ -341,6 +341,13 @@ FOLLOWUP
         while [ -e "$log.$n" ]; do n=$((n + 1)); done
         mv "$log" "$log.$n"
     fi
+    # The result summary is what a later session actually reads to learn what a
+    # pass concluded, so it needs the same rotation the stream gets.
+    if [ -s "$result" ]; then
+        n=1
+        while [ -e "$result.$n" ]; do n=$((n + 1)); done
+        mv "$result" "$result.$n"
+    fi
 
     # --approve-for-me already runs under the workspace-write sandbox and, as of
     # codex-cli 0.150.1, refuses to be given -s as well. Do not add it back.
