@@ -139,12 +139,16 @@ present and verified to fire inside a worktree.
 | UNIT-022 | research | Build residual price and volume features | G3 |
 | UNIT-023 | research | Encode point-in-time news into features | G3 |
 | UNIT-024 | research | Split chronologically and register every trial | G3 |
+| UNIT-025 | research | Fit the pooled forecast and emit the Forecast record | G3 |
+| UNIT-026 | research | Run the required baselines and ablations | G3 |
 
-Every row above has an intake file in `specs/units/` except UNIT-013 through
-UNIT-017, which are backlog rows. Promoting one means writing its intake from
-`specs/TEMPLATE.md`. Run `python3 scripts/coord.py list` for current state
-rather than reading it here; this table records the decomposition, not
-progress.
+Every row above has an intake file in `specs/units/` except UNIT-016,
+UNIT-017, UNIT-018, UNIT-025, and UNIT-026, which are backlog rows. Promoting
+one means writing its intake from `specs/TEMPLATE.md`. Run
+`uv run python scripts/coord.py list` for current state rather than reading it
+here; this table records the decomposition, not progress. Use `uv run python`
+rather than a bare `python3`: `coord.py` needs `datetime.UTC`, which the system
+interpreter on at least one development machine is too old to provide.
 
 The ladder row, UNIT-018, was added on 2026-08-29 to close a gap the
 decomposition had left open. Design section 11 step 4 requires a bounded limit
@@ -159,16 +163,29 @@ The ladder is a bounded loop that calls the approval unit repeatedly, which
 puts it above UNIT-013 rather than inside it. It depends on UNIT-012 and
 UNIT-013, and it must not be implemented inside any unit that disclaims it.
 
+UNIT-025 and UNIT-026 were corrected on 2026-08-29, and the correction runs
+the same way the UNIT-018 one did. Three stale rows sat below this prose,
+detached from the table, holding a decomposition that had already moved: they
+duplicated UNIT-023 and UNIT-024 with superseded titles, and they assigned the
+baselines to UNIT-025. Two merged, reviewed intakes disagree with that.
+`024-splits-and-trial-registry.md` disclaims the pooled forecast model and the
+`Forecast` record it emits to UNIT-025, and both it and
+`023-news-features.md` disclaim the baselines to UNIT-026.
+
+The merged units win, for the reason D-023 gives: an acceptance criterion that
+survived review describes work someone actually reasoned about, and a table row
+nobody has implemented against does not. Rewriting the two merged intakes to
+match the table would have edited files belonging to closed units in order to
+preserve a row that was wrong. The forecast model was consequently owned by no
+row at all, which is exactly the gap UNIT-018 was created to close, so it gets
+a row rather than an assumption.
+
 Specified is not the same as claimable. The execution lane is a chain:
 UNIT-011 waits on UNIT-010 and UNIT-012 waits on UNIT-011, because each
 consumes the previous one's public surface. `coord.py` enforces that.
 
 `UNIT-022` additionally depends on `UNIT-021`, since features are built over a
 frozen universe.
-| UNIT-023 | research | Label news against the fixed schema | G3 |
-| UNIT-024 | research | Fit and calibrate the forecast on chronological folds | G3 |
-| UNIT-025 | research | Run the required baselines and the trial registry | G3 |
-
 ## Definition of ready and done
 
 Ready to claim: contract, acceptance criteria, and test list written; the
