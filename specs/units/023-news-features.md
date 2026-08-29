@@ -2,7 +2,7 @@
 id: UNIT-023
 title: Encode point-in-time news into features
 lane: research
-state: claimed
+state: in_review
 owner: mazwy/claude
 branch: feature/023-news-features
 reviewer: backtest-auditor
@@ -10,6 +10,10 @@ preferred_runtime: claude
 depends_on: [UNIT-001, UNIT-002, UNIT-003, UNIT-020]
 paths: src/alphaledger/evidence/labeler.py, src/alphaledger/evidence/news.py, tests/research/test_news.py
 claimed_at: 2026-08-29T14:28:20Z
+reviewed_by: backtest-auditor
+review_verdict: clear
+reviewed_at: 2026-08-29T14:58:12Z
+review_log: [clear]
 ---
 
 ## Problem
@@ -144,3 +148,156 @@ uv run mypy src
 ```
 
 ## Handoff notes
+
+Implemented 2026-08-29 by mazwy/claude. Sixty-one tests, quality gate green.
+
+### What the features are, and why these
+
+Design section 5.2 specifies the label schema and requires deterministic
+"label-to-feature encoding", but it does not enumerate the features. Eight are
+emitted, each a weighted count of labels and nothing else:
+`news_volume_decayed`, `independent_source_count`, `recency_weight_max`,
+`direction_weighted`, `ambiguity_weighted`, `novelty_new_share`,
+`relevance_direct_share`, and `surprise_weighted`.
+
+Every ratio divides by one weight, the recency decay times the category
+weight, so the family is commensurable: changing a category weight moves all
+of them the same way rather than some of them. None of these eight has been
+selected on data, and neither has any constant behind them.
+
+### Decisions taken here that a later unit may need to revisit
+
+Clustering is exact after canonicalisation, not fuzzy. An outlet that rewrites
+a headline rather than restyling it will not cluster, so
+`independent_source_count` overstates corroboration by one per rewrite. The
+alternative needs a similarity threshold, and a threshold selected on nothing
+is an unregistered trial sitting inside a feature definition. The limitation is
+stated in the module docstring rather than hidden.
+
+`entity_match: uncertain` excludes the article, with its own reason and its own
+flag. Prompt B offers three values and folding `uncertain` into either
+neighbour would record a certainty the labeler refused to state. Down-weighting
+it instead would need a weight nobody has selected.
+
+`surprise: unknown` drops that one article from `surprise_weighted` alone and
+keeps it in every other feature, because `expected` already scores zero and
+reusing zero for absence would make a hedged label and a stated one
+indistinguishable.
+
+`NO_ARTICLES` and `NO_QUALIFYING_ARTICLES` are separate flags. A symbol nobody
+wrote about and a symbol whose every article was rejected are different states,
+and the forecast layer has to read both as ineligible for different reasons.
+
+The label's own timestamps are checked against `as_of` and against the
+article's, which AC-1 does not ask for. A label is knowledge too, and one drawn
+from a later observation of the same article is a leak the article's timestamp
+cannot catch.
+
+### Bounded and unbounded features, and why there is no cap
+
+Six of the eight features are bounded by construction. The four ratios and the
+two shares divide by the same total weight, so `direction_weighted` lies in
+[-1, 1] and `ambiguity_weighted`, `novelty_new_share`, `relevance_direct_share`
+and `surprise_weighted` lie in [0, 1]. `recency_weight_max` lies in (0, 1]
+because a decay weight is `0.5 ** (age / half_life)` and the age of a surviving
+article is never negative.
+
+Two are not bounded. `news_volume_decayed` is a sum of weights, so it grows
+with the number of independent stories and with any category weight above one.
+`independent_source_count` is a raw cluster count.
+
+Neither is winsorized, and that is a deliberate difference from UNIT-022, which
+does winsorize. The price family's limits are two numbers that would have to be
+selected on development data, and UNIT-022 declares them as unselected defaults
+for exactly that reason. Adding a third and a fourth here would add two more
+unselected thresholds to a family that already has four, and a cap chosen by
+eye is the kind of number `.claude/rules/20-research-integrity.md` exists to
+keep out of a feature definition.
+
+The exposure this leaves is real and is stated rather than hidden: a symbol
+with an unusually heavy news day contributes a larger value than any other
+feature can, so a model fit on these features without its own scaling would let
+that day dominate. The lookback bounds it in one direction, since only articles
+inside the window count at all, but nothing bounds it above. UNIT-025 either
+scales the family or registers a winsorization limit as a trial. That decision
+belongs with whoever fits the model, because the right bound depends on the
+estimator, and this unit has no basis to guess it.
+
+### Open questions this unit did not settle
+
+Configuration lives in a frozen `NewsFeatureConfig` dataclass rather than in
+`config/`, because `config/**` is outside this unit's declared path globs and
+UNIT-004's drift test pins `config/feature.toml` to `price_volume.py`. D-017
+argues the other way: a value a ledger reader needs in order to understand a
+decision should be committed and hashed. Promoting these four settings to
+`config/` belongs to the unit that owns both files. The conflict is named here
+rather than resolved silently.
+
+`NewsFeatureBlock` duplicates the shape of UNIT-022's `FeatureBlock`, as the
+contract above anticipated, and adds `exclusions`, which has no price
+counterpart. Unification belongs to a later refactor unit owning both files.
+
+The half life, cluster window, lookback, and all nine category weights are
+declared defaults. Design section 4 requires selection on development data,
+registration as a trial, and a freeze before any autonomous session. That gate
+is untouched; `feature_version` exists so the selection is auditable when it
+happens.
+
+Nothing here has met a real feed. Every value is proven self consistent against
+fixtures, not against Alpaca, and no article has ever been labelled by a model,
+since the LLM client is deliberately out of scope.
+
+### Verification actually run
+
+`uv run pytest tests/research/test_news.py -q`, the full `uv run pytest`,
+`ruff check`, `ruff format --check`, `mypy src` under strict, and
+`scripts/verify_harness.sh`. All green.
+
+Twelve deliberate defects were injected one at a time to check the tests catch
+what they claim. Ten failed a named test. Two survived and both were acted on:
+disabling the article leak check passed, because the leaked fixture also
+carried a label whose own leak check caught it first, so AC-1 was covered only
+by accident. A leaked article carrying no label is now its own test, and it
+fails against that mutation. Replacing `hashlib` with the salted builtin `hash`
+also survived, and that one is correct: the digest is a grouping key that is
+never emitted, and representatives are re-sorted by time and id afterwards, so
+the output genuinely does not change. The docstring claimed otherwise and has
+been corrected to say what is actually true.
+
+### Review round one, backtest-auditor, 2026-08-29
+
+Verdict clear. All six acceptance criteria hold and were independently
+falsified, the gate was re-run rather than taken on trust, and the eight
+feature values, the D-014 exemption, and the two-process determinism were
+checked by hand and by an independent subprocess run.
+
+One finding, non-blocking, acted on. The reviewer ran four mutations of its own
+and found two survivors beyond the two recorded above, which means the claim in
+those notes describes the twelve defects that were injected and should not be
+read as a statement about the suite as a whole. It has been left as written
+rather than revised, because it was true of what it described, and this
+paragraph is the correction.
+
+The reportable survivor: `_clusters` compares every article with the cluster
+anchor, and rewriting it to compare each article with its predecessor instead,
+which is chained or transitive windowing, passed the entire suite. The two
+readings differ materially. Three articles sharing a headline at eighty, forty
+and zero hours before `as_of` under a forty-eight hour window give two
+independent sources under anchor-relative windowing and one under chained,
+because each consecutive gap is inside the window while the span is not.
+
+Anchor-relative is the correct reading and is what was implemented: it bounds a
+cluster's span to the configured window, whereas chained windowing lets a story
+republished every window-minus-a-moment chain without limit and understate
+corroboration by however long the chain runs. So this was a missing regression
+guard on correct behaviour rather than a live defect, and it bears on AC-2
+because a later refactor of `_clusters` could flip the semantics silently.
+`test_a_chain_of_republications_beyond_the_window_still_splits` now pins it,
+and it is the only test in the file that fails against that mutation.
+
+The second survivor, `age > horizon` widened to `age >= horizon` on the
+lookback boundary, was filed by the reviewer as out of scope and is not acted
+on. Both operators keep the article at or before `as_of`, so it is not a
+leakage control, and no numbered acceptance criterion governs the exact
+boundary. Recorded here so a later reader does not rediscover it and assume it
+was missed.
