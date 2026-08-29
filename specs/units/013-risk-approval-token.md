@@ -188,6 +188,9 @@ GATE_QUANTITY_EXCEEDS_APPROVED_CAP: Final = "quantity_exceeds_approved_cap"
 GATE_UNBALANCED_LEGS: Final = "unbalanced_legs"
 GATE_CONCURRENT_POSITION_LIMIT: Final = "concurrent_position_limit_reached"
 GATE_CONFIG_HASH_MISMATCH: Final = "config_hash_mismatch"
+GATE_PAYLOAD_PLAN_MISMATCH: Final = "payload_plan_mismatch"
+GATE_SNAPSHOT_IN_FUTURE: Final = "snapshot_in_future"
+GATE_SNAPSHOT_STALE: Final = "snapshot_stale"
 
 @dataclass(frozen=True, slots=True)
 class AccountSnapshot:
@@ -213,6 +216,7 @@ def approve(
     mode: SizingMode,
     expires_at: datetime,
     now: datetime,
+    max_snapshot_age: timedelta,
 ) -> RiskApproval: ...
 
 def is_expired(approval: RiskApproval, now: datetime) -> bool: ...
@@ -287,6 +291,58 @@ using `canonical_bytes` again rather than a second scheme. The same inputs
 produce the same id in a separate process, matching `client_order_id`'s
 determinism in `alphaledger.execution.lifecycle`.
 
+## The payload is rebuilt, not trusted
+
+`payload` arrives from the caller as a `Mapping`, which is mutable and
+unverified. Two defects follow from trusting it, and one mechanism closes both.
+
+A mutable mapping can change between the moment a gate reads it and the moment
+it is hashed, so an approval could be granted against one state and bound to
+another. Separately, a payload built from a different plan would be sized using
+the supplied plan's `exact_max_loss` while authorising the other plan's legs,
+which is a sizing error in the risk-increasing direction.
+
+`approve` therefore rebuilds the payload it expects, from the plan, and refuses
+if the supplied one does not match. Every part of this uses already merged code:
+
+    qty, limit_price  <- read from the supplied payload
+    cid               <- client_order_id(plan.plan_id, qty, limit_price)
+    expected          <- build_mleg_order(plan, qty, limit_price, cid)
+    compare           <- order_payload_hash(expected) against the supplied hash
+
+Everything after the comparison, the gates and the hash that binds the
+approval, is evaluated against `expected`, the payload this unit built, never
+against the caller's mapping. A supplied payload that cannot be read, that is
+missing `qty` or `limit_price`, or whose hash differs for any reason including a
+hand-made `client_order_id`, is refused with `GATE_PAYLOAD_PLAN_MISMATCH`.
+
+Rebuilding also validates the client order id, which matters beyond this unit:
+idempotent recovery in UNIT-012 depends on that id being the derived one, and
+nothing else checked it. This makes the module import
+`alphaledger.execution.lifecycle` as well, which adds no cycle because lifecycle
+does not import risk.
+
+A mismatch is recorded as a failed gate rather than raised. It is fail closed
+either way, and a refusal that appears in the approval with a named gate leaves
+the evidence the ledger is supposed to carry, which a raised exception would
+not.
+
+## The account snapshot has to be recent, and cannot be from the future
+
+A snapshot with `snapshot_time` after `now` is refused with
+`GATE_SNAPSHOT_IN_FUTURE`. This needs no policy and no threshold: observing an
+account state that has not happened yet is always wrong, in the same way D-014
+treats an observation seen before its source emitted it.
+
+Staleness does need a number, and no committed configuration holds one. Per
+D-017 a threshold that is not committed cannot be invented in code, so
+`max_snapshot_age` is an explicit required parameter, exactly as `expires_at`
+already is in this contract, and a snapshot older than it is refused with
+`GATE_SNAPSHOT_STALE`. Making it required rather than defaulted means a caller
+cannot omit the check by accident. The natural long-term home is a committed
+value in the risk table hashed into the run manifest, which is a change to
+UNIT-004's files and belongs to whoever wires it, not here.
+
 ## Acceptance criteria
 
 - AC-1: `approve` called twice with identical arguments, in separate
@@ -328,6 +384,20 @@ determinism in `alphaledger.execution.lifecycle`.
   and changes if any one of `plan_id`, quantity, `order_payload_hash`,
   `account_snapshot_hash`, `mode`, `expires_at`, `approved`, or `failed_gates`
   differs, tested one field at a time.
+
+- AC-13: a payload that is not identical to the one rebuilt from `plan` at the
+  same quantity and limit price is refused with `GATE_PAYLOAD_PLAN_MISMATCH`.
+  Tested with a payload carrying a different plan's legs, one carrying a
+  hand-made `client_order_id`, one missing `qty`, and one mutated after
+  construction. A test must show that mutating the supplied mapping after
+  `approve` reads it cannot change either the gate outcome or
+  `order_payload_hash` on the returned approval.
+- AC-14: `snapshot_time` strictly after `now` is refused with
+  `GATE_SNAPSHOT_IN_FUTURE`, tested strictly before, at, and strictly after
+  `now`, where equal to `now` is not refused on this gate.
+- AC-15: a snapshot older than `max_snapshot_age` is refused with
+  `GATE_SNAPSHOT_STALE`, tested strictly inside, exactly at, and strictly
+  outside the boundary, where exactly at the boundary is not refused.
 
 ## Test list
 
@@ -378,3 +448,31 @@ uv run mypy src
 ```
 
 ## Handoff notes
+
+- 2026-08-29 first pass stopped rather than guessing, which was the correct
+  call. The implementation was committed and green, 28 narrow tests and 389 in
+  the full suite, and its own execution-safety review returned three blockers.
+  Two of them named requirements this intake did not carry, so the agent
+  refused to invent them, refused to edit the intake or the frozen
+  configuration, and changed no registry state. That is the behaviour the
+  `[NEEDS CLARIFICATION]` marker exists to encourage, arrived at without one.
+
+  The three findings and how this amendment answers them:
+
+  1. A mutable payload could change between gate evaluation and hashing, so an
+     approval could be granted against one state and bound to another. Answered
+     by rebuilding the payload from the plan and evaluating everything against
+     the rebuilt one. See "The payload is rebuilt, not trusted".
+  2. A payload built from a different plan could be sized using the supplied
+     plan's lower `exact_max_loss`. Answered by the same rebuild, which a
+     foreign payload cannot match. This was the more dangerous of the two,
+     because it is a sizing error in the risk-increasing direction.
+  3. Future or stale account snapshots were not rejected. Split in two: a
+     future snapshot is always wrong and needs no threshold, while staleness
+     needs a number that no committed file holds, so it is a required parameter
+     rather than an invented constant. See "The account snapshot has to be
+     recent".
+
+  The rebuild closes a fourth hole nobody raised: nothing previously checked
+  that the payload's `client_order_id` was the derived one, and UNIT-012's
+  idempotent recovery depends on exactly that.
