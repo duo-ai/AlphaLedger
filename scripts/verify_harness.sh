@@ -139,31 +139,56 @@ done
 echo "== codex dispatch =="
 if command -v codex >/dev/null 2>&1; then
     check 0 "codex CLI on PATH"
-    bash scripts/dispatch.sh UNIT-010 pablo/codex --dry-run >/dev/null 2>&1
-    check $? "dispatch dry run builds a prompt"
-    bash scripts/dispatch.sh UNIT-010 pablo/claude --dry-run >/dev/null 2>&1
-    [ $? -ne 0 ]; check $? "dispatch refuses a claude owner"
-    # UNIT-020 and UNIT-021 are merged and owned by mazwy/claude, so a dry run
-    # now correctly refuses to plan them for pablo/codex: a dry run asks the
-    # same claimability question a real dispatch would. UNIT-004, UNIT-010,
-    # and UNIT-012 are merged, disjoint, and owned by pablo/codex, so the
-    # already-held shortcut lets this stay a check of parallel path planning
-    # rather than of claimability.
-    bash scripts/dispatch.sh UNIT-004 UNIT-010 UNIT-012 pablo/codex --dry-run >/dev/null 2>&1
-    check $? "dispatch plans three disjoint units in parallel"
 
-    # compare before and after rather than demanding a clean tree, so an
-    # uncommitted spec edit cannot masquerade as a dispatch mutation
-    before=$(git status --porcelain specs/ | sort)
+    # A dry run now asks the same claimability question a real dispatch does, so
+    # these fixtures have to be units that are genuinely claimable right now.
+    # Naming them literally is what broke this block once already: the units
+    # chosen were merged, and they passed only because the owner shortcut waved
+    # through anything the owner held, which was itself the defect. Discover
+    # them instead, and say plainly when there are none rather than asserting
+    # against whatever the registry happens to hold.
+    mapfile -t AVAILABLE < <(py scripts/coord.py list --state available 2>/dev/null \
+        | awk 'NR > 1 {print $1}')
+
+    if [ "${#AVAILABLE[@]}" -ge 1 ]; then
+        bash scripts/dispatch.sh "${AVAILABLE[0]}" pablo/codex --dry-run >/dev/null 2>&1
+        check $? "dispatch dry run builds a prompt"
+        bash scripts/dispatch.sh "${AVAILABLE[0]}" pablo/claude --dry-run >/dev/null 2>&1
+        [ $? -ne 0 ]; check $? "dispatch refuses a claude owner"
+
+        # compare before and after rather than demanding a clean tree, so an
+        # uncommitted spec edit cannot masquerade as a dispatch mutation
+        before=$(git status --porcelain specs/ | sort)
+        bash scripts/dispatch.sh "${AVAILABLE[0]}" pablo/codex --dry-run >/dev/null 2>&1
+        [ "$before" = "$(git status --porcelain specs/ | sort)" ]
+        check $? "a dry run claims nothing"
+    else
+        skip "dispatch dry run builds a prompt (no available unit to plan)"
+        skip "dispatch refuses a claude owner (no available unit to plan)"
+        skip "a dry run claims nothing (no available unit to plan)"
+    fi
+
+    # A merged unit is refused even when this owner is the one that merged it.
+    # That is the narrowed shortcut: resuming is legitimate only while a unit is
+    # still claimed, and skipping the check for everything the owner holds would
+    # wave a merged unit straight through.
     bash scripts/dispatch.sh UNIT-010 pablo/codex --dry-run >/dev/null 2>&1
-    [ "$before" = "$(git status --porcelain specs/ | sort)" ]
-    check $? "a dry run claims nothing"
+    [ $? -ne 0 ]; check $? "dispatch refuses a merged unit this owner merged"
+
+    if [ "${#AVAILABLE[@]}" -ge 2 ]; then
+        bash scripts/dispatch.sh "${AVAILABLE[0]}" "${AVAILABLE[1]}" pablo/codex --dry-run \
+            >/dev/null 2>&1
+        check $? "dispatch plans disjoint units in parallel"
+    else
+        skip "dispatch plans disjoint units in parallel (needs two available units)"
+    fi
 else
     skip "codex CLI on PATH (absent, so the dispatch checks cannot run here)"
     skip "dispatch dry run builds a prompt"
     skip "dispatch refuses a claude owner"
-    skip "dispatch plans three disjoint units in parallel"
     skip "a dry run claims nothing"
+    skip "dispatch refuses a merged unit this owner merged"
+    skip "dispatch plans disjoint units in parallel"
 fi
 
 # No codex needed, and this matters most to the writer who does not have it:
