@@ -434,7 +434,7 @@ def test_snapshot_hash_changes_under_every_single_field_mutation(
     ("field", "replacement"),
     [
         ("plan_id", "plan-approval-002"),
-        ("quantity", 2),
+        ("quantity", 1),
         ("order_payload_hash", "payload-hash-002"),
         ("account_snapshot_hash", "snapshot-hash-002"),
         ("mode", "smoke_test"),
@@ -443,7 +443,7 @@ def test_snapshot_hash_changes_under_every_single_field_mutation(
         ("failed_gates", ("one_failed_gate",)),
     ],
 )
-def test_public_approve_binds_every_id_field_under_isolated_mutation(
+def test_public_approve_binds_actual_inputs_and_id_changes_under_isolated_mutation(
     monkeypatch: pytest.MonkeyPatch,
     field: str,
     replacement: object,
@@ -451,6 +451,27 @@ def test_public_approve_binds_every_id_field_under_isolated_mutation(
     api = _risk_api()
     config = _frozen_config()
     plan = _plan()
+    quantity = 2
+    limit_price = Decimal("1.2500")
+    payload = _payload(plan, quantity=quantity, limit_price=limit_price)
+    snapshot = _snapshot(api, config)
+    mode = api.SizingMode.STANDARD
+    expected_payload = build_mleg_order(
+        plan,
+        quantity,
+        limit_price,
+        client_order_id(plan.plan_id, quantity, limit_price),
+    )
+    expected_bound_fields = {
+        "plan_id": plan.plan_id,
+        "quantity": quantity,
+        "order_payload_hash": order_payload_hash(expected_payload),
+        "account_snapshot_hash": api.account_snapshot_hash(snapshot),
+        "mode": mode,
+        "expires_at": _EXPIRES_AT,
+        "approved": True,
+        "failed_gates": (),
+    }
     captured: dict[str, object] = {}
     derive_approval_id = api._approval_id
 
@@ -462,17 +483,18 @@ def test_public_approve_binds_every_id_field_under_isolated_mutation(
 
     approval = api.approve(
         plan,
-        _payload(plan, quantity=1),
-        _snapshot(api, config),
+        payload,
+        snapshot,
         config,
-        api.SizingMode.STANDARD,
+        mode,
         _EXPIRES_AT,
         _NOW,
         _MAX_SNAPSHOT_AGE,
     )
     changed = captured | {field: replacement}
 
-    assert approval.approval_id == derive_approval_id(**captured)
+    assert captured == expected_bound_fields
+    assert approval.approval_id == derive_approval_id(**expected_bound_fields)
     assert derive_approval_id(**changed) != approval.approval_id
 
 
