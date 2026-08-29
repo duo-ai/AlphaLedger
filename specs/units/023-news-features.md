@@ -2,13 +2,14 @@
 id: UNIT-023
 title: Encode point-in-time news into features
 lane: research
-state: available
-owner: -
-branch: -
+state: claimed
+owner: mazwy/claude
+branch: feature/023-news-features
 reviewer: backtest-auditor
 preferred_runtime: claude
 depends_on: [UNIT-001, UNIT-002, UNIT-003, UNIT-020]
 paths: src/alphaledger/evidence/labeler.py, src/alphaledger/evidence/news.py, tests/research/test_news.py
+claimed_at: 2026-08-29T14:28:20Z
 ---
 
 ## Problem
