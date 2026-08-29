@@ -16,6 +16,7 @@ from typing import Final, Protocol
 from alphaledger.execution.orders import BrokerOrder, BrokerOrderStatus, canonical_bytes
 
 __all__ = [
+    "AMBIGUOUS_SUBMISSION_REASON",
     "BROKER_TRUTH_UNAVAILABLE_REASON",
     "UNKNOWN_ORDER_STATE_REASON",
     "BrokerOrderLookup",
@@ -32,6 +33,7 @@ __all__ = [
     "transition",
 ]
 
+AMBIGUOUS_SUBMISSION_REASON: Final = "ambiguous_submission"
 BROKER_TRUTH_UNAVAILABLE_REASON: Final = "broker_truth_unavailable"
 UNKNOWN_ORDER_STATE_REASON: Final = "unknown_order_state"
 
@@ -212,8 +214,12 @@ def resolve_ambiguous_submit(
 def decide_submission(
     lookup: BrokerOrderLookup,
     client_order_id: str,
+    *,
+    submission_attempted: bool,
 ) -> SubmissionDecision:
-    """Permit, adopt, or block an intent after exactly one identity lookup."""
+    """Permit only a fresh intent, or adopt or block after one identity lookup."""
+    if not isinstance(submission_attempted, bool):
+        raise TypeError("submission_attempted must be bool")
     try:
         order = lookup.order_by_client_id(client_order_id)
     except Exception:
@@ -224,6 +230,12 @@ def decide_submission(
         )
 
     if order is None:
+        if submission_attempted:
+            return SubmissionDecision(
+                action=SubmissionAction.BLOCK,
+                state=None,
+                reason=AMBIGUOUS_SUBMISSION_REASON,
+            )
         return SubmissionDecision(
             action=SubmissionAction.SUBMIT,
             state=None,
