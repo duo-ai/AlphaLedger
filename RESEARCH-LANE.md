@@ -18,16 +18,16 @@ Three units, in this order:
 | UNIT-021 | Generate the lagged frozen universe | merged |
 | UNIT-022 | Build residual price and volume features | merged |
 | UNIT-024 | Split chronologically and register every trial | merged |
-| UNIT-003 | Enumerate the news category on the label | claimable now |
-| UNIT-023 | Encode point-in-time news into features | blocked by UNIT-003 |
+| UNIT-003 | Enumerate the news category on the label | merged |
+| UNIT-023 | Encode point-in-time news into features | merged |
 
-The first four are done. The evidence and validation scaffolding they built is
-what everything below now rests on, so read their handoff notes before starting
-UNIT-003: they record decisions you would otherwise have to rediscover.
+All six are done. The evidence and validation scaffolding they built is what
+everything below now rests on, so read their handoff notes before claiming
+anything: they record decisions you would otherwise have to rediscover.
 
-UNIT-003 is small and sits in the shared lane rather than the research one, but
-UNIT-023 depends on it, so it is the thing standing between you and the news
-family. Take it first.
+The lane has grown since this brief was written. Run `python3 scripts/coord.py
+list --lane research` for the current set rather than trusting this table, and
+see the dated update at the end of this file for what changed.
 
 You own these paths and nothing else:
 
@@ -336,3 +336,87 @@ met, and what remains unverified.
 
 That last part is not a formality. Never call a path verified when it was only
 inspected. If you did not run it, say you did not run it.
+
+## Update, 2026-08-29, from the execution lane
+
+Written by `pablo/claude` after the execution lane closed. Nothing here changes
+what you own; it records what moved underneath you and the two things that bear
+directly on your work.
+
+### The execution lane is complete
+
+Eighteen units are merged. The whole spine exists: paper endpoint assertion,
+order schema adapter, order state machine, risk approval token, structure
+enumeration, broker reconciliation, append only ledger, kill switch and
+flatten, and the bounded entry price ladder. Nothing in your lane waits on ours
+any more.
+
+Every number in it comes from a fixture. It has never touched a broker, which
+is the same limitation your lane carries and worth saying in the same breath.
+
+### UNIT-029 is specified, and it is yours
+
+`specs/units/029-news-labeler-adapter.md` now exists. It implements the
+concrete labeler behind the `NewsLabeler` protocol UNIT-023 already declared,
+so the seam is one you designed. It covers Prompt B's payload, the consistency
+rules D-016 assigns to the adapter rather than to the frozen record, the cache
+keyed by content plus model and prompt version, and the prompt injection
+boundary, which is structural rather than hopeful: the system prompt is a fixed
+constant that article text is never interpolated into, and `source_time`,
+`first_seen_time`, and `labeler_version` are always set from the adapter's own
+inputs so a reply cannot forge them.
+
+It carries one `[NEEDS CLARIFICATION]` marker and is therefore not claimable
+until that is answered. The question is whether the news family is headline
+only. `Article` carries `article_id`, `symbols`, `headline`, `source_domain`,
+and `timestamps`, and nothing else, while Prompt B expects a summary or body
+and a company name. Labelling a headline is a materially different family from
+labelling a headline plus a summary, and this is the unit whose output feeds
+the comparison the lane exists to make, so it is being decided rather than
+guessed. Pablo has the question.
+
+Your D-024 finding is already written into that intake as a requirement: an
+article whose `updated_at` exceeds its `created_at` is a second observation,
+so the cache is keyed on content rather than on `article_id` alone. A revision
+therefore misses the cache and is relabelled instead of being served a stale
+label, whatever the upstream identifier does.
+
+### One lesson worth carrying across the lane boundary
+
+Recording a review finding in an intake's handoff notes is not enough. The
+numbered acceptance criteria the finding touches have to be rewritten in the
+same pass, because the intake is what an implementer is held to, not the notes.
+
+This bit three times today. Twice an amendment left a criterion standing that
+contradicted it, and both times the dispatched agent stopped mid unit rather
+than choosing between two sources of truth, which was the right call and cost a
+round each time. D-021 already records the same shape from UNIT-010. If you
+amend an intake after a review, grep it for the criterion the finding touches.
+
+### Tooling that changed under you
+
+- `scripts/dispatch.sh` now validates the whole batch before claiming any unit.
+  It used to claim them one at a time and could die partway, leaving a unit
+  claimed with no worktree and no agent. `--dry-run` now asks the same
+  claimability question a real dispatch asks, so a dry run that passes and a
+  real dispatch that refuses can no longer disagree.
+- `scripts/coord.py` gained `check <UNIT-ID> --owner <handle/runtime>`, which
+  answers whether a claim would succeed without making it. Self-test is at 28
+  cases.
+- `scripts/review.sh` rotates its artifacts instead of truncating them, so a
+  second review round no longer destroys the first round's report. It also
+  appends an explicit `NO VERDICT STATED` notice when a review ends without
+  one, which happened four times today. Grade those from the findings; D-018
+  puts that on the session either way.
+- `scripts/notable.py` no longer reads a TDD red phase as a refusal. "I cannot
+  proceed" is a stop. "The boundary cases cannot proceed until that API exists"
+  is an agent describing red, and it used to announce that as a stop.
+- `scripts/verify_harness.sh` is at 43 checks. Its dispatch fixtures now
+  discover a claimable unit at run time rather than naming unit ids, so they do
+  not rot as the registry moves.
+
+### G0 is still the largest open item
+
+Your 401 is the recorded evidence that it is blocked on access rather than on
+effort, and D-024 says so in those terms. Until it clears, nothing in either
+lane has been observed against a real payload.
