@@ -181,9 +181,7 @@ def test_ambiguous_submit_queries_once_by_id_and_never_submits_a_second_intent()
         client_order_id=stable_id,
         record_id="attempt-record-001",
     )
-    assert "submission_attempted" not in inspect.signature(
-        lifecycle.decide_submission
-    ).parameters
+    assert "submission_attempted" not in inspect.signature(lifecycle.decide_submission).parameters
 
     class AmbiguousBroker(MemoryLookup):
         def __init__(self) -> None:

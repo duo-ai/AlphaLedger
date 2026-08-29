@@ -18,10 +18,15 @@ from alphaledger.execution.orders import BrokerOrder, BrokerOrderStatus, canonic
 __all__ = [
     "AMBIGUOUS_SUBMISSION_REASON",
     "BROKER_TRUTH_UNAVAILABLE_REASON",
+    "SUBMISSION_ATTEMPT_RECORD_MISMATCH_REASON",
+    "SUBMISSION_ATTEMPT_RECORD_REQUIRED_REASON",
     "UNKNOWN_ORDER_STATE_REASON",
     "BrokerOrderLookup",
     "OrderEvent",
     "OrderState",
+    "RecordedSubmissionAttempt",
+    "RecoveryAction",
+    "RecoveryDecision",
     "SubmissionAction",
     "SubmissionDecision",
     "blocks_new_entries",
@@ -29,12 +34,15 @@ __all__ = [
     "decide_submission",
     "is_broker_terminal",
     "is_lifecycle_terminal",
+    "recover_submission",
     "resolve_ambiguous_submit",
     "transition",
 ]
 
 AMBIGUOUS_SUBMISSION_REASON: Final = "ambiguous_submission"
 BROKER_TRUTH_UNAVAILABLE_REASON: Final = "broker_truth_unavailable"
+SUBMISSION_ATTEMPT_RECORD_MISMATCH_REASON: Final = "submission_attempt_record_mismatch"
+SUBMISSION_ATTEMPT_RECORD_REQUIRED_REASON: Final = "submission_attempt_record_required"
 UNKNOWN_ORDER_STATE_REASON: Final = "unknown_order_state"
 
 
@@ -77,11 +85,47 @@ class SubmissionAction(StrEnum):
     BLOCK = "block"
 
 
+class RecoveryAction(StrEnum):
+    """Recovery decisions, deliberately excluding authority to submit."""
+
+    ADOPT_EXISTING = "adopt_existing"
+    BLOCK = "block"
+
+
+@dataclass(frozen=True, slots=True)
+class RecordedSubmissionAttempt:
+    """Evidence the caller durably recorded an attempt before transport.
+
+    The caller must construct this value only from a durable record written
+    before sending the order. After transport is attempted, including after a
+    restart, the caller must use :func:`recover_submission` and never request
+    another initial submission decision.
+    """
+
+    client_order_id: str
+    record_id: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.client_order_id, str) or not self.client_order_id:
+            raise ValueError("recorded attempt client_order_id must be a non-empty string")
+        if not isinstance(self.record_id, str) or not self.record_id:
+            raise ValueError("recorded attempt record_id must be a non-empty string")
+
+
 @dataclass(frozen=True, slots=True)
 class SubmissionDecision:
     """A duplicate guard result with any adopted state or no-trade reason."""
 
     action: SubmissionAction
+    state: OrderState | None
+    reason: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class RecoveryDecision:
+    """An adoption or fail-closed result that cannot authorize submission."""
+
+    action: RecoveryAction
     state: OrderState | None
     reason: str | None
 
@@ -94,6 +138,10 @@ class BrokerOrderLookup(Protocol):
         ...
 
 
+# ``transitions`` and ``python-statemachine`` are established state-machine
+# packages, but neither is in the locked dependency set. This lifecycle is a
+# closed table of 26 pure transitions with no guards, callbacks, or mutable
+# engine state, so the immutable mapping is smaller and easier to audit.
 _TRANSITIONS: Final = MappingProxyType(
     {
         (OrderState.PROPOSED, OrderEvent.SUBMITTED): OrderState.SUBMITTED,
@@ -215,11 +263,21 @@ def decide_submission(
     lookup: BrokerOrderLookup,
     client_order_id: str,
     *,
-    submission_attempted: bool,
+    recorded_attempt: RecordedSubmissionAttempt | None,
 ) -> SubmissionDecision:
-    """Permit only a fresh intent, or adopt or block after one identity lookup."""
-    if not isinstance(submission_attempted, bool):
-        raise TypeError("submission_attempted must be bool")
+    """Decide first delivery only after the attempt is durably recorded.
+
+    The caller must persist ``recorded_attempt`` before this call. Once order
+    transport is attempted, every later invocation and every restarted process
+    must use :func:`recover_submission`, whose result cannot authorize a submit.
+    """
+    attempt_error = _attempt_record_error(recorded_attempt, client_order_id)
+    if attempt_error is not None:
+        return SubmissionDecision(
+            action=SubmissionAction.BLOCK,
+            state=None,
+            reason=attempt_error,
+        )
     try:
         order = lookup.order_by_client_id(client_order_id)
     except Exception:
@@ -230,12 +288,6 @@ def decide_submission(
         )
 
     if order is None:
-        if submission_attempted:
-            return SubmissionDecision(
-                action=SubmissionAction.BLOCK,
-                state=None,
-                reason=AMBIGUOUS_SUBMISSION_REASON,
-            )
         return SubmissionDecision(
             action=SubmissionAction.SUBMIT,
             state=None,
@@ -254,6 +306,70 @@ def decide_submission(
         state=state,
         reason=None,
     )
+
+
+def recover_submission(
+    lookup: BrokerOrderLookup,
+    client_order_id: str,
+    *,
+    recorded_attempt: RecordedSubmissionAttempt | None,
+    local_state: OrderState | None,
+) -> RecoveryDecision:
+    """Adopt broker truth after an attempt or fail closed without submit authority.
+
+    ``local_state`` is accepted only as the recorded state being reconciled. A
+    known broker state always replaces it, while absent or unusable broker truth
+    returns no state rather than falling back to the local value.
+    """
+    if local_state is not None and not isinstance(local_state, OrderState):
+        raise TypeError("local_state must be OrderState or None")
+    attempt_error = _attempt_record_error(recorded_attempt, client_order_id)
+    if attempt_error is not None:
+        return RecoveryDecision(
+            action=RecoveryAction.BLOCK,
+            state=None,
+            reason=attempt_error,
+        )
+    try:
+        order = lookup.order_by_client_id(client_order_id)
+    except Exception:
+        return RecoveryDecision(
+            action=RecoveryAction.BLOCK,
+            state=None,
+            reason=BROKER_TRUTH_UNAVAILABLE_REASON,
+        )
+
+    if order is None:
+        return RecoveryDecision(
+            action=RecoveryAction.BLOCK,
+            state=None,
+            reason=AMBIGUOUS_SUBMISSION_REASON,
+        )
+    state = _known_state(order, client_order_id)
+    if state is None:
+        return RecoveryDecision(
+            action=RecoveryAction.BLOCK,
+            state=None,
+            reason=UNKNOWN_ORDER_STATE_REASON,
+        )
+    return RecoveryDecision(
+        action=RecoveryAction.ADOPT_EXISTING,
+        state=state,
+        reason=None,
+    )
+
+
+def _attempt_record_error(
+    recorded_attempt: RecordedSubmissionAttempt | None,
+    expected_client_order_id: str,
+) -> str | None:
+    if recorded_attempt is None:
+        return SUBMISSION_ATTEMPT_RECORD_REQUIRED_REASON
+    if not isinstance(recorded_attempt, RecordedSubmissionAttempt):
+        raise TypeError("recorded_attempt must be RecordedSubmissionAttempt or None")
+    if recorded_attempt.client_order_id != expected_client_order_id:
+        return SUBMISSION_ATTEMPT_RECORD_MISMATCH_REASON
+    return None
 
 
 def _known_state(order: BrokerOrder | None, expected_client_order_id: str) -> OrderState | None:
