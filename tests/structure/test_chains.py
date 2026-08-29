@@ -528,11 +528,11 @@ def test_invalid_spread_combination_is_absent_without_raising(flaw: str, reason:
     chains = _chains()
     long_leg, short_leg = _call_contracts(chains)
     if flaw == "non_positive_debit":
-        long_leg = _contract(chains, bid=Decimal("0.90"), ask=Decimal("1.00"))
+        long_leg = _contract(chains, bid=Decimal("0.95"), ask=Decimal("1.00"))
         short_leg = _call_contracts(
             chains,
             bid=Decimal("1.10"),
-            ask=Decimal("1.20"),
+            ask=Decimal("1.15"),
         )[1]
     elif flaw == "debit_at_width":
         long_leg = _contract(chains, bid=Decimal("6.40"), ask=Decimal("6.50"))
