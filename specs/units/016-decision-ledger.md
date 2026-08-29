@@ -2,13 +2,14 @@
 id: UNIT-016
 title: Append-only decision and trade ledger
 lane: execution
-state: available
-owner: -
-branch: -
+state: claimed
+owner: pablo/codex
+branch: feature/016-decision-ledger
 reviewer: execution-safety-reviewer
 preferred_runtime: codex
 depends_on: [UNIT-001, UNIT-012, UNIT-020]
 paths: src/alphaledger/ledger/**, tests/ledger/**
+claimed_at: 2026-08-29T17:31:32Z
 ---
 
 ## Problem
