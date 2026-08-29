@@ -2,7 +2,7 @@
 id: UNIT-023
 title: Encode point-in-time news into features
 lane: research
-state: in_review
+state: merged
 owner: mazwy/claude
 branch: feature/023-news-features
 reviewer: backtest-auditor
