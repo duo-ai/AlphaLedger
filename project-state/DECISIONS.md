@@ -696,3 +696,48 @@ when the news adapter is built.
 - Revisit only if: a live payload shows `summary` absent or empty in practice,
   which would contradict the reference. Record the observation first and prefer
   it, per D-024.
+
+## D-026: Intakes are read adversarially before dispatch, and the spec pipeline is for undecided decompositions
+
+- Date: 2026-08-29
+- Origin: the user asked whether the documented
+  `spec-plot -> spec-analyze -> spec-clarify -> spec-plan -> spec-tasks`
+  pipeline had been followed for the eight intakes written that day. It had
+  not. `specs/features/` holds only its README and no feature spec has ever
+  been written.
+- Decision: both routes are legitimate and the choice is not a preference.
+  Where a decomposition does not yet exist, the spec pipeline decides it once.
+  Where it already exists as backlog rows, intakes are written directly and
+  each one is read adversarially against the merged code before it is
+  dispatched. `AGENTS.md` now says both.
+- What the direct route demonstrably buys, on the day it was used: reading the
+  UNIT-012 intake before dispatch found five defects, three of which would each
+  have cost a round. A contract named `Intent` and `OrderEvent`, neither of
+  which existed anywhere in `src/`. An acceptance criterion declared four
+  states terminal, which made the remaining two unreachable and the machine
+  incoherent. The contract declared four names while the criteria required a
+  broker lookup and a duplicate guard. UNIT-012 then took two review rounds
+  where UNIT-004 and UNIT-011, dispatched without that reading, took three
+  each.
+- What it demonstrably costs, recorded because it is the honest half. Reading
+  one intake at a time finds gaps that live between units late, and serially.
+  On the same day: UNIT-013 was named inconsistently by three separate intakes,
+  the bounded price ladder turned out to be owned by no backlog row and had to
+  become UNIT-018 mid-day, `Article` turned out to carry no summary and had to
+  become UNIT-030, and nothing at all produces the rung prices UNIT-018
+  consumes, which is still unowned. Every one of those is a decomposition
+  defect, which is exactly what a spec pass is designed to surface in one
+  reading rather than in five.
+- The mitigation, cheap and required rather than encouraged: before writing a
+  batch of intakes from existing backlog rows, read the rows themselves against
+  each other and against the merged code, looking for a unit that two rows
+  claim, a capability no row claims, and a record that a consumer needs and no
+  producer fills. That is the decomposition-level question, asked once, without
+  the four-artifact ceremony. It is what would have caught all four gaps above.
+- Rejected: deleting the spec skills, or declaring the pipeline dead. It is the
+  right route for a genuinely new feature whose boundaries nobody has drawn,
+  and the reason it has gone unused is that this project inherited its
+  decomposition from `specs/000-INTAKE.md` on day one.
+- Revisit only if: a batch of directly written intakes produces a
+  decomposition defect that the mitigation above should have caught. That would
+  mean the cheap pass is not enough and the full pipeline earns its cost.
