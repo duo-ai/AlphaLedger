@@ -189,10 +189,10 @@ section 8's "no same-day expiration" is a hard invariant of this unit, not a
 configurable threshold, so it cannot be relaxed by a caller passing
 `dte_min=0`. Every other bound in `StructureRules` is exactly the threshold
 design section 9 asks for; none is hardcoded in this module, and none is read
-from `config/`, since no committed file holds them yet and `config/**` is
-outside this unit's declared paths. A future unit that wires a `structure.toml`
-or extends `risk.toml` supplies these values; this unit only declares the
-shape they must have.
+from the committed configuration, since no committed file holds them yet and
+this unit declares no configuration path of its own. A future unit that wires a
+structure table, or extends the risk table, supplies these values; this unit
+only declares the shape they must have.
 
 `StructureEnumerationResult` mirrors the biconditional already established by
 `Forecast.eligible`/`rejection_reasons`, but stricter: `candidates` non-empty
