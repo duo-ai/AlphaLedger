@@ -351,9 +351,20 @@ read method here; none of them substitutes an empty result.
   `latest_order_state_for(id)` returns `OrderState.WORKING`. Recording
   `OrderState.FILLED` afterward for the same id changes
   `latest_order_state_for(id)` to `FILLED`, while `entries_for(id)` still
-  lists both, `WORKING` before `FILLED`. Recording `OrderState.WORKING` a
-  second time at a different `recorded_at`, standing in for a retry, does not
-  add a third entry; `entries_for(id)` still shows exactly one `WORKING`
+  lists both, `WORKING` before `FILLED`. Recording `OrderState.FILLED` again
+  immediately, at a different `recorded_at` and with no other state in
+  between, stands in for a retry of one observation and does not add a third
+  entry; `entries_for(id)` still shows exactly one `FILLED`
+- AC-7a: coalescing compares against the most recent entry for the id, never
+  the whole history. `PARTIAL`, then `CANCEL_PENDING`, then `PARTIAL` records
+  three entries in that order, and `latest_order_state_for(id)` answers
+  `PARTIAL` from a fresh instance opened on the same path. That sequence is
+  legal in UNIT-012's transition table, because a cancel can lose the race
+  against a fill, so the ledger has to hold it. An earlier draft of AC-7 asked
+  for the opposite using `WORKING`, `FILLED`, `WORKING` as its example, which
+  is not a sequence any broker can produce: `transition` refuses `FILLED` to
+  `WORKING`. Justifying the loss of a possible transition with an impossible
+  one is how that draft passed review as written
   entry.
 - AC-8: for a `client_order_id` or `subject_id` nothing has ever been
   recorded against, `submission_attempt_for` returns `None`,
@@ -489,3 +500,24 @@ uv run mypy src
   state, sizing, broker timeouts, stale data, and flattening. None is an
   acceptance criterion here and none is actionable inside
   `src/alphaledger/ledger/**`.
+
+- 2026-08-29 second pass stopped before editing, on a conflict the round one
+  amendment introduced. The recorded finding required coalescing only an
+  immediate duplicate, while AC-7 still required a non-adjacent repeat to
+  coalesce. One implementation cannot satisfy both, and the unit's globs do not
+  let an implementer repair its own intake, so stopping was correct.
+
+  AC-7 was wrong and is rewritten above, with AC-7a added for the recurrence.
+  The original conflated two different things: an idempotent retry of one
+  observation, which should write once, and a genuine recurrence after an
+  intervening state, which must append. It then justified coalescing the second
+  using `WORKING`, `FILLED`, `WORKING`, a sequence the merged state machine
+  refuses outright, while the sequence that actually occurs,
+  `PARTIAL`, `CANCEL_PENDING`, `PARTIAL`, is legal and was the one being lost.
+
+  This is the second time today an amendment left an existing criterion
+  standing that contradicted it, after UNIT-013's gate versus raise conflict,
+  and the third time overall counting UNIT-010 in D-021. Recording review
+  findings in the handoff notes is not enough: the numbered criteria the
+  finding touches have to be rewritten in the same pass, because the intake is
+  what the implementer is held to.
