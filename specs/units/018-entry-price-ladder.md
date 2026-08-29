@@ -2,7 +2,7 @@
 id: UNIT-018
 title: Step the bounded entry price ladder
 lane: execution
-state: in_review
+state: merged
 owner: pablo/codex
 branch: feature/018-entry-price-ladder
 reviewer: execution-safety-reviewer
@@ -10,6 +10,10 @@ preferred_runtime: codex
 depends_on: [UNIT-001, UNIT-011, UNIT-012, UNIT-013]
 paths: src/alphaledger/execution/ladder.py, tests/execution/test_ladder.py
 claimed_at: 2026-08-29T18:01:41Z
+reviewed_by: execution-safety-reviewer
+review_verdict: clear
+reviewed_at: 2026-08-29T18:38:10Z
+review_log: [clear]
 ---
 
 ## Problem
