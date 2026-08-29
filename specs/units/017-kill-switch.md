@@ -2,13 +2,14 @@
 id: UNIT-017
 title: Evaluate the equity kill switch and report flatten completion
 lane: execution
-state: available
-owner: -
-branch: -
+state: claimed
+owner: pablo/codex
+branch: feature/017-kill-switch
 reviewer: execution-safety-reviewer
 preferred_runtime: codex
 depends_on: [UNIT-001, UNIT-012, UNIT-015]
 paths: src/alphaledger/execution/killswitch.py, tests/execution/test_killswitch.py
+claimed_at: 2026-08-29T17:31:32Z
 ---
 
 ## Problem
