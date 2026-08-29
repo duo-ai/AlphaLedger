@@ -56,16 +56,18 @@ def test_a_decision_repeated_at_a_later_instant_remains_a_second_ordered_fact(
     assert tuple(entry.entry_id for entry in entries) == (first, second)
 
 
-def test_a_durably_recorded_submission_attempt_is_immediately_retrievable(
+def test_a_submission_attempt_is_retrieved_from_disk_not_process_memory(
     tmp_path: Path,
 ) -> None:
-    ledger = a_ledger(tmp_path)
+    path = tmp_path / "decisions.jsonl"
+    first_process = DecisionLedger(AppendOnlyStore(path))
 
-    recorded = ledger.record_submission_attempt(
+    recorded = first_process.record_submission_attempt(
         "client-order-1", {"payload_hash": "sha256:abc"}, T0
     )
+    reopened = DecisionLedger(AppendOnlyStore(path))
 
-    assert recorded == ledger.submission_attempt_for("client-order-1")
+    assert recorded == reopened.submission_attempt_for("client-order-1")
     assert isinstance(recorded, RecordedSubmissionAttempt)
 
 
@@ -214,18 +216,21 @@ def test_submission_retry_normalizes_semantic_values_and_ignores_the_new_instant
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "decisions.jsonl"
-    ledger = DecisionLedger(AppendOnlyStore(path))
+    first_process = DecisionLedger(AppendOnlyStore(path))
     payload = {
         "limit_price": Decimal("1.23456"),
         "approved_at": datetime(2026, 8, 29, 14, 0, tzinfo=timezone(timedelta(hours=2))),
     }
 
-    first = ledger.record_submission_attempt("client-order-1", payload, T0)
-    second = ledger.record_submission_attempt("client-order-1", payload, T0 + timedelta(minutes=5))
+    first = first_process.record_submission_attempt("client-order-1", payload, T0)
+    restarted = DecisionLedger(AppendOnlyStore(path))
+    second = restarted.record_submission_attempt(
+        "client-order-1", payload, T0 + timedelta(minutes=5)
+    )
 
     assert first == second
     assert first.record_id == second.record_id
-    assert len(ledger.entries_for("client-order-1")) == 1
+    assert len(restarted.entries_for("client-order-1")) == 1
     assert len(path.read_text(encoding="utf-8").splitlines()) == 1
 
 
@@ -258,6 +263,35 @@ def test_repeating_one_order_state_after_restart_does_not_duplicate_the_fact(
 
     assert first == second
     assert len(restarted.entries_for("client-order-1")) == 1
+
+
+def test_a_legal_state_recurrence_is_not_dropped_as_an_old_duplicate(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "decisions.jsonl"
+    ledger = DecisionLedger(AppendOnlyStore(path))
+
+    ledger.record_order_state("client-order-1", OrderState.PARTIAL, T0)
+    ledger.record_order_state(
+        "client-order-1",
+        OrderState.CANCEL_PENDING,
+        T0 + timedelta(minutes=1),
+    )
+    ledger.record_order_state(
+        "client-order-1",
+        OrderState.PARTIAL,
+        T0 + timedelta(minutes=2),
+    )
+
+    restarted = DecisionLedger(AppendOnlyStore(path))
+    entries = restarted.entries_for("client-order-1")
+
+    assert tuple(entry.payload["state"] for entry in entries) == (
+        OrderState.PARTIAL.value,
+        OrderState.CANCEL_PENDING.value,
+        OrderState.PARTIAL.value,
+    )
+    assert restarted.latest_order_state_for("client-order-1") is OrderState.PARTIAL
 
 
 # --- no-trade -----------------------------------------------------------
