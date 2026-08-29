@@ -144,7 +144,7 @@ present and verified to fire inside a worktree.
 | UNIT-026 | research | Run the required baselines and ablations | G3 |
 
 Every row above has an intake file in `specs/units/` except UNIT-016,
-UNIT-017, UNIT-018, UNIT-026, and UNIT-027, which are backlog rows. Promoting
+UNIT-017, and UNIT-018, which are backlog rows. Promoting
 one means writing its intake from `specs/TEMPLATE.md`. Run
 `uv run python scripts/coord.py list` for current state rather than reading it
 here; this table records the decomposition, not progress. Use `uv run python`
