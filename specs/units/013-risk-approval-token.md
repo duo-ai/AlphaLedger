@@ -2,7 +2,7 @@
 id: UNIT-013
 title: Produce a risk approval token bound to the order payload
 lane: execution
-state: claimed
+state: in_review
 owner: pablo/codex
 branch: feature/013-risk-approval-token
 reviewer: execution-safety-reviewer
@@ -10,6 +10,10 @@ preferred_runtime: codex
 depends_on: [UNIT-001, UNIT-004, UNIT-011]
 paths: src/alphaledger/risk/**, tests/risk/**
 claimed_at: 2026-08-29T11:43:55Z
+reviewed_by: execution-safety-reviewer
+review_verdict: block
+reviewed_at: 2026-08-29T14:39:11Z
+review_log: [block]
 ---
 
 ## Problem
