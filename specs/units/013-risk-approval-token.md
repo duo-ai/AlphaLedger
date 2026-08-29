@@ -105,13 +105,12 @@ Out:
   an arm token against it, because no such token exists yet anywhere in the
   repository, and inventing one here would be building the orchestrator's
   state machine inside the risk module.
-- The bounded entry price ladder from design section 11 step 4. `specs/000-
-  INTAKE.md` notes that UNIT-011 and UNIT-012 each pushed this to UNIT-013 and
-  corrects both references, leaving the promotion decision to whoever writes
-  this intake. It is left out: a ladder step changes the limit price and
-  therefore the payload and its hash, so each step is a new `approve` call
-  against a new payload, and nothing about stepping the ladder needs new
-  machinery inside risk. No backlog row owns the ladder itself yet.
+- The bounded entry price ladder from design section 11 step 4, owned by
+  UNIT-018, which depends on this unit and on UNIT-012 for exactly the reason
+  given there: a ladder step changes the limit price and therefore the
+  payload and its hash, so each step is a new `approve` call against a new
+  payload, and the ladder itself is a bounded loop that calls this unit
+  repeatedly rather than something implemented inside it.
 - Five limits design section 10's table names, which this unit does not
   assert because no frozen threshold for them exists in `config/risk.toml`
   today: total open defined risk, sector open risk, positions per underlying,
@@ -159,24 +158,24 @@ Design section 8 gives maximum loss for a debit vertical as `100D` dollars,
 where `D` is the net debit in points and `100` is the option contract
 multiplier. `StructurePlan.exact_max_loss` is that dollar figure, already
 multiplier-scaled, for one spread, one contract of quantity. The total risk
-for an approved quantity is `exact_max_loss * quantity`, and `max_approved_
-quantity` below divides equity fraction by `exact_max_loss` for exactly this
-reason. `StructurePlan.entry_limit_bound` and the payload's `limit_price` are
-a different quantity: a per-share price bound in the same points convention
-Alpaca's option order accepts, not multiplier-scaled. Confusing the two would
-size a position up to a hundred times too large in the risk-increasing
-direction. UNIT-014, which will produce `entry_limit_bound` and `exact_max_
-loss` together, inherits the obligation to keep them on these two conventions;
-this unit only consumes them, and states the convention rather than guessing
-it silently.
+for an approved quantity is `exact_max_loss * quantity`, and
+`max_approved_quantity` below divides equity fraction by `exact_max_loss` for
+exactly this reason. `StructurePlan.entry_limit_bound` and the payload's
+`limit_price` are a different quantity: a per-share price bound in the same
+points convention Alpaca's option order accepts, not multiplier-scaled.
+Confusing the two would size a position up to a hundred times too large in
+the risk-increasing direction. UNIT-014, which will produce
+`entry_limit_bound` and `exact_max_loss` together, inherits the obligation to
+keep them on these two conventions; this unit only consumes them, and states
+the convention rather than guessing it silently.
 
 ## Contract
 
 `alphaledger.risk.approval`, importing from `alphaledger.domain`,
 `alphaledger.config`, and `alphaledger.execution.orders`. None of those import
-back from `alphaledger.risk`, so this adds no cycle. `alphaledger/risk/
-__init__.py` carries a docstring and no re-exports, matching `execution/
-__init__.py`.
+back from `alphaledger.risk`, so this adds no cycle.
+`alphaledger/risk/__init__.py` carries a docstring and no re-exports,
+matching `alphaledger/execution/__init__.py`.
 
 ```python
 class SizingMode(StrEnum):
@@ -220,8 +219,8 @@ def is_expired(approval: RiskApproval, now: datetime) -> bool: ...
 
 `AccountSnapshot.equity` is validated through `money()`, on the same terms as
 every other money field in this codebase; a `float` is rejected, never
-converted. `snapshot_time` is validated through `require_utc`. `open_position_
-count` is a non-negative whole number.
+converted. `snapshot_time` is validated through `require_utc`.
+`open_position_count` is a non-negative whole number.
 
 `AccountSnapshot.frozen_config_hash` exists to close a gap in the frozen
 domain contract. Rule bullet 2 requires a risk approval "bound to the
@@ -271,22 +270,21 @@ duplicated. It does not prove the structure is a valid debit vertical; that
 proof is design section 8's `D<=0`/`D>=W`/naked-short check, performed when
 the structure is built, per UNIT-014 above.
 
-`max_approved_quantity` computes `floor(equity * risk_config.maximum_loss_
-fraction_per_new_trade / plan.exact_max_loss)`, rounding toward zero so the
-fraction is never exceeded by rounding, then caps that at `risk_config.
-max_contracts_per_structure` in `STANDARD` mode or `risk_config.smoke_test_max_
-contracts` in `SMOKE_TEST` mode. A result of zero, from equity too small
-relative to the plan's own max loss, is zero contracts: a caller sees this
-before ever building a payload, and this is where the sizing half of a
-`no_trade` decision actually happens, not inside `approve`.
+`max_approved_quantity` computes
+`floor(equity * risk_config.maximum_loss_fraction_per_new_trade / plan.exact_max_loss)`,
+rounding toward zero so the fraction is never exceeded by rounding, then caps
+that at `risk_config.max_contracts_per_structure` in `STANDARD` mode or
+`risk_config.smoke_test_max_contracts` in `SMOKE_TEST` mode. A result of zero,
+from equity too small relative to the plan's own max loss, is zero contracts:
+a caller sees this before ever building a payload, and this is where the
+sizing half of a `no_trade` decision actually happens, not inside `approve`.
 
 `approval_id` is derived, not random: a SHA-256 digest, base64-urlsafe
-encoded, over the canonical bytes of `(plan.plan_id, the payload's own
-quantity, the recomputed order_payload_hash, account_snapshot_hash, mode,
-expires_at, approved, failed_gates)`, using `canonical_bytes` again rather
-than a second scheme. The same inputs produce the same id in a separate
-process, matching `client_order_id`'s determinism in `alphaledger.execution.
-lifecycle`.
+encoded, over the canonical bytes of
+`(plan.plan_id, the payload's own quantity, the recomputed order_payload_hash, account_snapshot_hash, mode, expires_at, approved, failed_gates)`,
+using `canonical_bytes` again rather than a second scheme. The same inputs
+produce the same id in a separate process, matching `client_order_id`'s
+determinism in `alphaledger.execution.lifecycle`.
 
 ## Acceptance criteria
 
@@ -301,27 +299,27 @@ lifecycle`.
   refused with `GATE_ENTRY_LIMIT_BOUND_EXCEEDED` in `failed_gates`, and
   `limit_price` equal to the bound is not refused on this gate.
 - AC-4: a payload whose quantity exceeds `max_approved_quantity` for the same
-  plan, snapshot, and mode is refused with `GATE_QUANTITY_EXCEEDS_APPROVED_
-  CAP`.
+  plan, snapshot, and mode is refused with `GATE_QUANTITY_EXCEEDS_APPROVED_CAP`.
 - AC-5: a payload whose summed buy-side and sell-side `ratio_qty` disagree is
   refused with `GATE_UNBALANCED_LEGS`.
-- AC-6: a snapshot whose `open_position_count` is at or above `risk_config.
-  maximum_concurrent_positions` is refused with `GATE_CONCURRENT_POSITION_
-  LIMIT`.
+- AC-6: a snapshot whose `open_position_count` is at or above
+  `risk_config.maximum_concurrent_positions` is refused with
+  `GATE_CONCURRENT_POSITION_LIMIT`.
 - AC-7: a snapshot whose `frozen_config_hash` does not equal the evaluated
-  `FrozenConfig.frozen_config_hash` is refused with `GATE_CONFIG_HASH_
-  MISMATCH`.
+  `FrozenConfig.frozen_config_hash` is refused with `GATE_CONFIG_HASH_MISMATCH`.
 - AC-8: when every gate above passes, `approved` is `True`, `failed_gates` is
   empty, and both `account_snapshot_hash` and `order_payload_hash` on the
   returned approval equal those functions called independently on the same
   snapshot and payload.
-- AC-9: `max_approved_quantity` returns zero when `equity * maximum_loss_
-  fraction_per_new_trade` is less than one plan's `exact_max_loss`, and
-  otherwise returns `min(floor(equity * fraction / exact_max_loss), cap)` with
-  `cap` selected by `mode`; a test exercises both modes and shows `SMOKE_TEST`
-  capping a quantity `STANDARD` would allow.
-- AC-10: `is_expired(approval, now)` is `True` exactly when `now >= approval.
-  expires_at`, tested strictly before, at, and strictly after the boundary.
+- AC-9: `max_approved_quantity` returns zero when
+  `equity * maximum_loss_fraction_per_new_trade` is less than one plan's
+  `exact_max_loss`, and otherwise returns
+  `min(floor(equity * fraction / exact_max_loss), cap)` with `cap` selected by
+  `mode`; a test exercises both modes and shows `SMOKE_TEST` capping a
+  quantity `STANDARD` would allow.
+- AC-10: `is_expired(approval, now)` is `True` exactly when
+  `now >= approval.expires_at`, tested strictly before, at, and strictly after
+  the boundary.
 - AC-11: `approve` raises `ValueError` rather than returning any `RiskApproval`
   when `expires_at` is at or before `now`, and when `plan.exact_max_loss` is
   not strictly positive.
@@ -337,9 +335,9 @@ lifecycle`.
 - success: `max_approved_quantity` in `STANDARD` mode returns the expected
   floor-divided, capped quantity for a plan and an equity value chosen so the
   risk-sized quantity is below the frozen cap.
-- success: `max_approved_quantity` in `SMOKE_TEST` mode caps at `smoke_test_
-  max_contracts` even when the risk-sized quantity and the standard cap would
-  both allow more.
+- success: `max_approved_quantity` in `SMOKE_TEST` mode caps at
+  `smoke_test_max_contracts` even when the risk-sized quantity and the
+  standard cap would both allow more.
 - success: `is_expired` agrees at, before, and after the exact expiry instant.
 - failure: `approve` raises `ValueError` when `expires_at` is at or before
   `now`.
@@ -362,11 +360,11 @@ lifecycle`.
   since no payload exists yet at this stage for a `no_trade` to be logged
   against.
 - no-trade: `approve` refuses with `GATE_ENTRY_LIMIT_BOUND_EXCEEDED`,
-  `GATE_QUANTITY_EXCEEDS_APPROVED_CAP`, `GATE_UNBALANCED_LEGS`, `GATE_
-  CONCURRENT_POSITION_LIMIT`, and `GATE_CONFIG_HASH_MISMATCH` all at once when
-  every condition holds simultaneously, and every one of the five names
-  appears in `failed_gates`, none silently dropped by a gate that only records
-  the first failure it finds.
+  `GATE_QUANTITY_EXCEEDS_APPROVED_CAP`, `GATE_UNBALANCED_LEGS`,
+  `GATE_CONCURRENT_POSITION_LIMIT`, and `GATE_CONFIG_HASH_MISMATCH` all at
+  once when every condition holds simultaneously, and every one of the five
+  names appears in `failed_gates`, none silently dropped by a gate that only
+  records the first failure it finds.
 - no-trade: `approve` in `SMOKE_TEST` mode refuses a payload quantity that
   `STANDARD` mode would have approved, because the smoke cap applies.
 

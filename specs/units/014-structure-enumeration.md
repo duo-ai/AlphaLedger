@@ -224,8 +224,8 @@ D-023.
 ### Leg vocabulary: not promoted to a typed record
 
 D-014 notes UNIT-014 may promote a `StructurePlan` leg to a typed record as a
-narrowing. This unit does not. `src/alphaledger/execution/orders.py`,
-`_map_leg`, rejects any leg key outside `{"symbol", "ratio_qty", "side",
+narrowing. This unit does not. `alphaledger.execution.orders`'s `_map_leg`
+rejects any leg key outside `{"symbol", "ratio_qty", "side",
 "position_intent"}` and requires all four present; this was read directly
 before writing this intake. A typed record is not a `Mapping[str, object]`
 with exactly that closed key set unless it is converted at the boundary, and
