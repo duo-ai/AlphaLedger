@@ -291,6 +291,25 @@ def _low_precision_relative_spread_projection() -> str:
     )
 
 
+def _low_precision_delta_band_projection() -> str:
+    chains = _chains()
+    contracts = (
+        _contract(chains, delta=Decimal("0.44999999")),
+        _call_contracts(chains)[1],
+    )
+    with localcontext() as context:
+        context.prec = 7
+        result, _ = _enumerate(chains, contracts)
+    return json.dumps(
+        {
+            "candidate_ids": [plan.plan_id for plan in result.candidates],
+            "rejection_reasons": result.rejection_reasons,
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
 def _call_projection() -> str:
     chains = _chains()
     result, _ = _enumerate(chains, _call_contracts(chains))
@@ -741,3 +760,28 @@ def test_all_delta_band_failures_are_distinct_from_contract_gate_failures() -> N
 
     _assert_rejection(result, "delta_band", _LONG_CALL_SYMBOL, _SHORT_CALL_SYMBOL)
     assert all("delta_required" not in reason for reason in result.rejection_reasons)
+
+
+def test_delta_band_gate_is_exact_across_decimal_contexts_and_processes() -> None:
+    chains = _chains()
+    contracts = (
+        _contract(chains, delta=Decimal("0.44999999")),
+        _call_contracts(chains)[1],
+    )
+    default_result, _ = _enumerate(chains, contracts)
+    with localcontext() as context:
+        context.prec = 7
+        low_precision_result, _ = _enumerate(chains, contracts)
+
+    _assert_rejection(default_result, "delta_band", _LONG_CALL_SYMBOL)
+    _assert_rejection(low_precision_result, "delta_band", _LONG_CALL_SYMBOL)
+    assert low_precision_result == default_result
+    expected_projection = json.dumps(
+        {
+            "candidate_ids": [],
+            "rejection_reasons": default_result.rejection_reasons,
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    assert _subprocess_helper("_low_precision_delta_band_projection") == expected_projection
