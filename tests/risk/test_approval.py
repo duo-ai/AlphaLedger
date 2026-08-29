@@ -431,79 +431,49 @@ def test_snapshot_hash_changes_under_every_single_field_mutation(
 
 
 @pytest.mark.parametrize(
-    "bound_input",
+    ("field", "replacement"),
     [
-        "plan_id",
-        "quantity",
-        "order_payload_hash",
-        "account_snapshot_hash",
-        "mode",
-        "expires_at",
-        "approved",
-        "failed_gates",
+        ("plan_id", "plan-approval-002"),
+        ("quantity", 2),
+        ("order_payload_hash", "payload-hash-002"),
+        ("account_snapshot_hash", "snapshot-hash-002"),
+        ("mode", "smoke_test"),
+        ("expires_at", _EXPIRES_AT + timedelta(microseconds=1)),
+        ("approved", False),
+        ("failed_gates", ("one_failed_gate",)),
     ],
 )
-def test_public_approval_id_changes_under_every_bound_input_mutation(
-    bound_input: str,
+def test_public_approve_binds_every_id_field_under_isolated_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    replacement: object,
 ) -> None:
     api = _risk_api()
     config = _frozen_config()
     plan = _plan()
-    payload = _payload(plan, quantity=1)
-    snapshot = _snapshot(api, config)
-    mode = api.SizingMode.STANDARD
-    expires_at = _EXPIRES_AT
+    captured: dict[str, object] = {}
+    derive_approval_id = api._approval_id
 
-    if bound_input == "failed_gates":
-        snapshot = _snapshot(
-            api,
-            config,
-            open_position_count=config.risk.maximum_concurrent_positions,
-        )
-    baseline = api.approve(
+    def capture_approval_id(**bound_fields: object) -> str:
+        captured.update(bound_fields)
+        return derive_approval_id(**bound_fields)
+
+    monkeypatch.setattr(api, "_approval_id", capture_approval_id)
+
+    approval = api.approve(
         plan,
-        payload,
-        snapshot,
+        _payload(plan, quantity=1),
+        _snapshot(api, config),
         config,
-        mode,
-        expires_at,
+        api.SizingMode.STANDARD,
+        _EXPIRES_AT,
         _NOW,
         _MAX_SNAPSHOT_AGE,
     )
+    changed = captured | {field: replacement}
 
-    if bound_input == "plan_id":
-        plan = replace(plan, plan_id="plan-approval-002")
-        payload = _payload(plan, quantity=1)
-    elif bound_input == "quantity":
-        payload = _payload(plan, quantity=2)
-    elif bound_input == "order_payload_hash":
-        changed_legs = [dict(leg) for leg in plan.legs]
-        changed_legs[1]["symbol"] = "SPY260918C00510000"
-        plan = replace(plan, legs=tuple(changed_legs))
-        payload = _payload(plan, quantity=1)
-    elif bound_input == "account_snapshot_hash":
-        snapshot = _snapshot(api, config, equity=Decimal("60001.0000"))
-    elif bound_input == "mode":
-        mode = api.SizingMode.SMOKE_TEST
-    elif bound_input == "expires_at":
-        expires_at += timedelta(microseconds=1)
-    elif bound_input == "approved":
-        plan = replace(plan, entry_limit_bound=Decimal("1.2400"))
-    else:
-        plan = replace(plan, entry_limit_bound=Decimal("1.2400"))
-
-    changed = api.approve(
-        plan,
-        payload,
-        snapshot,
-        config,
-        mode,
-        expires_at,
-        _NOW,
-        _MAX_SNAPSHOT_AGE,
-    )
-
-    assert changed.approval_id != baseline.approval_id
+    assert approval.approval_id == derive_approval_id(**captured)
+    assert derive_approval_id(**changed) != approval.approval_id
 
 
 def test_identical_approval_inputs_reproduce_all_bound_ids_after_restart() -> None:
