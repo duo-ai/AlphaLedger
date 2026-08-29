@@ -172,6 +172,7 @@ def test_three_known_orders_are_resolved_independently_in_input_order() -> None:
     assert all(item.decision.action is RecoveryAction.ADOPT_EXISTING for item in report.orders)
     assert report.unexplained_orders == ()
     assert report.unexplained_positions == ()
+    assert report.reasons == (reconciliation.ORDER_NOT_RECONCILED_REASON,)
 
 
 def test_open_order_without_matching_known_order_is_reported_by_specific_reason() -> None:
@@ -272,10 +273,22 @@ def test_order_lookup_failure_with_known_order_blocks_on_unavailable_truth() -> 
 
 def test_position_without_symbol_coverage_is_reported_as_unexplained() -> None:
     reconciliation = _reconciliation()
+    broker_order = _broker_order("different-symbol-order", BrokerOrderStatus.FILLED)
     position = _position("QQQ260918P00450000")
-    broker = MemoryBroker(positions=(position,))
+    broker = MemoryBroker(
+        (broker_order,),
+        positions=(position,),
+        activities=(_activity(position.symbol, broker_order.broker_id),),
+    )
+    known_orders = (
+        _known_order(
+            reconciliation,
+            broker_order.client_order_id,
+            covered_symbols=frozenset({_OPTION_SYMBOL}),
+        ),
+    )
 
-    report = reconciliation.reconcile(broker, broker, ())
+    report = reconciliation.reconcile(broker, broker, known_orders)
 
     assert report.unexplained_positions == (
         reconciliation.UnexplainedPosition(
