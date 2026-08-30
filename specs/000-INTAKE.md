@@ -125,6 +125,7 @@ present and verified to fire inside a worktree.
 | UNIT-002 | shared | Amend the news label contract to hold what the labeler emits | G1 |
 | UNIT-003 | shared | Enumerate the news category on the label | G1 |
 | UNIT-004 | shared | Load the frozen configuration and hash it | G1 |
+| UNIT-005 | shared | Commit the risk thresholds design section 10 requires | G2 |
 | UNIT-010 | execution | Assert the paper endpoint and make live impossible | G1 |
 | UNIT-011 | execution | Map Alpaca order schemas behind a typed adapter | G1 |
 | UNIT-012 | execution | Implement the order state machine and idempotent client ids | G1 |
@@ -134,6 +135,7 @@ present and verified to fire inside a worktree.
 | UNIT-016 | execution | Append-only decision and trade ledger | G2 |
 | UNIT-017 | execution | Kill switch and emergency flatten | G2 |
 | UNIT-018 | execution | Step the bounded entry price ladder | G2 |
+| UNIT-019 | execution | Derive the bounded entry rung price sequence from live quotes | G2 |
 | UNIT-020 | research | Record point-in-time observations with the timestamp contract | G3 |
 | UNIT-021 | research | Generate the lagged frozen universe | G3 |
 | UNIT-022 | research | Build residual price and volume features | G3 |
@@ -146,9 +148,13 @@ present and verified to fire inside a worktree.
 | UNIT-029 | research | Label news through a cached LLM adapter | G3 |
 | UNIT-030 | research | Carry the article summary on the news record | G3 |
 
-Every row above has an intake file in `specs/units/` except UNIT-016,
-UNIT-017, UNIT-018, and UNIT-029, which are backlog rows. Promoting
-one means writing its intake from `specs/TEMPLATE.md`. Run
+Every row above has an intake file in `specs/units/`. There is no backlog row
+without one, so the next piece of work is a claim rather than an authoring
+step. Promoting a future row means writing its intake from
+`specs/TEMPLATE.md`. This paragraph named UNIT-016, UNIT-017, UNIT-018, and
+UNIT-029 as intake-less backlog rows until 2026-08-30, by which point all four
+had intakes and the first three had merged, so it had been describing a state
+the repository left days earlier. Run
 `uv run python scripts/coord.py list` for current state rather than reading it
 here; this table records the decomposition, not progress. Use `uv run python`
 rather than a bare `python3`: `coord.py` needs `datetime.UTC`, which the system
@@ -166,6 +172,32 @@ at a new price produces a new id, a new payload, and therefore a new approval.
 The ladder is a bounded loop that calls the approval unit repeatedly, which
 puts it above UNIT-013 rather than inside it. It depends on UNIT-012 and
 UNIT-013, and it must not be implemented inside any unit that disclaims it.
+
+UNIT-005 and UNIT-019 were added on 2026-08-30, and both close gaps this
+table had left open rather than introducing new work. The mitigation D-026
+prescribes was applied first: the rows were read against each other and against
+the merged code, looking for a unit two rows claim, a capability no row claims,
+and a record a consumer needs that no producer fills.
+
+UNIT-019 is the second kind. UNIT-018 consumes an ordered sequence of candidate
+limit prices and its own intake records that no row produces one; UNIT-014
+carries the quotes in `ChainContract` and disclaims the pricing. So the ladder
+and the chain enumeration both merged with the function between them owned by
+nobody, which is exactly the shape UNIT-018 itself was created to fix and is
+recorded here rather than left for a third discovery.
+
+UNIT-005 is the third kind. Design section 10 requires a daily loss stop, a
+peak-to-valley kill switch bound, and a staleness bound. `config/risk.toml`
+commits none of the three, verified against the file, so UNIT-013 and UNIT-017
+each take them as required explicit parameters and each recorded that as a gap.
+D-017 makes a threshold that explains a decision something that has to be
+committed and hashed, so leaving them as arguments means a halted session
+cannot prove which threshold halted it.
+
+Neither row overlaps anything claimed. UNIT-019 declares
+`src/alphaledger/structure/pricing.py`, a file that does not exist, and
+UNIT-005 declares `config/risk.toml` and the config package, which no other
+unmerged unit touches.
 
 UNIT-025 and UNIT-026 were corrected on 2026-08-29, and the correction runs
 the same way the UNIT-018 one did. Three stale rows sat below this prose,
