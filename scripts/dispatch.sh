@@ -55,10 +55,17 @@ which is where the review round count lives, and the refusal after two rounds th
 # not going to be claimed again, so asking whether it is claimable would only
 # fail on a question the batch does not need answered.
 require_claimable() {
-    local unit="$1" held_by
+    local unit="$1" held_by state
     held_by=$(bash scripts/hook_python.sh scripts/coord.py show "$unit" \
         | sed -n 's/^owner: //p' | head -1)
-    [ "$held_by" = "$OWNER" ] && return 0
+    state=$(bash scripts/hook_python.sh scripts/coord.py show "$unit" \
+        | sed -n 's/^state: //p' | head -1)
+    # Resuming a unit this owner already holds is legitimate, but only while it
+    # is still claimed. Skipping the check for every unit the owner owns would
+    # wave through a merged one, and would let an in_review unit reach the claim
+    # loop without --continue, which is how D-022's round-count gate gets
+    # bypassed.
+    [ "$held_by" = "$OWNER" ] && [ "$state" = "claimed" ] && return 0
     bash scripts/hook_python.sh scripts/coord.py check "$unit" --owner "$OWNER" \
         || die "$unit would not be claimable. Nothing in this batch has been claimed."
 }

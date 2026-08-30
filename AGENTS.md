@@ -153,7 +153,10 @@ with a judgement call that handing it over would cost more than doing it.
 
 ### Work larger than one unit
 
-Start with a spec rather than an intake, so the decomposition is decided once
+Two routes, and which one applies depends on whether the decomposition already
+exists. See D-026, which records why.
+
+When the decomposition is NOT decided, start with a spec, so it is decided once
 and several units become dispatchable at the same time:
 
 ```
@@ -165,6 +168,18 @@ unchanged. `specs/features/README.md` has the detail. The reason to plan ahead
 is parallelism: `coord.py` refuses a batch whose path globs overlap, so a
 decomposition that survives `dispatch.sh --dry-run` is one that can actually
 run at once.
+
+When the decomposition already exists, as backlog rows in
+`specs/000-INTAKE.md`, write the intakes directly and read each one
+adversarially against the merged code before dispatching it. That reading is
+not optional and it is not a formality: on UNIT-012 it found a contract naming
+a type that existed nowhere and an acceptance criterion that made two of eleven
+states unreachable, either of which would have cost a dispatch round.
+
+Both routes converge on the same thing, an intake precise enough that an
+implementer never has to guess. The spec route reaches it by deciding the
+boundaries first; the direct route reaches it by checking each boundary against
+code that already exists.
 
 ### Claiming a unit
 

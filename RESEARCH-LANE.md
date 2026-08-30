@@ -18,16 +18,16 @@ Three units, in this order:
 | UNIT-021 | Generate the lagged frozen universe | merged |
 | UNIT-022 | Build residual price and volume features | merged |
 | UNIT-024 | Split chronologically and register every trial | merged |
-| UNIT-003 | Enumerate the news category on the label | claimable now |
-| UNIT-023 | Encode point-in-time news into features | blocked by UNIT-003 |
+| UNIT-003 | Enumerate the news category on the label | merged |
+| UNIT-023 | Encode point-in-time news into features | merged |
 
-The first four are done. The evidence and validation scaffolding they built is
-what everything below now rests on, so read their handoff notes before starting
-UNIT-003: they record decisions you would otherwise have to rediscover.
+All six are done. The evidence and validation scaffolding they built is what
+everything below now rests on, so read their handoff notes before claiming
+anything: they record decisions you would otherwise have to rediscover.
 
-UNIT-003 is small and sits in the shared lane rather than the research one, but
-UNIT-023 depends on it, so it is the thing standing between you and the news
-family. Take it first.
+The lane has grown since this brief was written. Run `python3 scripts/coord.py
+list --lane research` for the current set rather than trusting this table, and
+see the dated update at the end of this file for what changed.
 
 You own these paths and nothing else:
 
@@ -195,7 +195,11 @@ naming the offending field. If your pipeline silently filters it instead of
 rejecting it, that is a defect, because silent filtering is how a leak becomes
 invisible in production.
 
-## The three units
+## The three units, as originally delegated
+
+Historical. UNIT-020, UNIT-021, and UNIT-022 are all merged. Read this section
+for the reasoning behind decisions you are now standing on, not as work to do.
+The current work is in "The run plan" at the end of this file.
 
 ### UNIT-020, the point-in-time recorder
 
@@ -336,3 +340,313 @@ met, and what remains unverified.
 
 That last part is not a formality. Never call a path verified when it was only
 inspected. If you did not run it, say you did not run it.
+
+## Update, 2026-08-29, from the execution lane
+
+Written by `pablo/claude` after the execution lane closed. Nothing here changes
+what you own; it records what moved underneath you and the two things that bear
+directly on your work.
+
+### The execution lane is complete
+
+Eighteen units are merged. The whole spine exists: paper endpoint assertion,
+order schema adapter, order state machine, risk approval token, structure
+enumeration, broker reconciliation, append only ledger, kill switch and
+flatten, and the bounded entry price ladder. Nothing in your lane waits on ours
+any more.
+
+Every number in it comes from a fixture. It has never touched a broker, which
+is the same limitation your lane carries and worth saying in the same breath.
+
+### UNIT-029 is specified, and it is yours
+
+`specs/units/029-news-labeler-adapter.md` now exists. It implements the
+concrete labeler behind the `NewsLabeler` protocol UNIT-023 already declared,
+so the seam is one you designed. It covers Prompt B's payload, the consistency
+rules D-016 assigns to the adapter rather than to the frozen record, the cache
+keyed by content plus model and prompt version, and the prompt injection
+boundary, which is structural rather than hopeful: the system prompt is a fixed
+constant that article text is never interpolated into, and `source_time`,
+`first_seen_time`, and `labeler_version` are always set from the adapter's own
+inputs so a reply cannot forge them.
+
+It carries one `[NEEDS CLARIFICATION]` marker and is therefore not claimable
+until that is answered. The question is whether the news family is headline
+only. `Article` carries `article_id`, `symbols`, `headline`, `source_domain`,
+and `timestamps`, and nothing else, while Prompt B expects a summary or body
+and a company name. Labelling a headline is a materially different family from
+labelling a headline plus a summary, and this is the unit whose output feeds
+the comparison the lane exists to make, so it is being decided rather than
+guessed. Pablo has the question.
+
+Your D-024 finding is already written into that intake as a requirement: an
+article whose `updated_at` exceeds its `created_at` is a second observation,
+so the cache is keyed on content rather than on `article_id` alone. A revision
+therefore misses the cache and is relabelled instead of being served a stale
+label, whatever the upstream identifier does.
+
+### One lesson worth carrying across the lane boundary
+
+Recording a review finding in an intake's handoff notes is not enough. The
+numbered acceptance criteria the finding touches have to be rewritten in the
+same pass, because the intake is what an implementer is held to, not the notes.
+
+This bit three times today. Twice an amendment left a criterion standing that
+contradicted it, and both times the dispatched agent stopped mid unit rather
+than choosing between two sources of truth, which was the right call and cost a
+round each time. D-021 already records the same shape from UNIT-010. If you
+amend an intake after a review, grep it for the criterion the finding touches.
+
+### Tooling that changed under you
+
+- `scripts/dispatch.sh` now validates the whole batch before claiming any unit.
+  It used to claim them one at a time and could die partway, leaving a unit
+  claimed with no worktree and no agent. `--dry-run` now asks the same
+  claimability question a real dispatch asks, so a dry run that passes and a
+  real dispatch that refuses can no longer disagree.
+- `scripts/coord.py` gained `check <UNIT-ID> --owner <handle/runtime>`, which
+  answers whether a claim would succeed without making it. Self-test is at 28
+  cases.
+- `scripts/review.sh` rotates its artifacts instead of truncating them, so a
+  second review round no longer destroys the first round's report. It also
+  appends an explicit `NO VERDICT STATED` notice when a review ends without
+  one, which happened four times today. Grade those from the findings; D-018
+  puts that on the session either way.
+- `scripts/notable.py` no longer reads a TDD red phase as a refusal. "I cannot
+  proceed" is a stop. "The boundary cases cannot proceed until that API exists"
+  is an agent describing red, and it used to announce that as a stop.
+- `scripts/verify_harness.sh` is at 43 checks. Its dispatch fixtures now
+  discover a claimable unit at run time rather than naming unit ids, so they do
+  not rot as the registry moves.
+
+### G0 is still the largest open item
+
+Your 401 is the recorded evidence that it is blocked on access rather than on
+effort, and D-024 says so in those terms. Until it clears, nothing in either
+lane has been observed against a real payload.
+
+## G0 is yours now, 2026-08-29
+
+Pablo has handed you the G0 gate. This section is what you need to discharge
+it; nothing else in this brief changes.
+
+### What G0 is
+
+`hackathon-build-plan.md` defines it as: correct competition account, paper
+endpoint, balance, permissions, feed mode, and submission rules recorded. Its
+failure action is stated in the same row and is not advisory: stop
+implementation assumptions and resolve, do not trade.
+
+It is the oldest open item in the project and it gates everything after it.
+Both lanes are complete in the sense that their code passes its own tests, and
+neither has been observed against a real payload, so every number in this
+repository currently comes from a fixture.
+
+### The concrete artifact
+
+`run_manifest.example.yaml` is the deliverable. It is checked in, it contains
+no secrets, and it already carries every field G0 has to settle. The build plan
+is explicit that G0 remains unpassed until every required field matches the
+actual competition environment and the frozen copy has a recorded hash.
+
+The fields sitting at `null` today, which is the working list:
+
+- `competition.pre_kickoff_code_allowed`, `judging_weights`,
+  `required_artifacts`
+- `broker.account_id_hash`, `expected_starting_equity_usd`, `options_level`,
+  `multi_leg_enabled`, `verified_at_utc`
+- `integrations.execution_adapter`, `execution_sdk_or_api_version`,
+  `mleg_contract_test_artifact`
+- `data.equities_feed`, `options_feed`, `opra_entitled`,
+  `historical_news_first_seen_policy`
+
+Note `broker.account_id_hash`, not an account id. The field is a hash on
+purpose.
+
+### Do not trust the dates already in that file
+
+`competition.kickoff_utc` and `submission_deadline_utc` are populated, and they
+are not verified. The user confirmed on 2026-08-28 that the calendar in
+`hackathon-build-plan.md` is stale, and `project-state/STATUS.md` records that
+the real submission deadline is one of the facts G0 has to establish. Treat
+both values as placeholders that look settled, which is the more dangerous
+shape.
+
+### What is already known, and what it is worth
+
+D-024 is yours and it is the best evidence in the repository about the data
+side. Read it before doing anything here, because it separates two things this
+gate keeps confusing: the published API reference, and an observation of a real
+payload. Everything in D-024 is the former. The one credentialed call made on
+2026-08-29 returned 401.
+
+That 401 is the useful fact for G0. It says the gate is blocked on access, not
+on further reading. No amount of additional schema research moves it.
+
+D-025, recorded today, adds one reference-read finding to the same pile:
+`summary` is a required field on every Alpaca news article, so the news family
+does not depend on entitlement. `content` is fetched only under
+`include_content` and was deliberately not adopted.
+
+### A constraint on how you can verify any of this
+
+Per D-006, every coding-agent Alpaca MCP connection in this repository is
+market-data-only. It omits the `account` and `trading` toolsets deliberately
+and that must never be widened in a committed file. So the MCP server cannot
+read account identity, equity, options level, or positions, which is most of
+the broker block above.
+
+Those facts have to come from the Alpaca console or from the application's own
+adapter running with real credentials. That is a human-in-the-loop step, not
+something to automate around. If you find yourself wanting to add a toolset to
+make this easier, that is the boundary working, not a problem to solve.
+
+Never read, print, log, commit, or copy a key, a secret, a dotfile, or a
+credential while doing this. The manifest is committed, which is exactly why it
+holds a hash rather than an identifier.
+
+### The MLeg question, which is the one with teeth
+
+`integrations.mleg_contract_test_artifact` is not paperwork. The build plan
+says to inspect the current `place_option_order` schema and test the documented
+`legs` array shape in a disposable environment, because the MCP repository has
+had a reported multi-leg serialization issue and untested docstrings are not
+evidence.
+
+The execution lane has been built against the documented shape and has never
+sent one. `src/alphaledger/execution/orders.py` `build_mleg_order` produces
+what the reference describes, and UNIT-011's tests pin it against fixtures.
+Whatever you observe live outranks that, per D-024's own revisit rule: record
+the observation first and prefer it.
+
+The unverified replace semantics matter here too. UNIT-012 and UNIT-018 both
+implement the fail-closed interim default, cancel and then resubmit under a new
+deterministic id, precisely because nobody has confirmed whether Alpaca's
+replace preserves a client order id. A live answer to that is worth recording
+even though it changes nothing until it is decided.
+
+### One small decision sitting in your path
+
+D-024 records that Alpaca's news `source` is an originator name such as
+`benzinga`, not a domain, so `Article.source_domain` has no direct counterpart
+in the feed. UNIT-028's intake notes it. Whoever implements that unit either
+derives a domain or the field gets renamed, and that is a decision to record
+rather than to make silently in an adapter.
+
+## The run plan, 2026-08-29
+
+Six units remain in this lane. This section orders them, says which can run at
+the same time, and gives the command for each. Every dependency and every glob
+disjointness claim below was checked with `coord.py`'s own functions, not read
+off the intakes.
+
+### The one thing that shapes everything
+
+`scripts/dispatch.sh` refuses a Claude owner, deliberately. Five of your six
+units declare `preferred_runtime: claude`, so for those the flow is claim, cut
+a worktree, and work them in your own session. Only UNIT-028 is
+`preferred_runtime: codex` and can be handed to the dispatcher.
+
+Claim from the primary clone on `develop`, never from a worktree. Push the
+claim immediately: it touches one file, so concurrent claims on different units
+never conflict.
+
+### The dependency graph
+
+The critical path is `UNIT-027 -> UNIT-025 -> UNIT-026`. Nothing shortens it,
+and the two units after UNIT-027 cannot start early, so the sooner UNIT-027
+merges the sooner the rest of the lane moves.
+
+Beside it runs an independent branch, `UNIT-030 -> UNIT-028` and
+`UNIT-030 -> UNIT-029`. It touches none of the critical path's files.
+
+### Wave 1, startable now
+
+| Unit | Runtime | State |
+|---|---|---|
+| UNIT-027 forward residual labels | claude | already claimed by you, in progress |
+| UNIT-030 article summary | claude | claimable now |
+
+Verified disjoint: UNIT-027 owns `evidence/labels.py`, UNIT-030 owns
+`evidence/news.py`. Both can be open at once.
+
+```bash
+git switch develop && git pull --rebase origin develop
+python3 scripts/coord.py claim UNIT-030 --owner mazwy/claude
+```
+
+UNIT-030 is the smallest unit in the lane and it unblocks two others, so take
+it first if UNIT-027 stalls. It adds one field to `Article`. D-025 records why
+the summary was chosen over a headline-only family and, more importantly, that
+`exclude_contentless` must never be used to build a research sample: dropping
+articles that lack content selects on a property correlated with the outcome.
+
+### Wave 2, the moment UNIT-030 merges
+
+| Unit | Runtime | How |
+|---|---|---|
+| UNIT-028 Alpaca adapter | codex | `scripts/dispatch.sh UNIT-028 mazwy/codex` |
+| UNIT-029 news labeler | claude | claim and work in a worktree |
+
+Verified disjoint from each other and from UNIT-027, so all three can run at
+once. UNIT-028 is the only unit in this lane the dispatcher will take.
+
+UNIT-028 carries the `source_domain` decision: Alpaca's `source` is an
+originator name such as `benzinga`, not a domain, so `Article.source_domain`
+has no counterpart in the feed. Derive one or rename the field, and record
+which. Do not decide it silently inside the adapter. Its reviewer is
+`alpaca-docs-researcher`, and the Codex specialist of that name exists, so a
+dispatched run reviews without mixing model families.
+
+UNIT-029 is the labeler. Its injection boundary is structural: the system
+prompt is a fixed constant that article text is never interpolated into, and
+`source_time`, `first_seen_time`, and `labeler_version` are always set from the
+adapter's own inputs so a reply cannot forge them. Keep it that way. The cache
+is keyed on content plus model and prompt version, which is what makes D-024's
+revision rule hold: a revised article misses the cache and is relabelled rather
+than served a stale label.
+
+### Wave 3, the moment UNIT-027 merges
+
+| Unit | Runtime |
+|---|---|
+| UNIT-025 pooled forecast and eligibility gate | claude |
+
+Disjoint from UNIT-028 and UNIT-029, so it runs alongside whatever of wave 2 is
+still open. This is the first unit that consumes a fold, so it is also the
+first real exercise of the trial registry UNIT-024 built. The registry has
+been proven to refuse what it should and never proven against a real research
+run.
+
+### Wave 4, the moment UNIT-025 merges
+
+| Unit | Runtime |
+|---|---|
+| UNIT-026 baselines and ablations | claude |
+
+The last unit, and the one the whole lane exists for. It runs the comparison
+that decides whether news carries information: random and shuffled, price only,
+news only, and combined, under conservative costs. Midpoint fills are not a
+headline result.
+
+Nothing in this repository has compared those families yet. Until UNIT-026
+runs, the news hypothesis is unfalsified rather than supported.
+
+### Practical notes
+
+- Maximum useful concurrency is three. Wave 2 plus UNIT-027, or wave 3 plus
+  what remains of wave 2.
+- `python3 scripts/coord.py check <UNIT> --owner mazwy/claude` answers whether
+  a claim would succeed without making it. Use it before planning a batch.
+- A unit is not merged until `coord.py state <unit> merged` runs, and that
+  refuses a unit whose last review verdict was not `clear`.
+- A review that ends without a verdict line is now flagged in the artifact with
+  `NO VERDICT STATED`. Grade it from the findings; D-018 puts that on you
+  either way.
+
+### And G0
+
+It is yours, it is blocked on access rather than effort, and it does not
+sequence with any of the above. See "G0 is yours now" earlier in this file.
+Every unit below can be built and merged without it. None of them can be
+believed without it.

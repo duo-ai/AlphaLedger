@@ -574,3 +574,170 @@ belong in the trial registry or status file.
 - Revisit only if: the Day-0 Alpaca smoke test shows replace semantics that make
   a stable id across ladder steps both possible and necessary. Record the
   observed behaviour before changing anything.
+
+## D-024: What the Alpaca schemas actually say, and the four defaults that would leak
+
+- Date: 2026-08-29
+- Source: the Alpaca API reference for `GET /v2/stocks/bars` and
+  `GET /v1beta1/news`, read through the market-data-only MCP server on
+  2026-08-29.
+- Status, stated precisely because this project distinguishes the two: these
+  findings come from the published API reference, not from live data. The
+  credentialed call returned 401, so no observation of a real payload has been
+  made and G0 remains unverified. Everything below is a documented contract to
+  design against and to confirm the first time credentials exist.
+
+Four defaults are the wrong ones for this project, and each would corrupt
+research silently rather than failing.
+
+1. `adjustment` defaults to `raw`, meaning no adjustment for splits,
+   dividends, or spin-offs. UNIT-027 states adjusted bars as a caller
+   obligation it cannot verify, and this is why: an adapter that omits the
+   parameter gets exactly the unadjusted series that turns a two for one split
+   into a fifty percent residual loss. The adapter must pass an explicit
+   adjustment and never rely on the default. `all` is the right choice for a
+   return-prediction label, because a cash dividend produces a real price drop
+   on the ex-date that is not information about the company, and leaving it in
+   would put a scheduled negative residual in the label on a known date.
+
+2. `asof` defaults to the current day, and it controls point-in-time symbol
+   mapping. The documentation's own example is that querying META with an
+   `asof` after the 2022 rename also returns the older FB data relabelled as
+   META. Defaulting it means the ticker identity reflects knowledge from after
+   the decision date, which is a survivorship and look-ahead vector in exactly
+   the place UNIT-021 exists to close. Research queries must pass the
+   historical date, or `-` to skip mapping, and must record which.
+
+3. Bar prices are `double` in the API. `money()` rejects `float` outright, so
+   the adapter has to carry the value as a string into `Decimal` rather than
+   converting through a float. This is a constraint the domain contract already
+   imposes and the feed will actively fight, so it is written down before the
+   adapter is built rather than discovered by a rounding difference.
+
+4. Bars paginate by symbol first, then by timestamp. The reference says
+   plainly that a multi-symbol request may return only one symbol on the first
+   page. A naive single-page fetch therefore yields a panel that looks
+   well-formed and is missing every peer, which UNIT-022 and UNIT-027 would
+   report as `no_peer_data` and demean against nothing. The adapter must follow
+   `next_page_token` to exhaustion and assert per-symbol coverage.
+
+The news schema, against what UNIT-023 assumed:
+
+- `symbols`, `headline`, and `source` exist, so the article shape holds. But
+  `source` is an originator name, for example `benzinga`, not a domain.
+  UNIT-023's `Article.source_domain` therefore has no direct counterpart and
+  the adapter must either derive one or the field must be renamed.
+- `id` is `int64`, so `article_id` is a stringification and not a passthrough.
+- There are two timestamps, `created_at` and `updated_at`, and the sort order
+  is by updated date. Articles are revised. D-014 already says a later revision
+  is a different observation, so `first_seen_time` derives from `created_at`
+  plus the documented lag, and an article whose `updated_at` exceeds its
+  `created_at` is a second observation rather than an edit to the first. A
+  historical query that sorted and filtered on `updated_at` would be reading
+  revised text as though it had been available at the original time, which is
+  the subtlest leak in this whole surface.
+- Without real-time entitlement both news and bars default to a fifteen minute
+  delay. That is a feed latency the recorder has to encode rather than assume
+  away, and it is also a G0 entitlement question.
+
+Consequence recorded because it weakens a claim already merged: UNIT-023's
+syndication clustering was designed around several outlets carrying one wire
+story. If this feed is predominantly one originator, that collapse will rarely
+fire, and the real duplicate shape is the same originator republishing, which
+appears as a revision rather than as a second article. The clustering is not
+wrong and its limitation is already documented, but it is less load-bearing
+than the unit assumed, and the revision path is the one that needs attention
+when the news adapter is built.
+
+- Revisit only if: a live payload contradicts the reference. Record the
+  observation before changing anything, and prefer the observation.
+
+## D-025: The news family carries the article summary, not the headline alone
+
+- Date: 2026-08-29
+- Origin: writing the UNIT-029 intake surfaced that `Article`, merged by
+  UNIT-023, carries `article_id`, `symbols`, `headline`, `source_domain`, and
+  `timestamps`, and nothing else, while Prompt B expects a summary or body. The
+  intake carried a `[NEEDS CLARIFICATION]` marker rather than guessing, which
+  made it unclaimable until this was answered.
+- Decision: the news family carries the article summary. `Article` gains a
+  summary field, UNIT-028 populates it from the feed, and UNIT-029 sends it to
+  the labeler. A headline-only family was the smaller change and was rejected.
+- Rationale: this is the unit whose output feeds the price-only against
+  news-only against combined comparison that the whole research lane exists to
+  make. A label derived from a headline alone is a materially weaker signal,
+  and a weak news family would not falsify the news hypothesis so much as fail
+  to test it.
+- Schema facts, read from the Alpaca API reference for `GET /v1beta1/news`
+  through the market-data-only MCP server on 2026-08-29, and stated precisely
+  because this project separates the reference from an observation: no live
+  payload has been seen, and G0 remains unverified.
+  - `summary` is a REQUIRED field on every article, described as "Summary text
+    for the article (may be first sentence of content)". It is not optional and
+    not entitlement gated, so this decision does not depend on G0 clearing.
+  - `content` is also required in the schema but is fetched only when
+    `include_content` is set, and it "might contain HTML". It is deliberately
+    not adopted here. It is a second decision, and it enlarges an untrusted
+    input surface that Prompt B already treats as hostile.
+  - The reference's own example shows a "headline-only article" whose summary
+    restates the headline. So the summary is guaranteed present and not
+    guaranteed informative, and the labeler must treat a summary that adds
+    nothing as normal rather than as a fault.
+- Research integrity rule that falls out of the same schema, recorded because
+  it would be easy to reach for: the `exclude_contentless` parameter must not
+  be used to build a research sample. Dropping articles that lack content
+  selects the sample on a property correlated with the outcome being studied,
+  which is a selection effect, not a cleaning step. If contentless articles are
+  ever excluded, that is a registered trial with its own baseline, per
+  `.claude/rules/20-research-integrity.md`.
+- Consequence: UNIT-030 widens `Article`, because UNIT-028 declares only
+  `src/alphaledger/data/**` and cannot touch `evidence/news.py`, and UNIT-029
+  uses a new file of its own. UNIT-028 and UNIT-029 both depend on UNIT-030.
+- Revisit only if: a live payload shows `summary` absent or empty in practice,
+  which would contradict the reference. Record the observation first and prefer
+  it, per D-024.
+
+## D-026: Intakes are read adversarially before dispatch, and the spec pipeline is for undecided decompositions
+
+- Date: 2026-08-29
+- Origin: the user asked whether the documented
+  `spec-plot -> spec-analyze -> spec-clarify -> spec-plan -> spec-tasks`
+  pipeline had been followed for the eight intakes written that day. It had
+  not. `specs/features/` holds only its README and no feature spec has ever
+  been written.
+- Decision: both routes are legitimate and the choice is not a preference.
+  Where a decomposition does not yet exist, the spec pipeline decides it once.
+  Where it already exists as backlog rows, intakes are written directly and
+  each one is read adversarially against the merged code before it is
+  dispatched. `AGENTS.md` now says both.
+- What the direct route demonstrably buys, on the day it was used: reading the
+  UNIT-012 intake before dispatch found five defects, three of which would each
+  have cost a round. A contract named `Intent` and `OrderEvent`, neither of
+  which existed anywhere in `src/`. An acceptance criterion declared four
+  states terminal, which made the remaining two unreachable and the machine
+  incoherent. The contract declared four names while the criteria required a
+  broker lookup and a duplicate guard. UNIT-012 then took two review rounds
+  where UNIT-004 and UNIT-011, dispatched without that reading, took three
+  each.
+- What it demonstrably costs, recorded because it is the honest half. Reading
+  one intake at a time finds gaps that live between units late, and serially.
+  On the same day: UNIT-013 was named inconsistently by three separate intakes,
+  the bounded price ladder turned out to be owned by no backlog row and had to
+  become UNIT-018 mid-day, `Article` turned out to carry no summary and had to
+  become UNIT-030, and nothing at all produces the rung prices UNIT-018
+  consumes, which is still unowned. Every one of those is a decomposition
+  defect, which is exactly what a spec pass is designed to surface in one
+  reading rather than in five.
+- The mitigation, cheap and required rather than encouraged: before writing a
+  batch of intakes from existing backlog rows, read the rows themselves against
+  each other and against the merged code, looking for a unit that two rows
+  claim, a capability no row claims, and a record that a consumer needs and no
+  producer fills. That is the decomposition-level question, asked once, without
+  the four-artifact ceremony. It is what would have caught all four gaps above.
+- Rejected: deleting the spec skills, or declaring the pipeline dead. It is the
+  right route for a genuinely new feature whose boundaries nobody has drawn,
+  and the reason it has gone unused is that this project inherited its
+  decomposition from `specs/000-INTAKE.md` on day one.
+- Revisit only if: a batch of directly written intakes produces a
+  decomposition defect that the mitigation above should have caught. That would
+  mean the cheap pass is not enough and the full pipeline earns its cost.
