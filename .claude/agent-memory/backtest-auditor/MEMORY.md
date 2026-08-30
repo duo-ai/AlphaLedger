@@ -3,3 +3,4 @@
 - [D-022 bounded review mandate in practice](d022-bounded-mandate.md), how "actionable + bears on a numbered AC" cashes out when a finding is a coverage gap on correct-but-undertested behavior, not a functional bug.
 - [UNIT-027 forward residual labels](unit-027-forward-residual-labels.md), round one blocked on peer-gap outcome_time leak and delisting-raises-not-None; round two clear, both fixed and re-verified.
 - [UNIT-030 article summary](unit-030-article-summary.md), clear on round one; how to tell a legitimate implementer AC amendment from a self-serving one, and the paired-fixture pattern for proving a widened record changed nothing.
+- [UNIT-025 pooled forecast](unit-025-pooled-forecast.md), round one conditional then round two clear; a false-symmetry near-miss the advisor talked down, and a real low-severity assertion regression from fixture churn.

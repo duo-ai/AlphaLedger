@@ -2,14 +2,18 @@
 id: UNIT-025
 title: Fit the pooled forecast and emit the Forecast record
 lane: research
-state: claimed
+state: in_review
 owner: mazwy/claude
 branch: feature/025-pooled-forecast
 reviewer: backtest-auditor
 preferred_runtime: claude
 depends_on: [UNIT-001, UNIT-022, UNIT-023, UNIT-024, UNIT-027]
-paths: src/alphaledger/forecast/model.py, src/alphaledger/forecast/eligibility.py, tests/research/test_model.py, tests/research/test_eligibility.py
+paths: src/alphaledger/forecast/model.py, src/alphaledger/forecast/eligibility.py, tests/research/test_model.py, tests/research/test_eligibility.py, pyproject.toml, uv.lock, project-state/DECISIONS.md
 claimed_at: 2026-08-30T11:49:32Z
+reviewed_by: backtest-auditor
+review_verdict: clear
+reviewed_at: 2026-08-30T12:47:43Z
+review_log: [conditional, clear]
 ---
 
 ## Problem
@@ -74,11 +78,25 @@ Out:
 
 ## Contract
 
-`alphaledger.forecast.model.fit(fold, features, outcomes, config, registry,
-registered_at) -> FittedModel`, where `fold` is UNIT-024's `Fold`, `features`
-maps a `label_id` to the merged price and news feature mapping for that
-instant, and `outcomes` maps a `label_id` to its realised forward residual
-return. Fitting registers a trial through `TrialRegistry.register` before any
+`alphaledger.forecast.model.fit(fold, features, outcomes, uniqueness, config,
+registry, registered_at) -> FittedModel`, where `fold` is UNIT-024's `Fold`,
+`features` maps a `label_id` to the merged price and news feature mapping for
+that instant, `outcomes` maps a `label_id` to its realised forward residual
+return, and `uniqueness` maps a `label_id` to the uniqueness weight UNIT-027's
+`with_uniqueness` computed for it.
+
+`uniqueness` was added to this contract on 2026-08-30, by the
+pre-implementation read, and it is required rather than optional. Without it
+`effective_sample_size` could only be the training row count, and the row count
+is precisely the lie UNIT-027 computes uniqueness to prevent: sampling daily at
+a multi-session horizon makes consecutive labels share most of their outcome
+window, so a fit counting rows counts the same information many times. Gate 4
+in `eligibility.py` refuses a candidate whose effective sample size is too
+small, and a gate fed the row count would refuse almost nothing. UNIT-027's own
+module docstring already states that this unit is expected to carry uniqueness
+into the fit; the contract had simply omitted the channel. Defaulting it to one
+per label was rejected for the same reason a missing quantile band is not
+treated as a narrow one: it is the most flattering reading of absent data. Fitting registers a trial through `TrialRegistry.register` before any
 result is computed, and returns a model carrying `model_version`, the fold
 hash, and the trial id.
 
@@ -98,6 +116,16 @@ called before calibration; `UnregisteredTrialError` propagates unchanged from
 UNIT-024 rather than being caught.
 
 ## Assumptions
+
+Eligibility thresholds arrive as a frozen dataclass parameter rather than from
+`config/`. This unit's path globs cover `src/alphaledger/forecast/**` and its
+tests, so it cannot add `config/model.toml`, and no such file exists today.
+D-017 wants a threshold that explains a decision to be committed and hashed, so
+this is a gap rather than a design, and it is the same gap UNIT-013 and
+UNIT-017 already record: both take thresholds as required explicit parameters
+because `config/risk.toml` does not carry them. Recorded here so the later
+change that commits these values has one place to look. Every default declared
+here is declared, not selected on data, per design section 4.
 
 The estimator is ridge and logistic regression from scikit-learn, already in
 the dependency set, rather than anything hand rolled. `AGENTS.md` requires
@@ -138,6 +166,68 @@ be a second set of unselected hyperparameters.
   failure against UNIT-010, where a criterion that read as considered was
   unsatisfiable in principle and the test list faithfully reproduced its false
   premise.
+- AC-2b: `model_version` is derived from the training-relevant view of the
+  fold only, never from `Fold.fold_hash`. Falsified by two folds differing only
+  in their test label lists producing different `model_version` values.
+
+  Found by the pre-implementation read, and it is what makes AC-2 satisfiable
+  at all. `Fold._address` in the merged `splits.py` hashes `test_labels` into
+  `fold_hash`, so two folds identical but for their test windows already have
+  different fold hashes. A `model_version` folding in `fold_hash` would
+  therefore differ, and AC-2 could never pass however carefully the fit ignored
+  the test window. The model still carries `fold_hash` as provenance, which is
+  what the contract asks for; it simply is not an input to the model's own
+  identity. Provenance and identity are different questions and this is the one
+  place they visibly diverge.
+- AC-2c: `fit` refuses any supplied label that the fold does not place in its
+  training or calibration window, naming the label, and words a test-window
+  label differently from one the fold places in no window at all. Falsified by
+  supplying a label from `fold.test_labels` and observing a fit, or by
+  supplying a label from neither list and observing a fit, or by the two
+  refusals reading the same.
+
+  The second half was added in round two. Round one implemented only the
+  test-window subset while this criterion's prose already promised the whole
+  thing, so it would have read as satisfied forever: its own stated
+  falsification exercised only the part that was built. The extra label was
+  inert in effect, because `_rows` reads the fold's own lists rather than the
+  supplied keys, but that is an implementation detail a later change could
+  reverse rather than a guarantee. Found by `backtest-auditor`, graded HIGH,
+  and it is the same "prose stronger than its own falsification" shape that
+  round one of UNIT-027 was blocked on.
+- AC-2d: `fit` refuses a fold whose training and calibration label lists
+  overlap. Falsified by constructing such a fold and observing a model.
+  Calibrating against a label the model trained on measures the fit rather than
+  the generalisation, so `calibration_error` would be optimistic and gate 4 in
+  `eligibility.py` would read that optimistic number. `walk_forward` cannot
+  produce such a fold, since `_assign` places each label in exactly one window,
+  but a hand-built `Fold` can, which is already the threat model AC-1 and AC-2
+  treat as real for the test window.
+- AC-3a: the uniqueness weights are passed to both estimators as
+  `sample_weight`, not only used to report `effective_sample_size`. Falsified
+  by a fixture whose numerous minority follows the opposite relationship to a
+  small majority and is weighted near zero: an unweighted fit follows the
+  minority, so the sign of the recovered coefficient decides it. Both `p_up`
+  and `expected_residual_return` are asserted, because the weight is passed to
+  each estimator separately.
+
+  Round one made this choice and documented only half of it: the intake argued
+  for `uniqueness` entirely in terms of `effective_sample_size` and never said
+  the weights also enter the fits. Deleting `sample_weight` from either
+  estimator left the whole suite green, because every success fixture weighted
+  every label at one and weighted and unweighted regression coincide there.
+- AC-8a: `contribution_by_family` sums to `expected_residual_return` minus the
+  ridge intercept, and not to the prediction itself. Falsified by observing the
+  contributions sum to the whole prediction, or by their sum plus the intercept
+  differing from it. The intercept belongs to no family: attributing it to one
+  would be arbitrary and splitting it would invent evidence neither family
+  supplied. This is the standard convention for a linear decomposition and it
+  was previously undocumented, with a docstring saying "share" that read as a
+  full decomposition. Falsified by supplying a
+  label from `fold.test_labels` and observing a fit. Reading `test_labels` in
+  order to refuse is not reading them in order to fit, and does not affect
+  AC-2: with valid input no test label is present, so its contents cannot move
+  a fitted parameter.
 - AC-3: every fit registers a trial before its result is computed, and the
   registered configuration includes the feature versions of both families and
   the fold hash. Falsified by fitting and observing the registry count is
@@ -147,6 +237,46 @@ be a second set of unselected hyperparameters.
   reason names the specific gate from section 6 that refused it. Falsified by
   producing an ineligible forecast whose reason does not correspond to a
   numbered gate. The empty case is already refused by the frozen record.
+- AC-4a: `decide` evaluates gates 1 to 4 only, and the module states which
+  gates it does not evaluate through exported constants, so a caller cannot
+  mistake four gates for six. `eligible` therefore means "cleared every gate
+  this function evaluates" and never "cleared section 6". Falsified by
+  `EVALUATED_GATES` or `UNEVALUATED_GATES` being absent from the module, by
+  their union not being gates 1 to 6, or by a rejection reason naming a gate
+  outside `EVALUATED_GATES`.
+
+  The frozen `Forecast` record cannot carry this, and widening it is out of
+  scope: it is UNIT-001's file and this unit's globs do not reach it. Exported
+  constants are the honest alternative, because they are checkable by a test
+  rather than only stated in prose.
+
+  Recorded on 2026-08-30, from the pre-implementation read D-026 requires, and
+  before any code was written. Section 6 lists six conditions, and two of them
+  are not computable from this function's declared inputs. `decide` is a pure
+  function of one forecast, its contributing families, and frozen
+  configuration, and:
+
+  - Gate 5, that the signal is not concentrated in one symbol, one week, or one
+    sector in the held-out evaluation, is a property of the evaluation across
+    all candidates, not of any single forecast. One forecast cannot see the
+    distribution it belongs to. This belongs to UNIT-026, which owns the
+    baselines and ablations over the held-out set.
+  - Gate 6, that current data, chain, account, and portfolio checks pass, is
+    execution-lane state. This unit's declared path globs are `forecast/**`
+    only, so it cannot reach that code, and D-006 keeps account facts out of
+    the coding agent's reach entirely. This belongs to the pre-trade check on
+    the execution side.
+
+  Narrowing the function is therefore correct and widening it is not: a
+  `decide` that claimed to clear gates 5 and 6 would be asserting something it
+  has no input for, which is worse than one that reports what it checked. What
+  the unit must not do is let a caller mistake four gates for six, so the
+  emitted record names the gates that were evaluated.
+
+  Section 6's own wording supports this: it lists conditions under which "a
+  candidate reaches structure construction", which is the whole pipeline, not
+  one function. The test list's "clears all six gates" line is corrected below
+  for the same reason.
 - AC-5: a candidate where only one family contributes is ineligible, per
   section 6 gate 1, and says so. Falsified by supplying a news-only candidate
   and observing `eligible` is true.
@@ -176,8 +306,11 @@ be a second set of unselected hyperparameters.
   and the sign of `expected_residual_return` matches.
 - success: `contribution_by_family` names both families and both are non-zero
   when both contribute.
-- success: an eligible candidate clears all six gates from section 6 and
-  carries no rejection reason.
+- success: an eligible candidate clears gates 1 to 4 from section 6 and carries
+  no rejection reason, while `UNEVALUATED_GATES` names the two it did not check
+  so four cannot be mistaken for six (AC-4a). This line read "all six gates" before the
+  pre-implementation read found that gates 5 and 6 are not computable from
+  `decide`'s inputs.
 - failure: a training input from the test window raises `LeakedFitError` naming
   the label and the window. This is the deliberately leaked fixture the
   research rules require.
@@ -214,3 +347,155 @@ uv run mypy src
 ```
 
 ## Handoff notes
+
+## Handoff notes
+
+Two modules. `eligibility.py` evaluates the section 6 gates that a single
+forecast can decide; `model.py` fits the pooled ridge and logistic pair and
+emits the frozen `Forecast`.
+
+### What the pre-implementation read changed, before any code existed
+
+Four contract defects were found by reading this intake against the merged code
+first, as D-026 requires. All four are recorded in the acceptance criteria
+above with their reasoning; they are collected here because together they are
+the argument for doing that read at all.
+
+Gates 5 and 6 are not computable from `decide`'s inputs, so AC-4a splits them
+out and the module exports `EVALUATED_GATES` and `UNEVALUATED_GATES` rather
+than letting `eligible` read as "cleared section 6".
+
+`Fold.fold_hash` hashes `test_labels`, so a `model_version` derived from it
+would have made AC-2 unsatisfiable: two folds differing only in what they hold
+back already carry different fold hashes. AC-2b now states that
+`model_version` excludes it, and the model carries the fold hash as provenance
+instead. This one would have cost a review round and looked like a bug in the
+fit rather than a contradiction in the specification.
+
+`fit` had no channel for label uniqueness, so `effective_sample_size` could
+only have been the training row count, which is precisely the quantity
+UNIT-027 computes uniqueness to avoid. `uniqueness` is now a required
+argument and a missing weight is refused rather than defaulted to one.
+
+No `config/model.toml` exists and this unit could not have created one, so
+thresholds arrive as frozen dataclasses. That is the same recorded gap
+UNIT-013 and UNIT-017 already carry, not a new design.
+
+### The dependency, and the rule it bends
+
+D-027 records the addition of `numpy` and `scikit-learn`, the stdlib
+alternative that was considered and rejected, and the fact that widening this
+unit's globs onto `pyproject.toml` and `uv.lock` bends D-010. It was safe only
+because UNIT-025 was the sole claimed unit at the time, with UNIT-027 and
+UNIT-030 both merged and nothing else in flight. It is not a precedent.
+
+### An error the contract names that cannot occur
+
+The contract lists `UncalibratedModelError` for `predict` called before
+calibration. That state is unreachable rather than guarded: `fit` is the only
+way to obtain a `FittedModel` and it refuses to return one it could not
+calibrate, so no uncalibrated model ever exists to be asked. The error is still
+raised, from `fit`, which is AC-9. Making the invalid state unrepresentable is
+stronger than checking for it at every use, and
+`test_no_path_produces_a_model_that_has_not_been_calibrated` pins the property
+so a later constructor cannot quietly reintroduce the gap.
+
+### A defect found in this unit's own tests, by its own mutation probes
+
+Two of the first six probes survived, and both were defects in the tests rather
+than in the code. Recorded rather than quietly fixed, because both are the
+shape `backtest-auditor` caught on UNIT-013: an assertion structurally
+incapable of the failure it names.
+
+The effective sample size test weighted every label at one half and asserted
+sixty. Kish's effective sample size of any uniform weighting is exactly the row
+count whatever the weight is, so that fixture agreed with the row count it was
+written to detect, and replacing the entire computation with `len(weights)`
+passed it. The fixture is now deliberately uneven, thirty labels at one and
+thirty at a fifth, and asserts the hand-computed 36^2 / 31.2 as well as being
+strictly under the row count.
+
+The family attribution test moved a news feature and observed that the price
+attribution held. A mutation dropping the feature value entirely, attributing a
+bare coefficient, also holds under that observation. Two tests now pin it from
+both sides: a family whose features are all zero attributes exactly zero, and
+doubling a family's evidence doubles its contribution.
+
+The trial ordering test had the same weakness and was rewritten before the
+probes ran. It appended a marker after `fit` returned, which records the same
+order however late registration happened. It now instruments `Ridge.fit`
+through the module attribute, and a second test pins that the patch is not
+inert.
+
+### Verification actually run
+
+`ruff check`, `ruff format --check` over 68 files, `mypy src` under strict
+across 32 source files, 701 tests, and `scripts/verify_harness.sh` all green.
+`uv sync --frozen` audits clean with the new dependencies.
+
+Six mutations were run one at a time against the finished code, restoring the
+file between each, and all six are caught: folding `fold_hash` into
+`model_version`, dropping the refusal of supplied test-label features,
+dropping the refusal of a fold whose own label lists overlap, replacing the
+effective sample size with the row count, attributing a bare coefficient
+instead of a coefficient against a value, and allowing a prediction inside the
+window the model was fitted through.
+
+That claim is bounded to these six against this unit's own changes. It is not a
+statement about the suite as a whole, and the two survivors above are the
+reason the distinction is worth drawing.
+
+### Round two, addressing the `backtest-auditor` conditional
+
+The round one verdict was `conditional` on four actionable findings and one
+noted boundary. All five are closed, each with a test that fails against the
+mutation that exposed it.
+
+The HIGH finding was mine and it is worth naming plainly: AC-2c, a criterion
+this unit added during its own pre-implementation read, promised more than the
+code delivered. It said `fit` refuses any supplied label outside the training
+and calibration windows; the code refused only the test-window subset. Its own
+stated falsification exercised only the part that was built, so no test in the
+list could have caught it. The correction implements the full prose rather than
+narrowing it, because the stricter reading is the safer one: a label whose
+provenance cannot be established from here is refused rather than ignored, and
+the cost, that a caller can no longer hand the whole panel to every fold and
+let each select, is the discipline the windows exist to enforce. The fixtures
+were changed to match, which is why the diff touches nearly every test.
+
+The train against calibration overlap had no guard at all, only the test-window
+overlap did, while the module docstring claimed a general one. Closed by
+AC-2d.
+
+`sample_weight` reached both estimators and nothing could tell. Closed by
+AC-3a's opposite-relationship fixture, which was itself found to be half a test
+first: asserting only `expected_residual_return` left the logistic model's
+weighting unprobed, and the mutation dropping it survived until `p_up` was
+asserted too.
+
+The contributions exclude the ridge intercept, which was a defensible
+convention stated in a docstring that read as a full decomposition. Closed by
+AC-8a, which pins the exact relationship.
+
+The `as_of` guard was never exercised at exact equality, so a drift from
+less-than to less-than-or-equal would have passed. `Window` is half-open, so
+the calibration window does not contain its own end and a prediction there has
+seen nothing; the boundary is now pinned from both sides.
+
+### Verification actually run, round two
+
+`ruff check`, `ruff format --check`, `mypy src` under strict, the full suite,
+and `scripts/verify_harness.sh`, all green. Six mutations were run one at a
+time against the fixed code, restoring the file between each, and all six are
+caught: dropping `sample_weight` from the ridge, dropping it from the logistic,
+dropping the refusal of stranger labels, dropping the train against calibration
+overlap check, and moving the `as_of` comparison off its boundary.
+
+### Not done here, and named so it is not mistaken for done
+
+No model has been fitted on real data. Every number in this unit comes from a
+fixture with a known linear relationship, and the thresholds in
+`EligibilityConfig` and `ModelConfig` are declared defaults, not selected on
+development data, so design section 4's selection, registration, and freeze
+remain untouched. `config_version` and `model_version` exist so that selection
+is auditable when it happens.

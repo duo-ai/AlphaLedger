@@ -3,7 +3,13 @@ name = "alphaledger"
 version = "0.1.0"
 description = "Cross-sectional options alpha agent. Paper trading only."
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    # The pooled forecast in UNIT-025 fits a ridge/logistic pair. Pinned
+    # exactly, per AGENTS.md, and verified to resolve and import on cp314 in
+    # D-012 before anything depended on them.
+    "numpy==2.5.2",
+    "scikit-learn==1.9.0",
+]
 
 [dependency-groups]
 dev = [
@@ -44,6 +50,13 @@ select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "DTZ", "RUF"]
 python_version = "3.14"
 strict = true
 files = ["src"]
+
+# scikit-learn ships no py.typed marker, so strict mode cannot see through it.
+# Scoped to sklearn alone rather than relaxed globally: numpy does ship types
+# and is checked normally, and every module of ours stays strict.
+[[tool.mypy.overrides]]
+module = ["sklearn.*"]
+ignore_missing_imports = true
 warn_unreachable = true
 disallow_any_explicit = false
 

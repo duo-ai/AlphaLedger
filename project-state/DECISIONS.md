@@ -741,3 +741,43 @@ when the news adapter is built.
 - Revisit only if: a batch of directly written intakes produces a
   decomposition defect that the mitigation above should have caught. That would
   mean the cheap pass is not enough and the full pipeline earns its cost.
+
+## D-027: The numeric stack enters the dependency set, pinned, for UNIT-025
+
+- Date: 2026-08-30
+- Origin: UNIT-025 fits the pooled ridge/logistic pair design section 6
+  specifies, and the project had `dependencies = []`. Every unit merged before
+  this one is standard library only, so this is the first runtime dependency
+  the application carries.
+- Decision: add `numpy==2.5.2` and `scikit-learn==1.9.0`, pinned exactly, and
+  fit the forecast with them rather than hand-rolling the numerics.
+- Rationale: `AGENTS.md` says to prefer a well established package to bespoke
+  code, and names the exception as code that must run before the environment
+  exists. A model fitter is not that exception; nothing about it has to run
+  before `uv sync`. The alternative considered and rejected was a stdlib
+  implementation of closed-form ridge and Newton-Raphson logistic regression,
+  roughly a hundred and fifty lines. That would have avoided the dependency and
+  the lockfile change, and it would have put the numerical core of the
+  project's central claim into code written once and reviewed once, where the
+  failure mode is a subtly wrong coefficient that every downstream result
+  inherits and no test that did not anticipate it would catch.
+- Evidence, not inference: both packages install and import on cp314 in this
+  worktree, `uv sync --frozen` audits clean afterwards, and the full gate is
+  green with them present, `ruff check`, `mypy src` under strict across 31
+  files, and 669 tests. D-012 had already checked that they resolve on 3.14;
+  this is the first time anything actually depends on them.
+- Consequence recorded because it bends a rule rather than following one:
+  UNIT-025's declared path globs were widened to include `pyproject.toml`,
+  `uv.lock`, and this file. D-010 makes disjoint globs the mechanism that keeps
+  parallel writers safe, and a lockfile is exactly the shared file that rule
+  exists to protect. This was safe only because UNIT-025 was the sole claimed
+  unit when the change landed, with UNIT-027 and UNIT-030 both merged and
+  nothing else in flight. It is not a precedent for widening globs onto shared
+  files while other units are open.
+- Rejected alternative: a separate unit owning the dependency change, merged
+  before UNIT-025 resumed. Cleaner against D-010 and rejected as ceremony for a
+  two line change with no other writer to protect against.
+- Revisit only if: a wheel is unavailable on a future interpreter, or a second
+  unit needs to change the lockfile while UNIT-025 is open. The second is the
+  real risk and the answer to it is the separate unit rejected above, not a
+  second widening.
