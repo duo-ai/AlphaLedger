@@ -2,7 +2,7 @@
 id: UNIT-030
 title: Carry the article summary on the news record
 lane: research
-state: claimed
+state: in_review
 owner: mazwy/claude
 branch: feature/030-article-summary
 reviewer: backtest-auditor
