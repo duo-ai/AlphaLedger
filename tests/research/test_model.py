@@ -130,10 +130,19 @@ class CapturingRegistry(TrialRegistry):
 
 
 def fitted(**overrides: object):  # type: ignore[no-untyped-def]
+    """Fit the default fold, handing it only the labels that fold fits on.
+
+    The restriction is the point rather than tidiness: `fit` refuses features
+    for any label the fold places in neither its training nor its calibration
+    window, so a caller has to say which labels belong to which fold instead of
+    handing every fold the whole panel and letting each one select.
+    """
+    fold = overrides.pop("fold", fold_over(train=ids(0, 60), calibration=ids(60, 85)))
     features, outcomes, uniqueness = panel()
+    usable = set(fold.train_labels) | set(fold.calibration_labels)  # type: ignore[union-attr]
     settings: dict[str, object] = {
-        "fold": fold_over(train=ids(0, 60), calibration=ids(60, 85)),
-        "features": features,
+        "fold": fold,
+        "features": {key: value for key, value in features.items() if key in usable},
         "outcomes": outcomes,
         "uniqueness": uniqueness,
         "config": CONFIG,
@@ -283,7 +292,7 @@ def test_supplying_features_for_a_test_label_is_refused() -> None:
     features, outcomes, uniqueness = panel()
     held = fold_over(train=ids(0, 60), calibration=ids(60, 85), test=ids(85, 90))
 
-    with pytest.raises(LeakedFitError, match="lbl-085"):
+    with pytest.raises(LeakedFitError, match="test window"):
         fitted(fold=held, features=features, outcomes=outcomes, uniqueness=uniqueness)
 
 
@@ -479,11 +488,11 @@ def test_unique_labels_give_an_effective_sample_equal_to_the_row_count() -> None
 def test_a_missing_uniqueness_weight_is_refused_rather_than_assumed_to_be_one() -> None:
     """Assuming one is the most flattering reading of absent data, and it is
     exactly the row-count lie this argument exists to prevent."""
-    features, outcomes, uniqueness = panel()
+    _features, _outcomes, uniqueness = panel()
     del uniqueness["lbl-005"]
 
     with pytest.raises(ValueError, match="lbl-005"):
-        fitted(features=features, outcomes=outcomes, uniqueness=uniqueness)
+        fitted(uniqueness=uniqueness)
 
 
 # --- failure paths ---------------------------------------------------------
@@ -500,11 +509,11 @@ def test_a_missing_feature_at_prediction_is_refused_rather_than_zero_filled() ->
 
 
 def test_a_label_with_features_but_no_outcome_is_refused() -> None:
-    features, outcomes, uniqueness = panel()
+    _features, outcomes, _uniqueness = panel()
     del outcomes["lbl-004"]
 
     with pytest.raises(ValueError, match="lbl-004"):
-        fitted(features=features, outcomes=outcomes, uniqueness=uniqueness)
+        fitted(outcomes=outcomes)
 
 
 def test_a_config_naming_a_family_with_no_feature_version_is_refused() -> None:
@@ -563,9 +572,11 @@ def outcome_for(index):
 
 
 ids = lambda a, b: tuple("lbl-%03d" % i for i in range(a, b))
-features = {"lbl-%03d" % i: features_for(i) for i in range(90)}
-outcomes = {"lbl-%03d" % i: outcome_for(i) for i in range(90)}
-uniqueness = {"lbl-%03d" % i: 1.0 for i in range(90)}
+# Only the labels the fold fits on: fit refuses features for anything outside
+# its training and calibration windows.
+features = {"lbl-%03d" % i: features_for(i) for i in range(85)}
+outcomes = {"lbl-%03d" % i: outcome_for(i) for i in range(85)}
+uniqueness = {"lbl-%03d" % i: 1.0 for i in range(85)}
 
 fold = Fold(
     index=0,
@@ -660,3 +671,133 @@ def test_no_path_produces_a_model_that_has_not_been_calibrated() -> None:
     assert model.calibration_error >= 0.0
     with pytest.raises(UncalibratedModelError):
         fitted(fold=fold_over(train=ids(0, 60), calibration=()))
+
+
+# --- round two: the review findings ---------------------------------------
+
+
+def test_a_label_the_fold_places_in_no_window_is_refused_not_ignored() -> None:
+    """Finding 1. AC-2c promises refusal of any supplied label the fold does
+    not place in its training or calibration window, and round one enforced
+    only the test-window subset. The extra label was inert, because `_rows`
+    reads the fold's own lists and never the supplied keys, but "inert" was an
+    implementation detail rather than a guarantee, and the criterion read as
+    satisfied while only part of it was."""
+    features, outcomes, uniqueness = panel()
+    fold = fold_over(train=ids(0, 60), calibration=ids(60, 85))
+    usable = set(fold.train_labels) | set(fold.calibration_labels)
+    stranger = {key: value for key, value in features.items() if key in usable}
+    stranger["lbl-089"] = features["lbl-089"]
+
+    with pytest.raises(LeakedFitError, match="lbl-089"):
+        fitted(fold=fold, features=stranger, outcomes=outcomes, uniqueness=uniqueness)
+
+
+def test_the_stranger_and_the_test_label_are_refused_in_different_words() -> None:
+    """A leak and an unprovenanced label are different facts. One means the
+    caller handed over data the fold exists to hold back; the other means the
+    caller cannot say where the data came from."""
+    features, outcomes, uniqueness = panel()
+    fold = fold_over(train=ids(0, 60), calibration=ids(60, 85), test=("lbl-086",))
+    usable = set(fold.train_labels) | set(fold.calibration_labels)
+
+    leaked = {key: features[key] for key in usable | {"lbl-086"}}
+    stranger = {key: features[key] for key in usable | {"lbl-089"}}
+
+    with pytest.raises(LeakedFitError) as first:
+        fitted(fold=fold, features=leaked, outcomes=outcomes, uniqueness=uniqueness)
+    with pytest.raises(LeakedFitError) as second:
+        fitted(fold=fold, features=stranger, outcomes=outcomes, uniqueness=uniqueness)
+
+    assert "test window" in str(first.value)
+    assert "test window" not in str(second.value)
+
+
+def test_a_fold_training_and_calibrating_on_one_label_is_refused() -> None:
+    """Finding 2. Calibrating against a label the model trained on measures the
+    fit rather than the generalisation, so every gate reading
+    `calibration_error` would be reading an optimistic number. `walk_forward`
+    cannot build this, but a hand-built `Fold` can, and a hand-built `Fold` is
+    already the threat model the test-window checks take seriously."""
+    overlapping = fold_over(train=ids(0, 60), calibration=ids(55, 85))
+
+    with pytest.raises(LeakedFitError, match="training and the calibration"):
+        fitted(fold=overlapping)
+
+
+def test_the_uniqueness_weights_reach_the_fit_and_not_only_the_reported_sample() -> None:
+    """Finding 3. `uniqueness` is passed as `sample_weight` to both estimators,
+    and round one had no fixture that could tell: every success case weighted
+    every label at one, and weighted and unweighted regression are identical
+    under uniform weights.
+
+    Here a numerous minority follows the opposite relationship to a small
+    majority and is weighted almost to nothing. An unweighted fit follows the
+    forty-label minority; a weighted one follows the twenty-label majority. The
+    sign of the recovered coefficient is therefore decisive, which is what a
+    test of a weighting has to be.
+    """
+    fold = fold_over(train=ids(0, 60), calibration=ids(60, 85))
+    features: dict[str, dict[str, float]] = {}
+    outcomes: dict[str, float] = {}
+    uniqueness: dict[str, float] = {}
+    for index in range(85):
+        label_id = f"lbl-{index:03d}"
+        signal = (index % 7) / 7.0 - 0.5
+        features[label_id] = {
+            "residual_return_5s": signal,
+            "volume_z": 0.0,
+            "direction_weighted": 0.0,
+            "novelty_weighted": 0.0,
+        }
+        minority = 20 <= index < 60
+        outcomes[label_id] = (-0.5 if minority else 0.5) * signal
+        uniqueness[label_id] = 1e-6 if minority else 1.0
+
+    model = fitted(fold=fold, features=features, outcomes=outcomes, uniqueness=uniqueness)
+    rising = model.predict(
+        "ACME",
+        {
+            "residual_return_5s": 0.5,
+            "volume_z": 0.0,
+            "direction_weighted": 0.0,
+            "novelty_weighted": 0.0,
+        },
+        at(110),
+    )
+
+    # The heavily weighted twenty say a positive signal means a positive
+    # outcome. The near-weightless forty say the opposite and outnumber them.
+    # Both estimators are asserted, because `sample_weight` is passed to each
+    # of them separately and a test reading only the magnitude model would let
+    # the direction model quietly go unweighted.
+    assert rising.expected_residual_return > 0.0
+    assert rising.p_up > 0.5
+
+
+def test_the_contributions_and_the_intercept_account_for_the_whole_prediction() -> None:
+    """Finding 4. The contributions deliberately exclude the ridge intercept,
+    which belongs to no family. That is a defensible convention and it was
+    undocumented and unpinned, so the exact relationship is asserted here
+    rather than left for a reader to assume one way or the other."""
+    model = fitted()
+    emitted = model.predict("ACME", features_for(6), at(110))
+
+    attributed = sum(emitted.contribution_by_family.values())
+    intercept = float(model._magnitude.intercept_)
+
+    assert attributed + intercept == pytest.approx(emitted.expected_residual_return)
+    assert attributed != pytest.approx(emitted.expected_residual_return)
+
+
+def test_predicting_exactly_at_the_calibration_boundary_is_allowed() -> None:
+    """Finding 5. `Window` is half-open, so the calibration window does not
+    contain its own end instant and a prediction there has seen nothing. The
+    guard is therefore strictly less-than, and this pins the boundary so a
+    drift to less-than-or-equal cannot pass unnoticed."""
+    model = fitted()
+    boundary = fold_over(train=ids(0, 60), calibration=ids(60, 85)).calibration.end
+
+    assert model.predict("ACME", features_for(3), boundary) is not None
+    with pytest.raises(LeakedFitError):
+        model.predict("ACME", features_for(3), boundary - timedelta(microseconds=1))

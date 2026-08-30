@@ -10,6 +10,10 @@ preferred_runtime: claude
 depends_on: [UNIT-001, UNIT-022, UNIT-023, UNIT-024, UNIT-027]
 paths: src/alphaledger/forecast/model.py, src/alphaledger/forecast/eligibility.py, tests/research/test_model.py, tests/research/test_eligibility.py, pyproject.toml, uv.lock, project-state/DECISIONS.md
 claimed_at: 2026-08-30T11:49:32Z
+reviewed_by: backtest-auditor
+review_verdict: conditional
+reviewed_at: 2026-08-30T12:36:53Z
+review_log: [conditional]
 ---
 
 ## Problem
@@ -176,7 +180,50 @@ be a second set of unselected hyperparameters.
   identity. Provenance and identity are different questions and this is the one
   place they visibly diverge.
 - AC-2c: `fit` refuses any supplied label that the fold does not place in its
-  training or calibration window, naming the label. Falsified by supplying a
+  training or calibration window, naming the label, and words a test-window
+  label differently from one the fold places in no window at all. Falsified by
+  supplying a label from `fold.test_labels` and observing a fit, or by
+  supplying a label from neither list and observing a fit, or by the two
+  refusals reading the same.
+
+  The second half was added in round two. Round one implemented only the
+  test-window subset while this criterion's prose already promised the whole
+  thing, so it would have read as satisfied forever: its own stated
+  falsification exercised only the part that was built. The extra label was
+  inert in effect, because `_rows` reads the fold's own lists rather than the
+  supplied keys, but that is an implementation detail a later change could
+  reverse rather than a guarantee. Found by `backtest-auditor`, graded HIGH,
+  and it is the same "prose stronger than its own falsification" shape that
+  round one of UNIT-027 was blocked on.
+- AC-2d: `fit` refuses a fold whose training and calibration label lists
+  overlap. Falsified by constructing such a fold and observing a model.
+  Calibrating against a label the model trained on measures the fit rather than
+  the generalisation, so `calibration_error` would be optimistic and gate 4 in
+  `eligibility.py` would read that optimistic number. `walk_forward` cannot
+  produce such a fold, since `_assign` places each label in exactly one window,
+  but a hand-built `Fold` can, which is already the threat model AC-1 and AC-2
+  treat as real for the test window.
+- AC-3a: the uniqueness weights are passed to both estimators as
+  `sample_weight`, not only used to report `effective_sample_size`. Falsified
+  by a fixture whose numerous minority follows the opposite relationship to a
+  small majority and is weighted near zero: an unweighted fit follows the
+  minority, so the sign of the recovered coefficient decides it. Both `p_up`
+  and `expected_residual_return` are asserted, because the weight is passed to
+  each estimator separately.
+
+  Round one made this choice and documented only half of it: the intake argued
+  for `uniqueness` entirely in terms of `effective_sample_size` and never said
+  the weights also enter the fits. Deleting `sample_weight` from either
+  estimator left the whole suite green, because every success fixture weighted
+  every label at one and weighted and unweighted regression coincide there.
+- AC-8a: `contribution_by_family` sums to `expected_residual_return` minus the
+  ridge intercept, and not to the prediction itself. Falsified by observing the
+  contributions sum to the whole prediction, or by their sum plus the intercept
+  differing from it. The intercept belongs to no family: attributing it to one
+  would be arbitrary and splitting it would invent evidence neither family
+  supplied. This is the standard convention for a linear decomposition and it
+  was previously undocumented, with a docstring saying "share" that read as a
+  full decomposition. Falsified by supplying a
   label from `fold.test_labels` and observing a fit. Reading `test_labels` in
   order to refuse is not reading them in order to fit, and does not affect
   AC-2: with valid input no test label is present, so its contents cannot move
@@ -397,6 +444,52 @@ window the model was fitted through.
 That claim is bounded to these six against this unit's own changes. It is not a
 statement about the suite as a whole, and the two survivors above are the
 reason the distinction is worth drawing.
+
+### Round two, addressing the `backtest-auditor` conditional
+
+The round one verdict was `conditional` on four actionable findings and one
+noted boundary. All five are closed, each with a test that fails against the
+mutation that exposed it.
+
+The HIGH finding was mine and it is worth naming plainly: AC-2c, a criterion
+this unit added during its own pre-implementation read, promised more than the
+code delivered. It said `fit` refuses any supplied label outside the training
+and calibration windows; the code refused only the test-window subset. Its own
+stated falsification exercised only the part that was built, so no test in the
+list could have caught it. The correction implements the full prose rather than
+narrowing it, because the stricter reading is the safer one: a label whose
+provenance cannot be established from here is refused rather than ignored, and
+the cost, that a caller can no longer hand the whole panel to every fold and
+let each select, is the discipline the windows exist to enforce. The fixtures
+were changed to match, which is why the diff touches nearly every test.
+
+The train against calibration overlap had no guard at all, only the test-window
+overlap did, while the module docstring claimed a general one. Closed by
+AC-2d.
+
+`sample_weight` reached both estimators and nothing could tell. Closed by
+AC-3a's opposite-relationship fixture, which was itself found to be half a test
+first: asserting only `expected_residual_return` left the logistic model's
+weighting unprobed, and the mutation dropping it survived until `p_up` was
+asserted too.
+
+The contributions exclude the ridge intercept, which was a defensible
+convention stated in a docstring that read as a full decomposition. Closed by
+AC-8a, which pins the exact relationship.
+
+The `as_of` guard was never exercised at exact equality, so a drift from
+less-than to less-than-or-equal would have passed. `Window` is half-open, so
+the calibration window does not contain its own end and a prediction there has
+seen nothing; the boundary is now pinned from both sides.
+
+### Verification actually run, round two
+
+`ruff check`, `ruff format --check`, `mypy src` under strict, the full suite,
+and `scripts/verify_harness.sh`, all green. Six mutations were run one at a
+time against the fixed code, restoring the file between each, and all six are
+caught: dropping `sample_weight` from the ridge, dropping it from the logistic,
+dropping the refusal of stranger labels, dropping the train against calibration
+overlap check, and moving the `as_of` comparison off its boundary.
 
 ### Not done here, and named so it is not mistaken for done
 

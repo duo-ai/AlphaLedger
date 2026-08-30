@@ -257,7 +257,17 @@ class FittedModel:
         )
 
     def _contributions(self, row: Sequence[float]) -> dict[str, float]:
-        """Each family's share of the magnitude prediction, computed alone.
+        """Each family's own coefficients against its own values, computed alone.
+
+        Deliberately not a full decomposition of `expected_residual_return`.
+        The ridge model fits an intercept, and the intercept belongs to no
+        family, so the contributions sum to the prediction minus that
+        intercept. Attributing a constant baseline to whichever family happened
+        to be listed first would be arbitrary, and splitting it between them
+        would invent evidence neither family supplied. The unattributed
+        remainder is named here rather than hidden, and
+        `test_the_contributions_and_the_intercept_account_for_the_whole_prediction`
+        pins the exact relationship.
 
         A family's attribution sums only its own coefficients against its own
         values, so it cannot move when a feature belonging to another family
@@ -290,7 +300,7 @@ def fit(
     """
     moment = require_utc(registered_at, "registered_at")
     _refuse_overlapping_labels(fold)
-    _refuse_test_features(fold, features)
+    _refuse_foreign_features(fold, features)
 
     training = _rows(fold.train_labels, features, outcomes, uniqueness, config)
     calibrating = _rows(fold.calibration_labels, features, outcomes, uniqueness, config)
@@ -447,16 +457,55 @@ def _refuse_overlapping_labels(fold: Fold) -> None:
                 "and the test window, so fitting would train on what the fold exists to hold "
                 "back"
             )
-
-
-def _refuse_test_features(fold: Fold, features: Mapping[str, Mapping[str, float]]) -> None:
-    """Supplied evidence for a held-back label, refused before anything is fitted."""
-    offered = sorted(set(fold.test_labels).intersection(features))
-    if offered:
+    # The test window is not the only overlap that matters. A label in both the
+    # training and the calibration window would be calibrated against by a
+    # model that had already trained on it, so the calibration error would
+    # measure fit rather than generalisation and every gate reading it would be
+    # reading an optimistic number. `walk_forward` cannot produce this, since
+    # `_assign` places each label in exactly one window, but a hand-built
+    # `Fold` can, and a hand-built `Fold` is already the threat model the
+    # test-window checks above take seriously.
+    both = sorted(set(fold.train_labels).intersection(fold.calibration_labels))
+    if both:
         raise LeakedFitError(
-            f"fold {fold.index}: features were supplied for {', '.join(offered)}, which the "
+            f"fold {fold.index}: {', '.join(both)} appears in both the training and the "
+            "calibration window. Calibrating against a label the model trained on measures "
+            "the fit, not the generalisation the calibration error is supposed to report"
+        )
+
+
+def _refuse_foreign_features(fold: Fold, features: Mapping[str, Mapping[str, float]]) -> None:
+    """Refuse evidence for any label this fold does not fit on.
+
+    Two refusals, deliberately worded apart. A supplied test-window label is a
+    leak and says so. A supplied label the fold places in no window at all is
+    not a leak today, because `_rows` reads only the fold's own lists and would
+    ignore it, but it is refused anyway: its provenance cannot be established
+    from here, so nothing rules out its being a future or held-back
+    observation, and the only reason it is currently harmless is an
+    implementation detail of `_rows` that a later change could reverse without
+    anyone noticing.
+
+    The cost is that a caller cannot hand the whole panel to every fold and let
+    each one select. That is the intended cost. Being explicit about which
+    labels belong to which fold is exactly the discipline the windows exist to
+    enforce, and a caller that cannot say is a caller that does not know.
+    """
+    leaked = sorted(set(fold.test_labels).intersection(features))
+    if leaked:
+        raise LeakedFitError(
+            f"fold {fold.index}: features were supplied for {', '.join(leaked)}, which the "
             "fold places in its test window. The fit does not need them and their presence "
             "means the caller assembled the panel wrong"
+        )
+    usable = set(fold.train_labels) | set(fold.calibration_labels)
+    foreign = sorted(set(features) - usable)
+    if foreign:
+        shown = ", ".join(foreign[:5]) + ("..." if len(foreign) > 5 else "")
+        raise LeakedFitError(
+            f"fold {fold.index}: features were supplied for {len(foreign)} label(s) the fold "
+            f"places in neither its training nor its calibration window ({shown}). Their "
+            "provenance cannot be established here, so they are refused rather than ignored"
         )
 
 
