@@ -1,6 +1,6 @@
 ---
 name: unit-025-pooled-forecast
-description: UNIT-025 (src/alphaledger/forecast/model.py, eligibility.py) round one, verdict conditional. The AC-2c prose-versus-implementation gap, the train/calibration overlap guard gap, and the weighted-fit-only-tested-with-uniform-weights pattern.
+description: UNIT-025 (src/alphaledger/forecast/model.py, eligibility.py). Round one conditional (AC-2c prose gap, overlap guard gap, uniform-weight-only test pattern); round two clear, all five fixed and independently re-mutated, plus a near-miss on refusing "any supplied label" that the advisor correctly talked down.
 metadata:
   type: project
 ---
@@ -65,7 +65,7 @@ the reviewer brief's "overlap between fit, calibration... and locked test
 data" category.
 
 **The intercept omission from `_contributions` is real but LOW/MEDIUM, not
-HIGH — caught myself overweighting it before the advisor call.**
+HIGH: caught myself overweighting it before the advisor call.**
 `Ridge(fit_intercept=True)` by default, and `_contributions` sums only
 `coefficient * feature_value` per family, so `sum(contribution_by_family
 .values()) != expected_residual_return`; the gap equals `magnitude
@@ -132,3 +132,68 @@ See [[mutation-testing-discipline]] for the general probing method,
 [[d022-bounded-mandate]] for how a coverage gap on correct behavior is graded,
 and [[unit-030-article-summary]] for the AC-amendment discriminators applied
 here.
+
+---
+
+Reviewed 2026-08-30, round two, verdict clear.
+
+**All five round-one findings independently re-mutated and confirmed fixed.**
+Ridge and LogisticRegression `sample_weight` deletions each independently
+fail `test_the_uniqueness_weights_reach_the_fit_and_not_only_the_reported
+_sample`, which is the exact pattern the round-one lesson demanded (both
+estimators asserted, not only the one a lazy fixture would catch). The
+train/calibration overlap guard, the intercept-exclusion pin, and the `as_of`
+strict-inequality boundary each caught their own targeted mutation. AC-2c's
+stranger-label refusal (Finding 1) is real: a label in neither window,
+supplied only via `features`, is now refused and worded differently from a
+test-window leak.
+
+**A near-miss worth recording because I almost raised it and the advisor
+correctly talked me down.** `_refuse_foreign_features` checks `features` only;
+`outcomes` and `uniqueness` entries for a label outside the fold's usable set
+are never refused (confirmed by construction: fit succeeds with `outcomes`
+and `uniqueness` carrying entries for labels 85 through 89 against a fold
+whose usable set stops at 84). The reason this is not a finding, per the
+advisor: `_rows`'s own docstring makes `features` the sample-defining key in
+this module's vocabulary, "a label the fold names but nothing supplied
+features for is skipped." An entry in `outcomes` for a label absent from
+`features` is an attribute of a label never supplied, not a supplied label
+outside a window, so AC-2c's plain reading is satisfied. The plausible-refactor
+argument that justified Finding 1 (`_rows` could someday iterate by
+`features.keys()` instead of `label_ids`) does not transfer: `_rows` iterating
+`outcomes.keys()` would try to build rows for labels with no features and fail
+immediately, which is a rewrite of what a sample is, not a near-miss refactor.
+General lesson for future rounds: before raising a symmetry argument
+("the same reasoning that justified finding X should apply to sibling
+parameter Y"), check whether the two parameters actually occupy the same role
+in the function's own documented vocabulary. They frequently don't, and a
+false symmetry is exactly the D-022 unbounded-mandate failure mode dressed up
+as diligence.
+
+**One real, low-severity regression from this round's own fixture churn,
+found by testing the advisor's specific prediction rather than my own hunch.**
+`test_supplying_features_for_a_test_label_is_refused`'s match string changed
+from `"lbl-085"` to `"test window"` when the leaked-branch message was reworded
+for the stranger/leaked distinction. AC-2c requires the refusal to name the
+label on both branches; the stranger branch still pins this
+(`match="lbl-089"` equivalent), but the leaked branch's own naming is no
+longer independently pinned by any test. Confirmed by construction: replacing
+`{', '.join(leaked)}` in the leaked-branch f-string with a constant "a
+held-back label" (label list dropped from the message entirely) left the whole
+suite green. LOW: the message still interpolates the label correctly in
+production code, this is a coverage gap on correct behavior, not a functional
+bug, and does not block a clear verdict. Correction: restore an assertion that
+pins the specific label name in the leaked-branch message, the way the
+stranger branch already does.
+
+**Housekeeping, not a finding against the unit:** my own round-one memory
+entry above contained an em dash, which failed `verify_harness.sh`'s prose
+check (`.claude/rules/50-git.md` applies to this file). Fixed here; confirm
+`grep -rlP '[\x{2013}\x{2014}]' --include="*.md" .` is empty before this gets
+committed, since the harness cannot tell a specialist's own file from anyone
+else's.
+
+Full quality gate green: `uv sync --frozen`, `ruff check .`, `ruff format
+--check .`, `mypy src` (32 files strict), `pytest` (707 passed, up from 701 by
+exactly the six new round-two tests), `scripts/verify_harness.sh` all green
+after the em-dash fix.

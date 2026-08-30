@@ -292,8 +292,16 @@ def test_supplying_features_for_a_test_label_is_refused() -> None:
     features, outcomes, uniqueness = panel()
     held = fold_over(train=ids(0, 60), calibration=ids(60, 85), test=ids(85, 90))
 
-    with pytest.raises(LeakedFitError, match="test window"):
+    with pytest.raises(LeakedFitError) as refused:
         fitted(fold=held, features=features, outcomes=outcomes, uniqueness=uniqueness)
+
+    # Both halves. AC-2c requires the refusal to name the label, and the branch
+    # is identified by its wording. Round two rewrote this assertion to match
+    # only the wording when the two messages were split apart, which left the
+    # label naming on this branch unpinned while the stranger branch still had
+    # it: dropping the label from the message entirely kept the suite green.
+    assert "test window" in str(refused.value)
+    assert "lbl-085" in str(refused.value)
 
 
 def test_two_folds_differing_only_in_their_test_window_fit_the_same_model() -> None:
