@@ -1,88 +1,75 @@
 # AlphaLedger project status
 
-Last updated: 2026-08-29
+Last updated: 2026-08-30
 
 ## Current phase
 
-Released as v0.1.0, and `develop` has moved well past it. This checkpoint was
-verified against `develop` at `e8932b9` on 2026-08-29; it moved twice while
-this file was being written, so treat any later commit as ahead of what
-follows. Eighteen units are merged, in the sense that their code is on
-`develop`: UNIT-001 through UNIT-004, UNIT-010 through UNIT-018, and UNIT-020
-through UNIT-024.
+Released as v0.1.0, and `develop` is well past it. This checkpoint was verified
+against `develop` at `556bebd` on 2026-08-30 by running the commands it cites,
+not by carrying the previous checkpoint forward.
 
-UNIT-016 (the append-only decision and trade ledger) and UNIT-018 (the bounded
-entry price ladder) reached `develop` by `--no-ff` merge, verified directly:
-`git ls-tree -r develop -- src` shows 29 source files, and a full quality gate
-run against that exact ref passes, `ruff check`, `ruff format --check`,
-`mypy src` across 29 files, and 590 tests. Both carry a recorded
-`execution-safety-reviewer` verdict of `clear` and both read `state: merged`.
-UNIT-016 needed two rounds; UNIT-018 cleared on its first.
+Twenty-one of twenty-six units are merged, code and registry both: UNIT-001
+through UNIT-004, UNIT-010 through UNIT-018, UNIT-020 through UNIT-025,
+UNIT-027, and UNIT-030. The quality gate passes end to end on that ref:
+`uv sync --frozen`, `ruff check`, `ruff format --check`, `mypy src` under
+strict across 32 source files, 707 tests, and `scripts/verify_harness.sh`.
 
-UNIT-013, the risk approval token, took three rounds: `block`, `conditional`,
-`clear`. Round one found that a mutable payload could be evaluated against one
-state and hashed against another, so an approval could be granted for a
-payload that no longer existed, and that a foreign payload could be sized
-using a different plan's lower loss cap. Both are closed by taking one
-immutable snapshot of the supplied payload before any gate or hash reads it.
-Round two found the snapshot still let one gate's failure go unrecorded
-alongside another's, fixed, and found that
-`test_approval_id_changes_under_every_single_bound_field_mutation` compared the
-approval id function against a spy on itself, which cannot fail on a wrong
-quantity, payload hash, or mode. Round three was a deliberate, D-022-justified
-exception to fix that one test against independently computed inputs, with no
-production code reopened.
+Four units are available and genuinely claimable, meaning every dependency is
+merged and `coord.py check` passes for each: UNIT-005, UNIT-019, UNIT-026, and
+UNIT-028. One is claimed and in progress, UNIT-029, by `mazwy/claude`.
 
-UNIT-016, the ledger, went `block` then `clear` across two rounds. Round one
-found `record_order_state` coalesced a new observation against every prior
-entry for an id rather than the most recent one, so the legal recurrence
-`partial`, `cancel_pending`, `partial` silently dropped its third entry, and a
-restart would answer from a state the order had already left. AC-7 conflated
-an idempotent retry with a genuine recurrence; it was split, with AC-7a
-describing the recurrence that was being lost. Round two, recorded on
-`develop`'s tip as `review_log: [block, clear]`, has no handoff narrative
-beyond that verdict.
+Three units merged on 2026-08-30, all in the research lane.
 
-UNIT-014, UNIT-015, UNIT-017, and UNIT-018 each cleared on their first review
-round, with no handoff notes recorded beyond the frontmatter verdict.
+UNIT-027, the forward residual labels, took two rounds. Round one was blocked
+on two defects the reviewer demonstrated on constructed input rather than
+argued from reading. `outcome_time` did not cover a peer bar reached through a
+gap: a peer missing sessions inside the holding window produced a multi-session
+return whose predecessor bar sat outside the window, and a separate function
+scanning only the window could not see it, so a revision to a consumed bar left
+the outcome instant unmoved and UNIT-024 would have admitted the label into a
+window the purge exists to exclude it from. The fix is structural rather than a
+patch: the returns now carry the bars each was measured across, the residual
+sum reports the outcome instant alongside the value, and the second function is
+deleted, so no two derivations remain that could disagree. The second defect
+was a specification defect first: AC-4 made a delisting a `None` while the test
+list asserted a raise for the same input, and the same author wrote both, so
+writing the test first did not catch it.
 
-D-023 was recorded today: the client order id derives from `(plan_id,
-quantity, limit_price)`, all fixed before a risk approval exists, not from
-`approval_id`. This resolves a real conflict: `options-alpha-agent-design.md`
-section 11 and `orchestrator-system-prompt.md` both describe the id as
-something assigned after approval, while UNIT-011's merged AC-10 requires the
-id inside the hashed payload precisely so an approval cannot authorise a
-changed quantity, price, or id. UNIT-011 won; reopening it would have reopened
-a criterion written to close that exact hole.
+UNIT-030 widened `Article` to carry the article summary, per D-025, and cleared
+on its first round with no surviving mutations. It deliberately does not copy
+`headline`'s canonicalisation refusal, because that check exists for a
+clustering reason that does not transfer and copying it would refuse an article
+on how informative its text is, which D-025 records as a selection effect
+rather than a cleaning step.
 
-The execution lane now has the paper endpoint assertion, the order schema
-adapter, the order state machine, chain enumeration with exact payoffs, broker
-reconciliation, the risk approval token, the kill switch, the ledger, and the
-entry price ladder all on `develop`. No transport submits anything to Alpaca.
+UNIT-025, the pooled forecast and the section 6 eligibility gates, took two
+rounds and is the largest unit in the research lane. Its round one verdict was
+`conditional` on four findings. The one worth reading is that AC-2c, a
+criterion the implementer added during its own pre-implementation read,
+promised `fit` refuses any supplied label outside the training and calibration
+windows, and only the test-window subset was built. The criterion's own stated
+falsification exercised only the half that existed, so nothing in the test list
+could have caught it. It was closed by implementing the full prose rather than
+narrowing the criterion.
 
-The research lane, owned by `mazwy/claude`, merged UNIT-023 (already counted
-above) and specified four more units today: UNIT-025, the pooled forecast;
-UNIT-026, the required baselines; UNIT-027, forward residual labels, which is
-`claimed` and in progress; and UNIT-028, the Alpaca market-data adapter,
-`available` with every dependency already merged. UNIT-025 and UNIT-026 both
-depend on UNIT-027, so neither is actually claimable until it merges, even
-though `coord.py list` shows them `available`. UNIT-029, the LLM labeler
-adapter, was added to the decomposition table in `specs/000-INTAKE.md` but has
-no intake file yet, so it is not in the registry at all.
+D-027 was recorded on 2026-08-30: `numpy` and `scikit-learn` enter the
+dependency set, pinned, and are the first runtime dependencies the application
+carries. Everything merged before UNIT-025 is standard library only. The
+decision record states plainly that it widened UNIT-025's path globs onto
+`pyproject.toml` and `uv.lock`, that this bends D-010, that it was safe only
+because UNIT-025 was the sole claimed unit at the time, and that it is not a
+precedent.
 
-D-024 was also recorded today: four Alpaca API defaults that would corrupt
-research silently if the adapter relied on them, unadjusted bars, an `asof`
-that defaults to today and can relabel history under a renamed ticker, a bar
-price that has to arrive as a string rather than a float, and pagination that
-can return only one symbol of a multi-symbol request. These come from the
-published API reference, not from an observed payload: the one credentialed
-call made against it returned 401, so G0 stays unverified for want of access,
-not of research effort.
+Two decomposition gaps were closed on 2026-08-30 by writing the intakes that
+were missing rather than by recording the gaps again. UNIT-019 owns the
+function that turns a structure's quotes into the ordered candidate rung prices
+UNIT-018 consumes, which no row had claimed while both the ladder and the chain
+enumeration were merged. UNIT-005 commits the three design section 10
+thresholds `config/risk.toml` does not carry, which is why UNIT-013 and
+UNIT-017 each take them as required explicit parameters.
 
-Every number in the research lane comes from a fixture, and the execution
-lane's own tests run entirely against in-memory doubles. Nothing in this
-project has ever touched a live Alpaca endpoint, credentialed or otherwise,
-beyond that one 401.
+The execution lane is unchanged since 2026-08-29 and no transport submits
+anything to Alpaca.
 
 The dates in `hackathon-build-plan.md` are stale, confirmed by the user on
 2026-08-28. Treat the G0 to G6 sequence as binding and the calendar attached to
@@ -274,23 +261,31 @@ environment.
   reasoning for not adding an untested lock is in the UNIT-024 intake.
 - No model consumes a fold and no result is ever recorded, so the registry is
   proven to refuse what it should and never proven against a real research run.
-- No unit intake names the function that turns a structure's bid, ask, and
-  quote metadata into the ordered sequence of candidate rung prices UNIT-018's
-  ladder consumes. UNIT-014's `ChainContract` carries `bid` and `ask`, but
-  nothing exposes a midpoint-to-natural price sequence for a plan, and no
-  backlog row owns it; UNIT-018's own intake records this as a real gap that
-  does not block it, since it is written to consume an already-built sequence
-  from fixtures.
-- Several thresholds design section 10 requires are still not committed
-  anywhere. `config/risk.toml` has no `max_snapshot_age`, so UNIT-013's
-  `approve` takes it as a required explicit parameter rather than a frozen
-  default. The same file has no `daily_loss_stop_fraction` or
-  `peak_to_valley_fraction`, so UNIT-017's `evaluate_kill_switch` takes both as
-  required explicit parameters too. Per D-017, an uncommitted threshold is
-  meant to be the exception, not the steady state, for exactly the values that
-  most need to be frozen before an autonomous session.
-- No model code exists on `develop`. UNIT-025, the pooled forecast, is
-  specified but not claimable until UNIT-027 merges. News features exist per
+- The function that turns a structure's quotes into the ordered candidate rung
+  price sequence UNIT-018 consumes is now owned by UNIT-019, written on
+  2026-08-30 and available. It is specified, not implemented, so the gap in the
+  code is unchanged; what changed is that a row owns it. UNIT-018 remains
+  merged and tested against fixture sequences, as it was written to be.
+- Three thresholds design section 10 requires are still not committed
+  anywhere, verified against `config/risk.toml` on 2026-08-30 rather than
+  carried forward: it has no `max_snapshot_age`, so UNIT-013's `approve` takes
+  it as a required explicit parameter rather than a frozen default, and no
+  `daily_loss_stop_fraction` or `peak_to_valley_fraction`, so UNIT-017's
+  `evaluate_kill_switch` takes both explicitly too. Per D-017 an uncommitted
+  threshold is meant to be the exception, not the steady state, for exactly the
+  values that most need freezing before an autonomous session, and a limit
+  passed as a bare argument is not in `risk_config_hash`, so a session that
+  halted on one cannot prove which one. UNIT-005 now owns closing this and is
+  available; the values are still uncommitted until it merges. Section 10
+  supplies two of the three numbers and none for the staleness bound, which
+  that intake records rather than hides.
+- Model code now exists on `develop`: UNIT-025 merged a ridge magnitude model,
+  a logistic direction model, and the section 6 eligibility gates. It has never
+  been fitted on real data. Every number comes from a fixture with a known
+  linear relationship, and `eligibility.decide` evaluates gates 1 to 4 only,
+  exporting `UNEVALUATED_GATES` so a caller cannot read `eligible` as "cleared
+  section 6": gate 5 is a property of the held-out evaluation across all
+  candidates and gate 6 is execution-lane state. News features exist per
   UNIT-023, but nothing labels an article: the LLM client, its caching, and its
   output validation are deliberately out of that unit and belong to UNIT-029,
   which is named in the decomposition but has no intake file yet, so the news
@@ -318,28 +313,32 @@ environment.
    `RESEARCH-LANE.md` under "G0 is yours now". Note that the kickoff and
    deadline already populated in that manifest are unverified placeholders, not
    settled values.
-2. Claim UNIT-030, which widens `Article` to carry the summary. It is small,
-   it is claimable now, and both UNIT-028 and UNIT-029 depend on it, so it is
-   the single thing standing between the research lane and the news family.
-   D-025 records why the summary was chosen over a headline-only family, and
-   records that `exclude_contentless` must never be used to build a research
-   sample because it selects on a property correlated with the outcome.
-3. Then UNIT-028, the Alpaca market-data adapter, which populates that field
-   and carries the `source_domain` question D-024 raised: Alpaca's `source` is
-   an originator name, not a domain, so the field is either derived or renamed,
-   and that is a decision to record rather than to make inside an adapter.
-   UNIT-027 is claimed by `mazwy/claude` and in progress; UNIT-025 and UNIT-026
-   depend on it and stay unclaimable until it merges. UNIT-029 is specified and
-   waits on UNIT-030.
+2. UNIT-028, the Alpaca market-data adapter. It is claimable, every dependency
+   merged, and it is the single thing standing between this project and its
+   first real number: every value in the research lane today comes from a
+   fixture. It carries the `source_domain` question D-024 raised, since
+   Alpaca's `source` is an originator name and not a domain, so the field is
+   either derived or renamed, and that is a decision to record rather than one
+   to make inside an adapter. It is Codex-preferred and its reviewer is
+   `alpaca-docs-researcher` rather than `backtest-auditor`.
+3. UNIT-026, the required baselines and ablations, unblocked by UNIT-025's
+   merge on 2026-08-30. This is the comparison the whole research lane exists
+   to make, price-only against news-only against combined against
+   random, and until it runs the project has a forecast and no evidence that
+   the forecast is worth anything. It is Claude-preferred.
 
-Every intake now exists. `specs/000-INTAKE.md` has no backlog row without a
-file, so the next unit of work is a claim rather than an authoring step.
+Also available and unclaimed, both written on 2026-08-30 to close gaps the
+decomposition had left open, and neither on the critical path: UNIT-005 commits
+the three section 10 risk thresholds `config/risk.toml` does not carry, and
+UNIT-019 owns the rung price sequence UNIT-018 consumes. Both are
+execution-lane and Codex-preferred.
 
-## Read first next session
+UNIT-029 is claimed by `mazwy/claude` and in progress.
 
-1. `AGENTS.md`, including the parallel work protocol
-2. `specs/000-INTAKE.md`
-3. `project-state/DECISIONS.md`, D-009 through D-025
-4. `RESEARCH-LANE.md`, then the handoff notes in the five merged research
-   unit intakes, which carry the findings and the open questions
-5. `options-alpha-agent-design.md` sections 0 to 5 and 14
+Every intake exists. `specs/000-INTAKE.md` has no backlog row without a file,
+so the next unit of work is a claim rather than an authoring step. What is
+worth saying instead is the shape of what remains: nothing in this project has
+ever fetched a real bar, labelled a real article, submitted a real order, or
+compared the news family against anything. Twenty-one merged units are twenty-
+one units of proven internal consistency, and that is a different claim from a
+working system.
