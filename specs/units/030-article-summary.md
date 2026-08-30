@@ -10,6 +10,10 @@ preferred_runtime: claude
 depends_on: [UNIT-001, UNIT-023]
 paths: src/alphaledger/evidence/news.py, tests/research/test_news.py
 claimed_at: 2026-08-30T10:41:18Z
+reviewed_by: backtest-auditor
+review_verdict: clear
+reviewed_at: 2026-08-30T11:55:20Z
+review_log: [clear]
 ---
 
 ## Problem
