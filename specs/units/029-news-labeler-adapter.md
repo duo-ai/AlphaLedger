@@ -118,8 +118,17 @@ Out:
   `prior_story_context`, an ordered list of `source_time`/`source_domain`/
   `headline` for each article in `prior_context`, oldest first. `source_name`
   is presently set from the subject's `source_domain` a second time; see
-  Scope, Out, on why. `summary` is the empty string; see the clarification
-  below.
+  Scope, Out, on why. `summary` is `subject.summary`, the field UNIT-030 added
+  to `Article` and merged on 2026-08-30.
+
+  This line read "`summary` is the empty string; see the clarification below"
+  until 2026-08-30, which contradicted the clarification it pointed at: that
+  section had already been resolved by D-025 on 2026-08-29, and the contract
+  was never updated to match. Corrected by the pre-implementation read D-026
+  requires, against the now-merged `Article`. An implementer following the
+  contract literally would have sent an empty summary to the labeler and
+  produced exactly the headline-only family D-025 exists to prevent, while
+  every test passed and the intake read as settled.
 - `cache_key(subject, ticker, company_name, prior_context, model_version,
   prompt_version) -> str`: the sha256 hex digest of the canonical JSON
   (`sort_keys=True`, `separators=(",", ":")`) of exactly the payload above,
