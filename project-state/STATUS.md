@@ -84,20 +84,22 @@ environment.
 
 ## Verified artifacts
 
-- `specs/`: the SDD intake, the unit template, and twenty-two unit intakes.
-  Eighteen units are merged, code and registry both. UNIT-027 is `claimed`
-  by `mazwy/claude`, and UNIT-025, UNIT-026, and UNIT-028 are `available`,
-  though UNIT-025 and UNIT-026 cannot actually be claimed until UNIT-027
-  merges. UNIT-029 is named in `specs/000-INTAKE.md`'s decomposition table with
-  no intake file yet; that file's own prose still describes UNIT-016 through
-  UNIT-018 as backlog rows without intakes, which is now stale and was not
-  corrected here, since `specs/000-INTAKE.md` is outside this file's scope.
-  The price ladder design section 11 step 4 requires is now owned by UNIT-018,
-  entry side only. What is not owned by any row is the function that turns a
-  structure's bid, ask, and quote metadata into the ordered sequence of
-  candidate rung prices the ladder consumes; UNIT-018's own intake names this
-  gap and is claimable and testable without it, exactly as UNIT-013 and
-  UNIT-017 were each written and merged before their real callers existed.
+- `specs/`: the SDD intake, the unit template, and twenty-six unit intakes.
+  Twenty-one units are merged, code and registry both. UNIT-029 is `claimed` by
+  `mazwy/claude`. UNIT-005, UNIT-019, UNIT-026, and UNIT-028 are `available`
+  and each is genuinely claimable, confirmed by running `coord.py check` for
+  all four rather than by reading their dependency lists. Every row in
+  `specs/000-INTAKE.md` has an intake file; that file's prose named four units
+  as intake-less backlog rows until 2026-08-30 and was corrected in the same
+  change that wrote the last two intakes.
+  The price ladder design section 11 step 4 requires is owned by UNIT-018,
+  entry side only, and the function that turns a structure's quotes into the
+  ordered candidate rung prices it consumes is now owned by UNIT-019, written
+  on 2026-08-30. That was the longest-standing decomposition gap in the
+  execution lane: the ladder and the chain enumeration both merged with the
+  function between them owned by nobody. UNIT-018 remains claimable and
+  testable without it, exactly as UNIT-013 and UNIT-017 were each written and
+  merged before their real callers existed.
 - `src/alphaledger/domain/`: the five records from design section 14 plus
   `ObservationTimestamps`. Money is `Decimal`, not the `float` the design
   sketched; the conflict and its resolution are recorded in the UNIT-001
