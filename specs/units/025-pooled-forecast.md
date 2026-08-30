@@ -2,7 +2,7 @@
 id: UNIT-025
 title: Fit the pooled forecast and emit the Forecast record
 lane: research
-state: in_review
+state: merged
 owner: mazwy/claude
 branch: feature/025-pooled-forecast
 reviewer: backtest-auditor
