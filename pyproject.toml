@@ -50,6 +50,13 @@ select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "DTZ", "RUF"]
 python_version = "3.14"
 strict = true
 files = ["src"]
+
+# scikit-learn ships no py.typed marker, so strict mode cannot see through it.
+# Scoped to sklearn alone rather than relaxed globally: numpy does ship types
+# and is checked normally, and every module of ours stays strict.
+[[tool.mypy.overrides]]
+module = ["sklearn.*"]
+ignore_missing_imports = true
 warn_unreachable = true
 disallow_any_explicit = false
 

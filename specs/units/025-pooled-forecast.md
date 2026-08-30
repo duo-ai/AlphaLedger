@@ -2,7 +2,7 @@
 id: UNIT-025
 title: Fit the pooled forecast and emit the Forecast record
 lane: research
-state: claimed
+state: in_review
 owner: mazwy/claude
 branch: feature/025-pooled-forecast
 reviewer: backtest-auditor
@@ -300,3 +300,109 @@ uv run mypy src
 ```
 
 ## Handoff notes
+
+## Handoff notes
+
+Two modules. `eligibility.py` evaluates the section 6 gates that a single
+forecast can decide; `model.py` fits the pooled ridge and logistic pair and
+emits the frozen `Forecast`.
+
+### What the pre-implementation read changed, before any code existed
+
+Four contract defects were found by reading this intake against the merged code
+first, as D-026 requires. All four are recorded in the acceptance criteria
+above with their reasoning; they are collected here because together they are
+the argument for doing that read at all.
+
+Gates 5 and 6 are not computable from `decide`'s inputs, so AC-4a splits them
+out and the module exports `EVALUATED_GATES` and `UNEVALUATED_GATES` rather
+than letting `eligible` read as "cleared section 6".
+
+`Fold.fold_hash` hashes `test_labels`, so a `model_version` derived from it
+would have made AC-2 unsatisfiable: two folds differing only in what they hold
+back already carry different fold hashes. AC-2b now states that
+`model_version` excludes it, and the model carries the fold hash as provenance
+instead. This one would have cost a review round and looked like a bug in the
+fit rather than a contradiction in the specification.
+
+`fit` had no channel for label uniqueness, so `effective_sample_size` could
+only have been the training row count, which is precisely the quantity
+UNIT-027 computes uniqueness to avoid. `uniqueness` is now a required
+argument and a missing weight is refused rather than defaulted to one.
+
+No `config/model.toml` exists and this unit could not have created one, so
+thresholds arrive as frozen dataclasses. That is the same recorded gap
+UNIT-013 and UNIT-017 already carry, not a new design.
+
+### The dependency, and the rule it bends
+
+D-027 records the addition of `numpy` and `scikit-learn`, the stdlib
+alternative that was considered and rejected, and the fact that widening this
+unit's globs onto `pyproject.toml` and `uv.lock` bends D-010. It was safe only
+because UNIT-025 was the sole claimed unit at the time, with UNIT-027 and
+UNIT-030 both merged and nothing else in flight. It is not a precedent.
+
+### An error the contract names that cannot occur
+
+The contract lists `UncalibratedModelError` for `predict` called before
+calibration. That state is unreachable rather than guarded: `fit` is the only
+way to obtain a `FittedModel` and it refuses to return one it could not
+calibrate, so no uncalibrated model ever exists to be asked. The error is still
+raised, from `fit`, which is AC-9. Making the invalid state unrepresentable is
+stronger than checking for it at every use, and
+`test_no_path_produces_a_model_that_has_not_been_calibrated` pins the property
+so a later constructor cannot quietly reintroduce the gap.
+
+### A defect found in this unit's own tests, by its own mutation probes
+
+Two of the first six probes survived, and both were defects in the tests rather
+than in the code. Recorded rather than quietly fixed, because both are the
+shape `backtest-auditor` caught on UNIT-013: an assertion structurally
+incapable of the failure it names.
+
+The effective sample size test weighted every label at one half and asserted
+sixty. Kish's effective sample size of any uniform weighting is exactly the row
+count whatever the weight is, so that fixture agreed with the row count it was
+written to detect, and replacing the entire computation with `len(weights)`
+passed it. The fixture is now deliberately uneven, thirty labels at one and
+thirty at a fifth, and asserts the hand-computed 36^2 / 31.2 as well as being
+strictly under the row count.
+
+The family attribution test moved a news feature and observed that the price
+attribution held. A mutation dropping the feature value entirely, attributing a
+bare coefficient, also holds under that observation. Two tests now pin it from
+both sides: a family whose features are all zero attributes exactly zero, and
+doubling a family's evidence doubles its contribution.
+
+The trial ordering test had the same weakness and was rewritten before the
+probes ran. It appended a marker after `fit` returned, which records the same
+order however late registration happened. It now instruments `Ridge.fit`
+through the module attribute, and a second test pins that the patch is not
+inert.
+
+### Verification actually run
+
+`ruff check`, `ruff format --check` over 68 files, `mypy src` under strict
+across 32 source files, 701 tests, and `scripts/verify_harness.sh` all green.
+`uv sync --frozen` audits clean with the new dependencies.
+
+Six mutations were run one at a time against the finished code, restoring the
+file between each, and all six are caught: folding `fold_hash` into
+`model_version`, dropping the refusal of supplied test-label features,
+dropping the refusal of a fold whose own label lists overlap, replacing the
+effective sample size with the row count, attributing a bare coefficient
+instead of a coefficient against a value, and allowing a prediction inside the
+window the model was fitted through.
+
+That claim is bounded to these six against this unit's own changes. It is not a
+statement about the suite as a whole, and the two survivors above are the
+reason the distinction is worth drawing.
+
+### Not done here, and named so it is not mistaken for done
+
+No model has been fitted on real data. Every number in this unit comes from a
+fixture with a known linear relationship, and the thresholds in
+`EligibilityConfig` and `ModelConfig` are declared defaults, not selected on
+development data, so design section 4's selection, registration, and freeze
+remain untouched. `config_version` and `model_version` exist so that selection
+is auditable when it happens.
