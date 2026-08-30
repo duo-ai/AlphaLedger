@@ -99,6 +99,16 @@ UNIT-024 rather than being caught.
 
 ## Assumptions
 
+Eligibility thresholds arrive as a frozen dataclass parameter rather than from
+`config/`. This unit's path globs cover `src/alphaledger/forecast/**` and its
+tests, so it cannot add `config/model.toml`, and no such file exists today.
+D-017 wants a threshold that explains a decision to be committed and hashed, so
+this is a gap rather than a design, and it is the same gap UNIT-013 and
+UNIT-017 already record: both take thresholds as required explicit parameters
+because `config/risk.toml` does not carry them. Recorded here so the later
+change that commits these values has one place to look. Every default declared
+here is declared, not selected on data, per design section 4.
+
 The estimator is ridge and logistic regression from scikit-learn, already in
 the dependency set, rather than anything hand rolled. `AGENTS.md` requires
 naming the package that already solves the problem, and a bespoke solver would
@@ -147,6 +157,46 @@ be a second set of unselected hyperparameters.
   reason names the specific gate from section 6 that refused it. Falsified by
   producing an ineligible forecast whose reason does not correspond to a
   numbered gate. The empty case is already refused by the frozen record.
+- AC-4a: `decide` evaluates gates 1 to 4 only, and the module states which
+  gates it does not evaluate through exported constants, so a caller cannot
+  mistake four gates for six. `eligible` therefore means "cleared every gate
+  this function evaluates" and never "cleared section 6". Falsified by
+  `EVALUATED_GATES` or `UNEVALUATED_GATES` being absent from the module, by
+  their union not being gates 1 to 6, or by a rejection reason naming a gate
+  outside `EVALUATED_GATES`.
+
+  The frozen `Forecast` record cannot carry this, and widening it is out of
+  scope: it is UNIT-001's file and this unit's globs do not reach it. Exported
+  constants are the honest alternative, because they are checkable by a test
+  rather than only stated in prose.
+
+  Recorded on 2026-08-30, from the pre-implementation read D-026 requires, and
+  before any code was written. Section 6 lists six conditions, and two of them
+  are not computable from this function's declared inputs. `decide` is a pure
+  function of one forecast, its contributing families, and frozen
+  configuration, and:
+
+  - Gate 5, that the signal is not concentrated in one symbol, one week, or one
+    sector in the held-out evaluation, is a property of the evaluation across
+    all candidates, not of any single forecast. One forecast cannot see the
+    distribution it belongs to. This belongs to UNIT-026, which owns the
+    baselines and ablations over the held-out set.
+  - Gate 6, that current data, chain, account, and portfolio checks pass, is
+    execution-lane state. This unit's declared path globs are `forecast/**`
+    only, so it cannot reach that code, and D-006 keeps account facts out of
+    the coding agent's reach entirely. This belongs to the pre-trade check on
+    the execution side.
+
+  Narrowing the function is therefore correct and widening it is not: a
+  `decide` that claimed to clear gates 5 and 6 would be asserting something it
+  has no input for, which is worse than one that reports what it checked. What
+  the unit must not do is let a caller mistake four gates for six, so the
+  emitted record names the gates that were evaluated.
+
+  Section 6's own wording supports this: it lists conditions under which "a
+  candidate reaches structure construction", which is the whole pipeline, not
+  one function. The test list's "clears all six gates" line is corrected below
+  for the same reason.
 - AC-5: a candidate where only one family contributes is ineligible, per
   section 6 gate 1, and says so. Falsified by supplying a news-only candidate
   and observing `eligible` is true.
@@ -176,8 +226,11 @@ be a second set of unselected hyperparameters.
   and the sign of `expected_residual_return` matches.
 - success: `contribution_by_family` names both families and both are non-zero
   when both contribute.
-- success: an eligible candidate clears all six gates from section 6 and
-  carries no rejection reason.
+- success: an eligible candidate clears gates 1 to 4 from section 6 and carries
+  no rejection reason, while `UNEVALUATED_GATES` names the two it did not check
+  so four cannot be mistaken for six (AC-4a). This line read "all six gates" before the
+  pre-implementation read found that gates 5 and 6 are not computable from
+  `decide`'s inputs.
 - failure: a training input from the test window raises `LeakedFitError` naming
   the label and the window. This is the deliberately leaked fixture the
   research rules require.
