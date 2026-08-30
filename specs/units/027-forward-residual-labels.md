@@ -2,7 +2,7 @@
 id: UNIT-027
 title: Construct forward residual return labels
 lane: research
-state: in_review
+state: merged
 owner: mazwy/claude
 branch: feature/027-forward-residual-labels
 reviewer: backtest-auditor
