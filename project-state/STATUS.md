@@ -288,8 +288,8 @@ environment.
   candidates and gate 6 is execution-lane state. News features exist per
   UNIT-023, but nothing labels an article: the LLM client, its caching, and its
   output validation are deliberately out of that unit and belong to UNIT-029,
-  which is named in the decomposition but has no intake file yet, so the news
-  family still cannot run on real data at all. The order lifecycle, risk
+  which has an intake and is claimed by `mazwy/claude` as of 2026-08-30 but is
+  not merged, so the news family still cannot run on real data at all. The order lifecycle, risk
   approval, chain enumeration, broker reconciliation, the kill switch, and now
   the ledger are all on `develop`, and a durable store behind
   `RecordedSubmissionAttempt` exists in `src/alphaledger/ledger/decisions.py`,
