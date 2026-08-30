@@ -29,6 +29,7 @@ from alphaledger.evidence.labels import (
     NO_PEER_DATA,
     UNTRADEABLE_ENTRY,
     AmbiguousBarError,
+    DuplicateLabelError,
     InsufficientHistoryError,
     Label,
     LabelConfig,
@@ -36,7 +37,12 @@ from alphaledger.evidence.labels import (
     with_uniqueness,
 )
 from alphaledger.evidence.price_volume import Bar
-from alphaledger.forecast.splits import Labelled
+from alphaledger.forecast.splits import (
+    OUTCOME_CROSSES_BOUNDARY,
+    Labelled,
+    SplitConfig,
+    walk_forward,
+)
 
 SYMBOL = "TARGET"
 PEERS = ("PEER1", "PEER2")
@@ -555,3 +561,167 @@ def test_the_same_symbol_and_instant_under_one_definition_keep_one_id() -> None:
     assert first is not None
     assert second is not None
     assert first.label_id == second.label_id
+
+
+# --- round two: the review findings ---------------------------------------
+#
+# Every test below transcribes a defect the round one `backtest-auditor` review
+# demonstrated on constructed input, so each one fails on the code as it was
+# reviewed. They are kept together because the two blocking findings share a
+# cause worth naming: an acceptance criterion whose stated falsification could
+# not distinguish the right behaviour from the wrong one, so the test written
+# from it passed either way.
+
+
+def gapped_peer_panel(
+    *,
+    missing: tuple[int, ...],
+    predecessor_seen_offset_minutes: int,
+) -> tuple[Bar, ...]:
+    """A panel where PEER1 is missing sessions and its predecessor arrived late.
+
+    The predecessor is the bar `_returns` silently reaches back to across the
+    gap. It sits outside the holding window, which is exactly why a scan of the
+    window cannot see it.
+    """
+    kept = [
+        item
+        for item in panel({})
+        if not (item.symbol == "PEER1" and item.session in {session_at(i) for i in missing})
+    ]
+    revised = bar("PEER1", 4, "50.00", seen_offset_minutes=predecessor_seen_offset_minutes)
+    without_predecessor = [
+        item for item in kept if not (item.symbol == "PEER1" and item.session == session_at(4))
+    ]
+    return (*without_predecessor, revised)
+
+
+def test_a_peer_bar_reached_through_a_gap_still_moves_the_outcome_time() -> None:
+    """Finding 1, the temporal half. AC-3 says `outcome_time` is the latest
+    `first_seen_time` among the bars the label consumed. A peer missing two
+    in-window sessions makes `_returns` produce a multi-session return for the
+    next session it does have, measured against a predecessor bar that sits
+    outside the window entirely. That bar was consumed, so a revision to it
+    must move the outcome instant, or UNIT-024 admits the label into a window
+    the purge exists to keep it out of.
+    """
+    two_years = 60 * 24 * 730
+    late = bar("PEER1", 4, "50.00", seen_offset_minutes=two_years)
+    bars = gapped_peer_panel(missing=(5, 6), predecessor_seen_offset_minutes=two_years)
+
+    block = build(SYMBOL, session_at(4), bars, config(horizon_sessions=2))
+
+    assert block is not None
+    assert block.entry_session == session_at(5)
+    assert block.exit_session == session_at(7)
+    # PEER1 has no bar on sessions 5 or 6, so its session 7 return is measured
+    # against session 4, and nothing inside the window carries that instant.
+    assert block.outcome_time == late.first_seen_time
+
+
+def test_a_late_peer_predecessor_purges_the_label_from_the_fold_it_would_have_leaked_into() -> None:
+    """AC-10's own stated falsification, which round one never implemented.
+
+    This is the end-to-end shape of the finding above: the fold geometry is
+    chosen so that the outcome instant a window scan produces still lands
+    inside the training window, while the instant the consumed bars produce
+    does not. A label carrying the first is trained on before its outcome was
+    knowable.
+    """
+    two_years = 60 * 24 * 730
+    bars = gapped_peer_panel(missing=(5, 6), predecessor_seen_offset_minutes=two_years)
+    label = build(SYMBOL, session_at(4), bars, config(horizon_sessions=2))
+    assert label is not None
+
+    split = SplitConfig(
+        horizon=timedelta(days=3),
+        purge=timedelta(days=3),
+        train=timedelta(days=9),
+        calibration=timedelta(days=5),
+        test=timedelta(days=5),
+        folds=1,
+    )
+    result = walk_forward(
+        FIRST,
+        [label.as_labelled()],
+        split,
+        available_until=FIRST + timedelta(days=30),
+    )
+
+    fold = result.folds[0]
+    assert fold.train.holds(label.prediction_time)
+    assert label.label_id not in fold.train_labels
+    assert [item.reason for item in fold.purged] == [OUTCOME_CROSSES_BOUNDARY]
+
+
+def test_a_symbol_that_stops_trading_while_the_panel_continues_yields_no_label() -> None:
+    """Finding 2. AC-4 makes an incomplete horizon a `None`, and names a symbol
+    that stops trading as one of its two causes. A delisting on the decision
+    session itself is still a delisting: the caller cannot precompute it from
+    the panel's own bounds the way it could a uniform panel end, because every
+    other symbol keeps trading for weeks.
+    """
+    bars = [bar(SYMBOL, index, "100.00") for index in range(6)]
+    for peer in PEERS:
+        bars.extend(bar(peer, index, "50.00") for index in range(20))
+
+    assert build(SYMBOL, session_at(5), tuple(bars), config(horizon_sessions=2)) is None
+
+
+def test_the_cross_section_is_a_median_and_not_a_mean() -> None:
+    """AC-2 says median, and the two-peer fixture every other test uses cannot
+    tell the difference: the median of two numbers is their mean. A third peer
+    making one outsized move separates them, which is the whole reason the
+    median was specified. Without this, swapping `statistics.median` for
+    `statistics.mean` passes the entire suite.
+    """
+    third = "PEER3"
+    sectors = {**SECTORS, third: "tech"}
+    bars: list[Bar] = []
+    for index in range(4):
+        bars.append(bar(SYMBOL, index, "100.00"))
+        bars.append(bar("PEER1", index, "50.00"))
+        bars.append(bar("PEER2", index, "50.00"))
+        # The outlier moves only on the single session the label sums.
+        bars.append(bar(third, index, "65.00" if index == 2 else "50.00"))
+
+    block = build(
+        SYMBOL,
+        session_at(0),
+        tuple(bars),
+        config(horizon_sessions=1, sector_by_symbol=sectors),
+    )
+
+    assert block is not None
+    assert block.exit_session == session_at(2)
+    # Peer returns on session 2 are 0.0, 0.0 and 0.3. The median is 0.0, so a
+    # flat symbol has a flat residual. Their mean is 0.1, which would make it
+    # -0.1 and quietly attribute a third peer's move to this symbol.
+    assert block.forward_residual_return == pytest.approx(0.0)
+
+
+def test_the_implausible_bound_is_exclusive_at_its_own_boundary() -> None:
+    """A return landing exactly on `implausible_return` is not implausible. The
+    bound is `>` and this pins it, because a silent drift to `>=` would flag a
+    boundary label and nothing else in the suite distinguishes the two.
+    """
+    exact = panel({2: "150.00"})
+
+    block = build(SYMBOL, session_at(0), exact, config(horizon_sessions=1, implausible_return=0.5))
+
+    assert block is not None
+    assert block.forward_residual_return == pytest.approx(0.5)
+    assert IMPLAUSIBLE_MAGNITUDE not in block.quality_flags
+
+
+def test_one_label_passed_twice_is_refused_rather_than_halving_its_own_weight() -> None:
+    """A duplicate identity makes a label concurrent with itself, so it would
+    silently weigh one half. That is the opposite of what uniqueness is for: it
+    exists to stop a fit overcounting information, and here it would undercount
+    a real observation while reporting a healthy-looking number.
+    """
+    only = build(SYMBOL, session_at(0), panel({}), config(horizon_sessions=2))
+    assert only is not None
+
+    with pytest.raises(DuplicateLabelError, match=only.label_id):
+        with_uniqueness([only, only])

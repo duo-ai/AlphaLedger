@@ -77,6 +77,7 @@ __all__ = [
     "SECTOR_FALLBACK_MARKET",
     "UNTRADEABLE_ENTRY",
     "AmbiguousBarError",
+    "DuplicateLabelError",
     "InsufficientHistoryError",
     "Label",
     "LabelConfig",
@@ -97,6 +98,10 @@ UNTRADEABLE_ENTRY = "untradeable_entry"
 
 class InsufficientHistoryError(ValueError):
     """The panel cannot reach the session the entry would have filled on."""
+
+
+class DuplicateLabelError(ValueError):
+    """One label identity appeared twice in a set being weighted."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,6 +237,16 @@ def build(
 
     entry_index = len(decided) - 1 + config.entry_offset_sessions
     if entry_index >= len(sessions):
+        # Two different facts wear the same shape here, and only one of them is
+        # the caller's mistake. If the panel itself stops before the entry
+        # session, it was built too short and no symbol in it could be
+        # labelled. If this symbol stops while the rest of the panel keeps
+        # trading, it delisted, which AC-4 makes an ordinary missing outcome.
+        # The caller cannot precompute the second from the panel's own bounds,
+        # so raising on it would demand knowledge only this function has.
+        panel_last = max(max(known) for known in series.values())
+        if sessions[-1] < panel_last:
+            return None
         raise InsufficientHistoryError(
             f"{symbol}: the panel ends at {sessions[-1].isoformat()}, before the entry "
             f"session an offset of {config.entry_offset_sessions} from "
@@ -245,7 +260,7 @@ def build(
     window = sessions[entry_index : exit_index + 1]
     flags: list[str] = []
     peers = _peers(symbol, series, config, flags)
-    value = _residual_sum(own, peers, window, flags)
+    value, outcome_time = _residual_sum(own, peers, window, flags)
 
     if config.entry_offset_sessions == 0:
         flags.append(UNTRADEABLE_ENTRY)
@@ -256,7 +271,7 @@ def build(
         label_id=_label_id(symbol, anchor, config),
         symbol=symbol,
         prediction_time=anchor,
-        outcome_time=_outcome_time(own, peers, window),
+        outcome_time=outcome_time,
         forward_residual_return=value,
         entry_session=window[0],
         exit_session=window[-1],
@@ -281,6 +296,22 @@ def with_uniqueness(labels: Sequence[Label]) -> tuple[Label, ...]:
     one observation and a fit that counted them as two would overstate its
     effective sample size by a factor of two.
     """
+    seen: set[str] = set()
+    for label in labels:
+        if label.label_id in seen:
+            # Refused rather than tolerated, unlike `_series`, which accepts a
+            # bar repeated identically. The asymmetry is the point: a repeated
+            # bar is idempotent, while a repeated label changes the arithmetic
+            # it is an input to. Counting one label twice makes it concurrent
+            # with itself and halves the weight of the very observation being
+            # duplicated, so the caller would get a quieter fit and no signal
+            # that anything went wrong.
+            raise DuplicateLabelError(
+                f"label {label.label_id} appears more than once. Weighting it would "
+                "make it concurrent with itself and halve its own uniqueness"
+            )
+        seen.add(label.label_id)
+
     concurrent: dict[tuple[str, datetime], int] = {}
     for label in labels:
         for session in label.outcome_sessions:
@@ -343,18 +374,47 @@ def _peers(
     return [series[other] for other in sorted(series) if other != symbol]
 
 
-def _returns(sessions: Mapping[datetime, Bar]) -> dict[datetime, float]:
+@dataclass(frozen=True, slots=True)
+class _Move:
+    """One close to close return and the two bars it was actually measured across.
+
+    The two bars are carried rather than recomputed because `outcome_time` has
+    to cover every bar the label consumed, and the bar a return reaches back to
+    is not always the one a reader would predict. A series missing a session
+    yields a multi-session return whose predecessor can sit outside the holding
+    window entirely, and a window scan cannot see it.
+    """
+
+    value: float
+    previous: Bar
+    current: Bar
+
+
+def _returns(sessions: Mapping[datetime, Bar]) -> dict[datetime, _Move]:
     """Close to close returns keyed by the session they belong to.
 
-    Identical to UNIT-022's `_return_by_session`. The duplication is recorded
-    in the intake and pinned by a test that compares the two on one fixture,
-    because two implementations of one definition drift and a drifting label is
-    not detectable from its own output.
+    Numerically identical to UNIT-022's `_return_by_session`. The duplication is
+    recorded in the intake and pinned by a test that compares the two on one
+    fixture, because two implementations of one definition drift and a drifting
+    label is not detectable from its own output.
+
+    Known limitation, shared with UNIT-022 and deliberately not fixed here: a
+    missing session produces a multi-session return silently, so a peer absent
+    for three sessions contributes a four-session move to a one-session
+    cross-section. `own` has the same defect for the same reason. Correcting it
+    would change the number and break the test pinning this against the price
+    family, so it belongs to the refactor unit that owns both files. What is
+    fixed here is the temporal half: whatever bars a return reaches, they count
+    towards `outcome_time`.
     """
-    out: dict[datetime, float] = {}
+    out: dict[datetime, _Move] = {}
     ordered = [sessions[key] for key in sorted(sessions)]
     for previous, current in itertools.pairwise(ordered):
-        out[current.session] = float(current.close / previous.close) - 1.0
+        out[current.session] = _Move(
+            value=float(current.close / previous.close) - 1.0,
+            previous=previous,
+            current=current,
+        )
     return out
 
 
@@ -363,52 +423,52 @@ def _residual_sum(
     peers: Sequence[Mapping[datetime, Bar]],
     window: Sequence[datetime],
     flags: list[str],
-) -> float:
-    """Sum the per-session residual returns over the holding window.
+) -> tuple[float, datetime]:
+    """The summed residual return, and the instant its last input was observed.
 
     `window` runs from the entry session to the exit session inclusive, and the
     entry session contributes only its close: the first return measured is the
     one from the entry close to the next session's close, which is the first
     move an order placed at entry could actually have earned.
+
+    The outcome instant is returned from here rather than recomputed by a second
+    function walking the same window. That is the whole correction: the two
+    walks disagreed whenever a peer return reached back through a gap to a bar
+    the window did not contain, and a label reporting the earlier instant would
+    be admitted by UNIT-024 into a window its outcome had not yet resolved in.
+    Derived in one place, they cannot disagree.
     """
     own_returns = _returns(own)
     peer_returns = [_returns(peer) for peer in peers]
     total = 0.0
     undemeaned = 0
+    consumed: list[datetime] = []
     for session in window[1:]:
-        value = own_returns[session]
-        cross_section = [values[session] for values in peer_returns if session in values]
+        move = own_returns[session]
+        consumed.append(move.previous.first_seen_time)
+        consumed.append(move.current.first_seen_time)
+        cross_section: list[float] = []
+        for values in peer_returns:
+            peer_move = values.get(session)
+            if peer_move is None:
+                continue
+            cross_section.append(peer_move.value)
+            consumed.append(peer_move.previous.first_seen_time)
+            consumed.append(peer_move.current.first_seen_time)
         if not cross_section:
             undemeaned += 1
-            total += value
+            total += move.value
             continue
-        total += value - statistics.median(cross_section)
+        total += move.value - statistics.median(cross_section)
     if undemeaned:
         # The count, not a bare flag, matching UNIT-022: one raw return inside a
         # five-session label is a different fact from a label nothing was
         # demeaned against at all, and a consumer cannot weigh the first
         # without knowing how many.
         flags.append(f"{NO_PEER_DATA}:{undemeaned}")
-    return total
-
-
-def _outcome_time(
-    own: Mapping[datetime, Bar],
-    peers: Sequence[Mapping[datetime, Bar]],
-    window: Sequence[datetime],
-) -> datetime:
-    """The instant the last bar this label consumed was first observed.
-
-    Not the exit session's own timestamp. A label that reported the session
-    would claim to have resolved before the bar that resolved it existed, and
-    UNIT-024 would then admit it into a window the purge should have kept it
-    out of. Peer bars count too: the residual is not knowable until the
-    cross-section it is measured against has been seen.
-    """
-    seen = [own[session].first_seen_time for session in window if session in own]
-    for peer in peers:
-        seen.extend(peer[session].first_seen_time for session in window if session in peer)
-    return max(seen)
+    # `window` always holds at least an entry and one further session, because
+    # `horizon_sessions` is validated positive, so `consumed` is never empty.
+    return total, max(consumed)
 
 
 def _label_id(symbol: str, decision_session: datetime, config: LabelConfig) -> str:

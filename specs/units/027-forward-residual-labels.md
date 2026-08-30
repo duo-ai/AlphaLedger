@@ -2,7 +2,7 @@
 id: UNIT-027
 title: Construct forward residual return labels
 lane: research
-state: in_review
+state: claimed
 owner: mazwy/claude
 branch: feature/027-forward-residual-labels
 reviewer: backtest-auditor
@@ -113,9 +113,22 @@ one; two labels overlapping completely have one half each.
 `label_version` as a content hash the same way `FeatureConfig` derives
 `feature_version`.
 
-Errors: `InsufficientHistoryError` when the panel cannot reach the entry
-session; `AmbiguousBarError` when two bars describe one session and disagree,
-matching UNIT-022 rather than resolving it.
+Errors: `InsufficientHistoryError` when the panel itself cannot reach the
+entry session, meaning no symbol in it could be labelled; `AmbiguousBarError`
+when two bars describe one session and disagree, matching UNIT-022 rather than
+resolving it; `DuplicateLabelError` when `with_uniqueness` is handed one label
+identity twice.
+
+A symbol whose own bars stop while the rest of the panel keeps trading is not
+an error. That is a delisting, and AC-4 makes it a `None`. The discriminator is
+whether the symbol's last session precedes the panel's last session, which the
+caller cannot compute for itself, because it would have to know which of its
+symbols stopped early and that is the question it is asking.
+
+`DuplicateLabelError` is a deliberate asymmetry against `_series`, which accepts
+a bar repeated identically. A repeated bar is idempotent; a repeated label is
+not, because it makes the label concurrent with itself and halves the very
+uniqueness weight being computed.
 
 ## Assumptions
 
@@ -163,10 +176,20 @@ session, and `label_version` exists so that selection is auditable.
 - AC-3: `outcome_time` is the latest `first_seen_time` among the bars the label
   consumed, not the exit session's timestamp. Falsified by delaying one bar's
   `first_seen_time` past the others and observing `outcome_time` unchanged.
-- AC-4: a label whose horizon does not complete, because the panel ends or the
-  symbol stops trading, returns `None` with the reason recorded, and is never
-  a zero return. Falsified by truncating the panel and observing a label whose
-  value is zero.
+- AC-4: a label whose horizon does not complete returns `None` and is never a
+  zero return, whether the horizon runs past the end of the panel or the symbol
+  stops trading first, and including the case where it stops on the decision
+  session itself so no entry session exists for it. Falsified by holding the
+  panel at twenty sessions, truncating one symbol to six, deciding on that
+  symbol's last session, and observing anything other than `None`. The earlier
+  falsification, truncating the panel and observing a zero, could not
+  distinguish `None` from a raise, since neither is zero; that is why round one
+  raised here and the test written from this criterion still passed.
+- AC-4a: a panel that is itself too short to reach the entry session raises
+  `InsufficientHistoryError`, because no symbol in it could be labelled and the
+  caller built it wrong. Falsified by truncating every symbol in the panel and
+  observing a `None`. AC-4 and AC-4a are the two halves of one condition and
+  are separated because the observable outcome differs.
 - AC-5: `uniqueness` is the average over a label's outcome sessions of one over
   the concurrent label count. Falsified by two labels overlapping completely
   and observing a uniqueness other than one half, or by one isolated label and
@@ -199,8 +222,26 @@ session, and `label_version` exists so that selection is auditable.
 - success: a single isolated label has uniqueness one.
 - success: two labels sharing every outcome session each have uniqueness one
   half, and a partial overlap gives a value strictly between one half and one.
-- failure: a panel ending before the entry session raises
-  `InsufficientHistoryError` naming the symbol and the session.
+- failure: a panel in which every symbol ends before the entry session raises
+  `InsufficientHistoryError` naming the symbol and the session (AC-4a).
+- failure: a symbol whose own bars end before the entry session, while the rest
+  of the panel keeps trading, returns `None` rather than raising (AC-4). This
+  line and the one above were a single line in round one, which asserted the
+  raise for both cases and so contradicted AC-4's prose.
+- failure: `with_uniqueness` handed one label twice raises
+  `DuplicateLabelError` rather than silently weighting it one half.
+- leakage: a peer missing two consecutive in-window sessions makes its next
+  return reach back to a bar outside the window; a revision to that bar moves
+  `outcome_time` (AC-3).
+- leakage: the label from that same gapped panel is purged from a fold whose
+  training window would otherwise have held it, built with
+  `alphaledger.forecast.splits.walk_forward` (AC-10). This is AC-10's own
+  stated falsification, which round one never implemented.
+- coverage: a three-peer cross-section where the median and the mean differ
+  pins AC-2's median wording; a two-peer fixture cannot, since the median of
+  two numbers is their mean.
+- coverage: a return landing exactly on `implausible_return` is not flagged,
+  pinning the bound as exclusive.
 - failure: two bars describing one session and disagreeing raise
   `AmbiguousBarError` rather than one being chosen.
 - failure: a session with no peer observation is not demeaned and the count is
@@ -310,3 +351,82 @@ these twelve and not about the suite as a whole.
 That distinction is drawn deliberately. On UNIT-023 the same claim was read as
 the stronger one, and `backtest-auditor` found two survivors beyond the ones
 recorded by running its own probes.
+
+### Round two, addressing the `backtest-auditor` block
+
+The round one verdict was `block` on two findings, both demonstrated on
+constructed input rather than argued from reading. Both are fixed, and the
+reviewer's own counterexamples are now tests.
+
+**Finding 1, `outcome_time` did not cover a peer bar reached through a gap.**
+`_residual_sum` computed each peer's returns over that peer's whole series, so
+a peer missing sessions inside the holding window produced a multi-session
+return whose predecessor bar could sit outside the window entirely.
+`_outcome_time` scanned only the window, so that bar was consumed and never
+counted, and a revision to it left `outcome_time` unmoved. UNIT-024 would then
+admit the label into a window the purge exists to keep it out of.
+
+The correction is structural rather than a patch. `_returns` now returns a
+`_Move` carrying the two bars each return was measured across, `_residual_sum`
+accumulates the `first_seen_time` of every bar it actually consumed and returns
+the outcome instant alongside the value, and `_outcome_time` is deleted. There
+is no longer a second function walking the window that could disagree with the
+first, so the class of defect is closed rather than the instance.
+
+The economic half of the same finding is deliberately not fixed here, matching
+the reviewer's own routing. A stale multi-session peer return still enters the
+median unflagged, because correcting it changes the number and would break
+`test_the_demeaning_agrees_with_the_price_feature_family`, which pins this
+module against UNIT-022's `_return_by_session`. Extending what round one
+recorded: `own` has the identical defect and it was not named. `window` is a
+slice of the symbol's own session list, so a symbol missing three mid-window
+sessions contributes a return spanning eight calendar sessions to a window
+called five, against a peer cross-section measured over one. Both halves belong
+to the refactor unit that owns both files, and both are now written down so
+that unit inherits the whole problem rather than half of it. `_returns` says so
+in its own docstring.
+
+**Finding 2, a delisting raised instead of returning `None`.** This was a
+specification defect before it was a code defect, which is why the intake
+changed above and not only the module. AC-4's prose made a symbol that stops
+trading a `None`, while the test list asserted a raise for the same input, and
+the same author wrote both, so writing the test first did not catch it. AC-4's
+stated falsification ("truncate the panel and observe a label whose value is
+zero") could not distinguish `None` from a raise, since neither is zero.
+
+AC-4 is now split from AC-4a on the discriminator that actually separates the
+two cases: whether this symbol's last session precedes the panel's last
+session. A panel too short for anything still raises, and the existing test
+covering it still passes unchanged, because its fixture truncates every symbol.
+
+**Also addressed, from the reviewer's independent mutation probes.** All three
+of the surviving mutations it reported are now killed, each verified by
+re-running the exact mutation against the suite. `statistics.median` swapped for
+`statistics.mean` survived because the fixture had exactly two peers and the
+median of two numbers is their mean; a three-peer test now separates them.
+`abs(value) > config.implausible_return` swapped for `>=` survived on the
+boundary; a test now pins the bound as exclusive. A duplicate `label_id` passed
+to `with_uniqueness` silently produced 0.5 for both copies; it now raises
+`DuplicateLabelError`, and the intake records why that is refused where
+`_series` tolerates an identically repeated bar.
+
+AC-10's stated falsification, never implemented in round one, now exists: it
+builds a real fold with `alphaledger.forecast.splits.walk_forward` from the
+gapped panel and asserts the label is purged from a training window that would
+otherwise have held it. It is the end-to-end form of Finding 1 and fails on the
+round one code.
+
+### Verification actually run, round two
+
+The three regression tests were confirmed to fail on the round one code before
+anything was changed, each for its own reason rather than by collateral error.
+Four mutations were then run against the fixed code, one at a time, restoring
+the file between each: dropping the peer predecessor from the consumed set
+fails the gap test, removing the delisting branch fails the delisting test, and
+the reviewer's median and boundary mutations fail their new tests. All four are
+caught.
+
+The claim these numbers support is bounded: four mutations aimed at this
+round's four changes, all caught. It is not a statement about the suite as a
+whole, and the round one note above already records why that distinction is
+drawn.
