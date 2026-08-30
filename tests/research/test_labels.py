@@ -725,3 +725,28 @@ def test_one_label_passed_twice_is_refused_rather_than_halving_its_own_weight() 
 
     with pytest.raises(DuplicateLabelError, match=only.label_id):
         with_uniqueness([only, only])
+
+
+def test_a_symbol_that_stops_partway_through_the_horizon_yields_no_label() -> None:
+    """The other side of the delisting fix. Here the entry session exists and
+    the exit session does not, so the incomplete-horizon branch is what returns
+    `None`. Without this the fix is only proven for a symbol that stops on the
+    decision session itself, which is one arrangement of many.
+    """
+    bars = [bar(SYMBOL, index, "100.00") for index in range(8)]
+    for peer in PEERS:
+        bars.extend(bar(peer, index, "50.00") for index in range(20))
+
+    assert build(SYMBOL, session_at(5), tuple(bars), config(horizon_sessions=2)) is None
+
+
+def test_a_single_symbol_panel_too_short_for_an_entry_still_raises() -> None:
+    """The delisting discriminator compares this symbol's last session against
+    the panel's. With no peers the two are equal by construction, so a panel
+    holding one symbol and ending too early is a panel built wrong, exactly as
+    AC-4a says, and must not be silently reported as a missing outcome.
+    """
+    alone = tuple(bar(SYMBOL, index, "100.00") for index in range(6))
+
+    with pytest.raises(InsufficientHistoryError, match=SYMBOL):
+        build(SYMBOL, session_at(5), alone, config(horizon_sessions=2))

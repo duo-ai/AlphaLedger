@@ -176,15 +176,21 @@ session, and `label_version` exists so that selection is auditable.
 - AC-3: `outcome_time` is the latest `first_seen_time` among the bars the label
   consumed, not the exit session's timestamp. Falsified by delaying one bar's
   `first_seen_time` past the others and observing `outcome_time` unchanged.
-- AC-4: a label whose horizon does not complete returns `None` and is never a
-  zero return, whether the horizon runs past the end of the panel or the symbol
+- AC-4: a label whose horizon does not complete returns a bare `None` and is
+  never a zero return, whether the horizon runs past the end of the panel or the symbol
   stops trading first, and including the case where it stops on the decision
   session itself so no entry session exists for it. Falsified by holding the
   panel at twenty sessions, truncating one symbol to six, deciding on that
   symbol's last session, and observing anything other than `None`. The earlier
   falsification, truncating the panel and observing a zero, could not
   distinguish `None` from a raise, since neither is zero; that is why round one
-  raised here and the test written from this criterion still passed.
+  raised here and the test written from this criterion still passed. The phrase
+  "with the reason recorded" is struck from this criterion rather than left
+  aspirational: `build` returns `Label | None` and no channel carries a reason,
+  so the words described nothing observable. Distinguishing a panel that ended
+  from a symbol that delisted would widen the return type, which is a change to
+  the contract UNIT-024 and UNIT-025 consume and belongs to whichever unit
+  needs the distinction, not to this one.
 - AC-4a: a panel that is itself too short to reach the entry session raises
   `InsufficientHistoryError`, because no symbol in it could be labelled and the
   caller built it wrong. Falsified by truncating every symbol in the panel and
@@ -228,6 +234,11 @@ session, and `label_version` exists so that selection is auditable.
   of the panel keeps trading, returns `None` rather than raising (AC-4). This
   line and the one above were a single line in round one, which asserted the
   raise for both cases and so contradicted AC-4's prose.
+- failure: a symbol that stops partway through the horizon, with the entry
+  session present and the exit session absent, returns `None` (AC-4).
+- failure: a panel holding one symbol and no peers, ending before the entry
+  session, still raises, since the delisting discriminator compares the symbol
+  against the panel and the two are equal by construction there (AC-4a).
 - failure: `with_uniqueness` handed one label twice raises
   `DuplicateLabelError` rather than silently weighting it one half.
 - leakage: a peer missing two consecutive in-window sessions makes its next
