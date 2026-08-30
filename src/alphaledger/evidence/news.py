@@ -187,11 +187,20 @@ class Article:
     UNIT-022 defines `Bar` in its own module: the frozen domain records are
     another unit's file, and an article is an input to feature construction
     rather than a record the ledger holds.
+
+    `headline` and `summary` are both required and are validated differently on
+    purpose. The headline is what clustering is computed from, so it must
+    survive canonicalisation; the summary is what the labeler reads, so it must
+    be present and is never judged on how much it says. D-025 decides that the
+    family carries the summary at all, because a label built from ten words
+    chosen to be clicked on would answer a smaller question than the one the
+    research lane exists to ask.
     """
 
     article_id: str
     symbols: tuple[str, ...]
     headline: str
+    summary: str
     source_domain: str
     timestamps: ObservationTimestamps
 
@@ -212,6 +221,31 @@ class Article:
                 f"headline {self.headline!r} canonicalises to nothing, so it would cluster "
                 "with every other such headline and count them as one wire story"
             )
+        if not str(self.summary).strip():
+            raise ValueError(
+                "summary must be recorded; the labeler reads it and a headline alone "
+                "answers a smaller question. The feed lists it as required, so an absent "
+                "one is a contract violation rather than a thin article"
+            )
+        # `summary` deliberately stops here, one check short of `headline`.
+        #
+        # The canonicalisation check above exists for a clustering reason, and
+        # its own message says so: a headline that canonicalises to nothing
+        # would collapse unrelated stories into one wire story. Clustering is a
+        # function of the headline alone, so that reason does not transfer.
+        #
+        # Applying it anyway would refuse an article on how informative its
+        # text is, and D-025 is explicit that selecting articles on a content
+        # property correlated with the outcome is a selection effect rather
+        # than a cleaning step. It names `exclude_contentless` as the thing not
+        # to reach for; a validator doing the same work at construction is the
+        # same mistake, and harder to see because it would look like rigour.
+        # The reference's own example is a headline-only article whose summary
+        # restates its headline, so uninformative summaries are documented
+        # ordinary input.
+        #
+        # The line: refuse what the feed contract says cannot happen, never
+        # refuse on informativeness.
 
 
 @dataclass(frozen=True, slots=True)
