@@ -2,13 +2,14 @@
 id: UNIT-025
 title: Fit the pooled forecast and emit the Forecast record
 lane: research
-state: available
-owner: -
-branch: -
+state: claimed
+owner: mazwy/claude
+branch: feature/025-pooled-forecast
 reviewer: backtest-auditor
 preferred_runtime: claude
 depends_on: [UNIT-001, UNIT-022, UNIT-023, UNIT-024, UNIT-027]
 paths: src/alphaledger/forecast/model.py, src/alphaledger/forecast/eligibility.py, tests/research/test_model.py, tests/research/test_eligibility.py
+claimed_at: 2026-08-30T11:49:32Z
 ---
 
 ## Problem
