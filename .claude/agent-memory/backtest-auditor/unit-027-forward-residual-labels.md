@@ -1,6 +1,6 @@
 ---
 name: unit-027-forward-residual-labels
-description: Round-one review facts for UNIT-027 (src/alphaledger/evidence/labels.py), the peer-gap outcome_time leak and the delisting-raises-instead-of-None defect, both confirmed by constructed counterexamples.
+description: UNIT-027 (src/alphaledger/evidence/labels.py) round one block and round two clear; the peer-gap outcome_time leak and the delisting-raises-instead-of-None defect, and how the _Move refactor fixed both.
 metadata:
   type: project
 ---
@@ -100,3 +100,61 @@ defects (an assertion's outcome changes / an AC is contradicted by
 demonstrated input), not coverage gaps on correct behavior, which is why they
 block rather than being graded LOW/MEDIUM like the mean/median and duplicate
 label id findings.
+
+**Round two, reviewed 2026-08-30, verdict clear.** Every finding above is
+fixed, each independently re-verified rather than taken from the handoff
+claim, per [[mutation-testing-discipline]].
+
+The `_outcome_time` deletion is the real fix and it is a structural
+improvement, not a patch at the one failing input. `_returns` now returns a
+`_Move` carrying the two bars each return actually spanned, and
+`_residual_sum` accumulates `first_seen_time` from exactly the bars it
+consumes while it computes the value, returning `(value, outcome_time)`
+together instead of through a second function that re-scans `window`. Traced
+by hand: for any window session, `move.previous` recovers the entry bar, or,
+across a gap, the true predecessor bar that sits outside the window, which is
+exactly the bar the old window-only scan could not see. There is no longer a
+second walk of the same data that can disagree with the first, so this closes
+the defect class rather than only the one counterexample. Confirmed the
+Finding-1 counterexample now passes as
+`test_a_peer_bar_reached_through_a_gap_still_moves_the_outcome_time`, and
+AC-10's previously unimplemented falsification now exists and calls the real
+`alphaledger.forecast.splits.walk_forward`, not a stub
+(`test_a_late_peer_predecessor_purges_the_label_from_the_fold_it_would_have_leaked_into`).
+
+The delisting fix (`panel_last = max(max(known) for known in
+series.values())`, `if sessions[-1] < panel_last: return None`) is correct:
+since `series` includes the symbol's own bars, `panel_last` can only exceed
+`sessions[-1]` when some other symbol in the panel outlives it, which is
+exactly the AC-4/AC-4a discriminator. A single-symbol panel makes the two
+equal by construction and falls through to the raise, matching AC-4a's own
+test.
+
+Re-ran all three mutation probes against the round-two code myself: `mean`
+for `median` now fails `test_the_cross_section_is_a_median_and_not_a_mean`;
+`>=` for `>` on `implausible_return` now fails
+`test_the_implausible_bound_is_exclusive_at_its_own_boundary`; the duplicate
+`label_id` path has a direct positive test exercising the new
+`DuplicateLabelError` raise. All three killed.
+
+The economic half (stale multi-session peer return entering the median
+unflagged) was, as recorded above, routed rather than fixed. Round two's
+docstring on `_returns` states the limitation explicitly and extends it: `own`
+has the identical defect and was not previously named. Honestly recorded, not
+fixed, matches what round one asked for.
+
+One cosmetic leftover, not raised as a finding: the test list's "no-trade"
+line still reads "returns `None` with a reason", even though AC-4's prose
+struck "with the reason recorded" this same round as unfalsifiable (`build`
+returns `Label | None`, no channel carries a reason). No test asserts a reason
+string. Textual inconsistency in the intake prose only, outside the declared
+`src`/`tests` globs, not actionable under D-022's own scope rule.
+
+Full quality gate green: `pytest tests/research/test_labels.py -q` (48
+passed), full `pytest -q` (all green), `ruff check .`, `ruff format --check
+.`, `mypy src` (30 files, strict, clean).
+
+Confirms [[d022-bounded-mandate]]: the narrower round-two question worked as
+designed. No new finding was needed; the fixes were real and independently
+verified, so clearing was correct rather than manufacturing a finding to
+justify the round.

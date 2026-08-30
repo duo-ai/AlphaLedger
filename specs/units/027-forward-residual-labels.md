@@ -11,9 +11,9 @@ depends_on: [UNIT-001, UNIT-020, UNIT-021, UNIT-022, UNIT-024]
 paths: src/alphaledger/evidence/labels.py, tests/research/test_labels.py
 claimed_at: 2026-08-29T15:16:48Z
 reviewed_by: backtest-auditor
-review_verdict: block
-reviewed_at: 2026-08-30T08:08:18Z
-review_log: [block]
+review_verdict: clear
+reviewed_at: 2026-08-30T10:45:57Z
+review_log: [block, clear]
 ---
 
 ## Problem
@@ -265,9 +265,11 @@ session, and `label_version` exists so that selection is auditable.
   under two hash seeds.
 - restart: the demeaning agrees with `price_volume`'s trailing residual on one
   shared fixture, so the two definitions cannot drift apart unnoticed.
-- no-trade: a horizon that does not complete returns `None` with a reason, and
-  a caller that treats `None` as zero is refused by the type rather than by
-  convention.
+- no-trade: a horizon that does not complete returns a bare `None`, and a
+  caller that treats `None` as zero is refused by the type rather than by
+  convention. "With a reason" is struck here for the same cause as in AC-4:
+  `build` returns `Label | None` and no channel carries a reason, so the phrase
+  named nothing a test could observe.
 - no-trade: a symbol with no bars at all returns `None` rather than raising, so
   an empty universe member is an ordinary outcome.
 
