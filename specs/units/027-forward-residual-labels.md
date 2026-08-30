@@ -10,6 +10,10 @@ preferred_runtime: claude
 depends_on: [UNIT-001, UNIT-020, UNIT-021, UNIT-022, UNIT-024]
 paths: src/alphaledger/evidence/labels.py, tests/research/test_labels.py
 claimed_at: 2026-08-29T15:16:48Z
+reviewed_by: backtest-auditor
+review_verdict: block
+reviewed_at: 2026-08-30T08:08:18Z
+review_log: [block]
 ---
 
 ## Problem
