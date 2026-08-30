@@ -2,13 +2,14 @@
 id: UNIT-030
 title: Carry the article summary on the news record
 lane: research
-state: available
-owner: -
-branch: -
+state: claimed
+owner: mazwy/claude
+branch: feature/030-article-summary
 reviewer: backtest-auditor
 preferred_runtime: claude
 depends_on: [UNIT-001, UNIT-023]
 paths: src/alphaledger/evidence/news.py, tests/research/test_news.py
+claimed_at: 2026-08-30T10:41:18Z
 ---
 
 ## Problem
