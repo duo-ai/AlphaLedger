@@ -60,12 +60,17 @@ def article(
     domain: str = "wire.example",
     symbols: tuple[str, ...] = (SYMBOL,),
     event_time: datetime | None = None,
+    summary: str | None = None,
 ) -> Article:
     seen = AS_OF - timedelta(hours=age_hours)
     return Article(
         article_id=article_id,
         symbols=symbols,
         headline=headline,
+        # The default is distinct from the headline so the ordinary fixture
+        # exercises a real summary. `Article` itself has no default, which is
+        # AC-1: losing the field must fail at construction, not silently.
+        summary=f"{headline}, the wire reports." if summary is None else summary,
         source_domain=domain,
         timestamps=ObservationTimestamps(
             event_time=seen if event_time is None else event_time,
@@ -576,6 +581,7 @@ def test_a_bare_string_of_symbols_is_rejected_rather_than_split_into_letters() -
             article_id="h3",
             symbols="ACME",  # type: ignore[arg-type]
             headline="Acme beats earnings",
+            summary="Acme beat consensus on both lines.",
             source_domain="wire.example",
             timestamps=FRESH.timestamps,
         )
@@ -617,6 +623,7 @@ def article(article_id, headline, age_hours, domain):
         article_id=article_id,
         symbols=("ACME",),
         headline=headline,
+        summary=headline + ", the wire reports.",
         source_domain=domain,
         timestamps=ObservationTimestamps(
             event_time=seen,
@@ -858,3 +865,128 @@ def test_a_chain_of_republications_beyond_the_window_still_splits() -> None:
     block = build(SYMBOL, AS_OF, (first, middle, last), labels, config)
     assert block.features["independent_source_count"] == pytest.approx(2.0)
     assert SYNDICATION_COLLAPSED in block.quality_flags
+
+
+# --- UNIT-030: the article summary --------------------------------------
+#
+# D-025 decides that the news family carries the summary rather than the
+# headline alone, because a label derived from ten words chosen to be clicked
+# on would answer a smaller question than the one the research lane exists to
+# ask. This unit widens the record; UNIT-028 populates it and UNIT-029 sends it
+# to a model.
+
+
+def test_an_article_carries_a_summary_distinct_from_its_headline() -> None:
+    """AC-1. The field is real and independent of the headline, which is the
+    entire reason for the unit: a summary that could only ever restate the
+    headline would buy nothing."""
+    item = article("s1", "Acme beats earnings", summary="Acme beat consensus on both lines.")
+
+    assert item.headline == "Acme beats earnings"
+    assert item.summary == "Acme beat consensus on both lines."
+
+
+def test_omitting_the_summary_fails_at_construction_rather_than_defaulting() -> None:
+    """AC-1. A default of empty string would let an adapter drop the field and
+    never learn, and every downstream label would be built from a headline
+    while the record claimed to hold a summary."""
+    with pytest.raises(TypeError, match="summary"):
+        Article(  # type: ignore[call-arg]
+            article_id="s2",
+            symbols=(SYMBOL,),
+            headline="Acme beats earnings",
+            source_domain="wire.example",
+            timestamps=FRESH.timestamps,
+        )
+
+
+@pytest.mark.parametrize("blank", ["", "   ", "\t\n"])
+def test_a_blank_summary_is_refused_naming_the_field(blank: str) -> None:
+    """AC-2. The Alpaca reference lists `summary` as required on every article,
+    so an absent one is a feed contract violation rather than a thin article,
+    and it is refused on the same terms `headline` and `article_id` already
+    are."""
+    with pytest.raises(ValueError, match="summary"):
+        article("s3", "Acme beats earnings", summary=blank)
+
+
+def test_a_summary_that_canonicalises_to_nothing_is_still_accepted() -> None:
+    """AC-2, and the one place this unit deliberately does NOT copy `headline`.
+
+    `headline` refuses a value that canonicalises to nothing, and its own error
+    message says why: such a headline would cluster with every other one and
+    count unrelated stories as a single wire story. That reason is about
+    clustering, and clustering is a function of the headline alone. Nothing
+    clusters on the summary.
+
+    Copying the check anyway would refuse an article on how informative its
+    text is, and D-025 is explicit that selecting articles on a content
+    property is a selection effect correlated with the outcome, not a cleaning
+    step. It names `exclude_contentless` as the thing not to reach for; a
+    validator doing the same job at construction is the same mistake wearing a
+    different hat, and harder to see because it would look like validation.
+
+    The line this unit draws: refuse what the feed contract says cannot happen,
+    never refuse on informativeness.
+    """
+    item = article("s4", "Acme beats earnings", summary="... --- ...")
+
+    assert item.summary == "... --- ..."
+
+
+def test_a_summary_equal_to_its_headline_is_ordinary_input() -> None:
+    """AC-3. The Alpaca reference's own example is a headline-only article
+    whose summary restates the headline, so this is the documented common case
+    and not a degenerate one."""
+    repeated = "Acme beats earnings"
+    item = article("s5", repeated, summary=repeated)
+
+    assert item.summary == item.headline
+
+
+def test_a_summary_equal_to_the_headline_changes_no_feature_outcome() -> None:
+    """AC-3, proven against UNIT-023's behaviour rather than asserted.
+
+    Syndication clustering is exact after canonicalising the headline. Three
+    outlets carrying one wire story cluster as one whether their summaries
+    restate their headlines or not, because the summary is not an input to
+    clustering and this unit must not quietly make it one.
+    """
+    headline = "Acme beats earnings"
+    restated = tuple(
+        article(f"s{index}", headline, domain=f"outlet{index}.example", summary=headline)
+        for index in range(3)
+    )
+    # Same ids and same headlines, so the only difference is the summary.
+    distinct = tuple(
+        article(f"s{index}", headline, domain=f"outlet{index}.example", summary=f"Body {index}.")
+        for index in range(3)
+    )
+
+    restated_block = build(SYMBOL, AS_OF, restated, keyed(*map(label, restated)), CONFIG)
+    distinct_block = build(SYMBOL, AS_OF, distinct, keyed(*map(label, distinct)), CONFIG)
+
+    # Pinned first, so the comparison below cannot pass by both sides being
+    # equally wrong: three outlets carrying one wire story are one source.
+    assert restated_block.features["independent_source_count"] == pytest.approx(1.0)
+    assert restated_block.features == distinct_block.features
+    assert restated_block.quality_flags == distinct_block.quality_flags
+
+
+def test_the_summary_survives_a_field_by_field_reconstruction() -> None:
+    """Restart. Whatever path UNIT-020 stores an observation through, the
+    record has to come back whole: a field that round-trips as an empty string
+    would be a silent truncation of exactly the text the labeler reads."""
+    original = article("s6", "Acme beats earnings", summary="Acme beat consensus on both lines.")
+
+    rebuilt = Article(
+        article_id=original.article_id,
+        symbols=original.symbols,
+        headline=original.headline,
+        summary=original.summary,
+        source_domain=original.source_domain,
+        timestamps=original.timestamps,
+    )
+
+    assert rebuilt == original
+    assert rebuilt.summary == original.summary
