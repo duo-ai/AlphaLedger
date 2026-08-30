@@ -3,7 +3,13 @@ name = "alphaledger"
 version = "0.1.0"
 description = "Cross-sectional options alpha agent. Paper trading only."
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    # The pooled forecast in UNIT-025 fits a ridge/logistic pair. Pinned
+    # exactly, per AGENTS.md, and verified to resolve and import on cp314 in
+    # D-012 before anything depended on them.
+    "numpy==2.5.2",
+    "scikit-learn==1.9.0",
+]
 
 [dependency-groups]
 dev = [

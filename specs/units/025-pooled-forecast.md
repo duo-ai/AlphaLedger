@@ -8,7 +8,7 @@ branch: feature/025-pooled-forecast
 reviewer: backtest-auditor
 preferred_runtime: claude
 depends_on: [UNIT-001, UNIT-022, UNIT-023, UNIT-024, UNIT-027]
-paths: src/alphaledger/forecast/model.py, src/alphaledger/forecast/eligibility.py, tests/research/test_model.py, tests/research/test_eligibility.py
+paths: src/alphaledger/forecast/model.py, src/alphaledger/forecast/eligibility.py, tests/research/test_model.py, tests/research/test_eligibility.py, pyproject.toml, uv.lock, project-state/DECISIONS.md
 claimed_at: 2026-08-30T11:49:32Z
 ---
 
@@ -74,11 +74,25 @@ Out:
 
 ## Contract
 
-`alphaledger.forecast.model.fit(fold, features, outcomes, config, registry,
-registered_at) -> FittedModel`, where `fold` is UNIT-024's `Fold`, `features`
-maps a `label_id` to the merged price and news feature mapping for that
-instant, and `outcomes` maps a `label_id` to its realised forward residual
-return. Fitting registers a trial through `TrialRegistry.register` before any
+`alphaledger.forecast.model.fit(fold, features, outcomes, uniqueness, config,
+registry, registered_at) -> FittedModel`, where `fold` is UNIT-024's `Fold`,
+`features` maps a `label_id` to the merged price and news feature mapping for
+that instant, `outcomes` maps a `label_id` to its realised forward residual
+return, and `uniqueness` maps a `label_id` to the uniqueness weight UNIT-027's
+`with_uniqueness` computed for it.
+
+`uniqueness` was added to this contract on 2026-08-30, by the
+pre-implementation read, and it is required rather than optional. Without it
+`effective_sample_size` could only be the training row count, and the row count
+is precisely the lie UNIT-027 computes uniqueness to prevent: sampling daily at
+a multi-session horizon makes consecutive labels share most of their outcome
+window, so a fit counting rows counts the same information many times. Gate 4
+in `eligibility.py` refuses a candidate whose effective sample size is too
+small, and a gate fed the row count would refuse almost nothing. UNIT-027's own
+module docstring already states that this unit is expected to carry uniqueness
+into the fit; the contract had simply omitted the channel. Defaulting it to one
+per label was rejected for the same reason a missing quantile band is not
+treated as a narrow one: it is the most flattering reading of absent data. Fitting registers a trial through `TrialRegistry.register` before any
 result is computed, and returns a model carrying `model_version`, the fold
 hash, and the trial id.
 
@@ -148,6 +162,25 @@ be a second set of unselected hyperparameters.
   failure against UNIT-010, where a criterion that read as considered was
   unsatisfiable in principle and the test list faithfully reproduced its false
   premise.
+- AC-2b: `model_version` is derived from the training-relevant view of the
+  fold only, never from `Fold.fold_hash`. Falsified by two folds differing only
+  in their test label lists producing different `model_version` values.
+
+  Found by the pre-implementation read, and it is what makes AC-2 satisfiable
+  at all. `Fold._address` in the merged `splits.py` hashes `test_labels` into
+  `fold_hash`, so two folds identical but for their test windows already have
+  different fold hashes. A `model_version` folding in `fold_hash` would
+  therefore differ, and AC-2 could never pass however carefully the fit ignored
+  the test window. The model still carries `fold_hash` as provenance, which is
+  what the contract asks for; it simply is not an input to the model's own
+  identity. Provenance and identity are different questions and this is the one
+  place they visibly diverge.
+- AC-2c: `fit` refuses any supplied label that the fold does not place in its
+  training or calibration window, naming the label. Falsified by supplying a
+  label from `fold.test_labels` and observing a fit. Reading `test_labels` in
+  order to refuse is not reading them in order to fit, and does not affect
+  AC-2: with valid input no test label is present, so its contents cannot move
+  a fitted parameter.
 - AC-3: every fit registers a trial before its result is computed, and the
   registered configuration includes the feature versions of both families and
   the fold hash. Falsified by fitting and observing the registry count is
