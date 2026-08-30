@@ -2,13 +2,14 @@
 id: UNIT-029
 title: Label news through a cached LLM adapter
 lane: research
-state: available
-owner: -
-branch: -
+state: claimed
+owner: mazwy/claude
+branch: feature/029-news-labeler-adapter
 reviewer: backtest-auditor
 preferred_runtime: claude
 depends_on: [UNIT-001, UNIT-002, UNIT-003, UNIT-020, UNIT-023, UNIT-030]
 paths: src/alphaledger/evidence/llm_labeler.py, tests/research/test_llm_labeler.py
+claimed_at: 2026-08-30T12:22:14Z
 ---
 
 ## Problem
