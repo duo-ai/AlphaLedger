@@ -8,7 +8,7 @@ branch: feature/005-committed-risk-thresholds
 reviewer: execution-safety-reviewer
 preferred_runtime: codex
 depends_on: [UNIT-004, UNIT-013, UNIT-017]
-paths: config/risk.toml, src/alphaledger/config/**, tests/test_config.py
+paths: config/risk.toml, src/alphaledger/config/**, tests/config/**
 claimed_at: 2026-08-31T18:59:58Z
 ---
 
@@ -160,9 +160,22 @@ comparison. This unit does not restate those definitions, which live with
 ## Verification
 
 ```bash
-uv run pytest tests/test_config.py
+uv run pytest tests/config -q
 uv run ruff check . && uv run ruff format --check .
 uv run mypy src
 ```
 
 ## Handoff notes
+
+- 2026-08-31 first pass stopped before editing, on a path conflict, which was
+  the correct call. The intake declared `tests/test_config.py`, which does not
+  exist. UNIT-004's tests live in `tests/config/test_frozen_config.py`, and its
+  meta-test enumerates the frozen record's fields, so adding three fields to
+  `RiskConfig` necessarily edits that file. The declared globs forbade it, so a
+  correct implementation was impossible inside the unit's own boundary.
+
+  The globs are now `tests/config/**`. Note what `coord.py` could and could not
+  catch here: its claim-time check verifies that every path the intake names is
+  covered by the declared globs, and both named paths were. It cannot know that
+  a named path does not exist, nor that an unnamed file must be edited. A path
+  that is covered and wrong passes every mechanical check there is.
