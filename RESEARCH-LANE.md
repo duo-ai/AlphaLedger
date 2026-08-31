@@ -650,3 +650,85 @@ It is yours, it is blocked on access rather than effort, and it does not
 sequence with any of the above. See "G0 is yours now" earlier in this file.
 Every unit below can be built and merged without it. None of them can be
 believed without it.
+
+## Feature 001 is yours, 2026-09-01
+
+The autonomous paper trading session is handed to you: the transport that
+submits, the human arm, the session machine, and the orchestrator. It is the
+gap between twenty-three merged units and anything that can place an order.
+`specs/features/001-autonomous-session/` holds the spec, the plan, and the
+analysis record.
+
+### Start here tonight if you want something to claim
+
+UNIT-033, the session state machine, is claimable now and nothing blocks it. It
+is pure: seven states, a fixed edge set, no clock and no I/O. It is the one unit
+in this feature no finding touched.
+
+```bash
+git switch develop && git pull --rebase origin develop
+python3 scripts/coord.py claim UNIT-033 --owner mazwy/claude
+```
+
+Note before you plan around it: `scripts/dispatch.sh` refuses a Claude owner by
+design, and every unit here declares `preferred_runtime: claude` because that is
+your runtime. So these are claimed and worked in a session with worktree
+isolation, not dispatched to Codex.
+
+### Why the others are blocked, and it is not bureaucracy
+
+Six analysis passes ran over this spec. The first five were Claude Sonnet and
+found real defects. The sixth was Codex, and it found seven CRITICAL findings
+the others had missed, including one that invalidated the centre of the plan.
+
+The plan claimed the merged code already declared every seam, so the work was
+just satisfying four Protocols. That was false. `PaperTransport` takes no HTTP
+method and `TransportResponse` carries no response body, so it can send
+something and learn only whether it was redirected. It cannot perform a GET and
+it cannot return anything to parse. The operations actually need four verbs:
+POST to submit, GET to read, PATCH to replace, DELETE to cancel. Five passes
+read that file and none noticed, because the omission only becomes a defect when
+you hold it against a contract promising parsed reads.
+
+The blocked units carry `[NEEDS CLARIFICATION]` markers naming their findings,
+and `coord.py` refuses to claim a unit carrying one. That refusal is the point.
+Do not remove a marker to unblock yourself; the finding it names is real.
+
+### The two decisions already taken, so you do not reopen them
+
+The merged transport contract is widened rather than bypassed, in its own unit,
+UNIT-036. A side channel would bypass UNIT-010's endpoint assertion and
+replacing the Protocol would remove that assertion from the order path. Widening
+keeps exactly one asserted path, and the feature spec's Out list now permits
+that one change to a merged unit and no other.
+
+The arm lifetime is committed to `config/risk.toml` by UNIT-032, following the
+shape UNIT-005 used. An earlier draft of the spec asserted UNIT-005 had already
+committed it. It had not, and no such value existed anywhere.
+
+### The findings are open, not resolved
+
+A Codex pass was started to resolve them and was stopped before it finished. Its
+partial edits were discarded rather than committed, because a half fixed
+specification is worse to inherit than an unfixed one with the defects written
+down. So `analysis-codex.md` is the complete record of what is wrong, and
+nothing in the spec or the intakes has been corrected yet.
+
+Two decisions were taken before that pass and they hold, so start from them
+rather than reopening them. The merged transport contract is widened rather than
+bypassed, in its own unit, because a side channel would bypass UNIT-010's
+endpoint assertion and replacing the Protocol would remove that assertion from
+the order path. And the arm lifetime is committed to `config/risk.toml`
+following UNIT-005's shape, because it does not exist anywhere today.
+
+The order to work in, if you want one: the transport widening first, since C1
+blocks UNIT-031 and everything downstream of it. UNIT-033 is independent of all
+of it and claimable now.
+
+### The thing that has not changed
+
+G0 is still yours and still blocked on access. Every unit in this feature can be
+built and merged without it, and none of them can be believed without it.
+Criterion 9a, the same order sequence against the real paper account, is
+deliberately not a criterion of this feature, so the feature is not permanently
+unfinishable while the gate stays open.

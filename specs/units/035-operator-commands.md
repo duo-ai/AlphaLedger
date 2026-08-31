@@ -21,6 +21,15 @@ runtime the owner runs, and `scripts/dispatch.sh` refuses a Claude owner by
 design, so these are claimed and worked in a session with worktree isolation
 rather than dispatched.
 
+## Blocked
+
+[NEEDS CLARIFICATION: C1, C6. C1 reaches this unit through UNIT-034 and UNIT-031. C6: this unit performs arming and disarming and no unit owns writing those transitions to the ledger, so the audit trail has a hole exactly where a human took responsibility. Recorded 2026-09-01 from the Codex analysis pass in
+`specs/features/001-autonomous-session/analysis-codex.md`, which found seven
+CRITICAL and five HIGH findings that five earlier passes missed. A fix pass was
+started and stopped before it completed, and its partial edits were discarded
+rather than shipped half applied, so every finding below is open. Do not claim
+this unit until it is resolved and this marker is removed.]
+
 ## Problem
 
 The arm is the one moment a human takes responsibility for what follows, and

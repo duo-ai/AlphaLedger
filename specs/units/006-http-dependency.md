@@ -21,6 +21,15 @@ runtime the owner runs, and `scripts/dispatch.sh` refuses a Claude owner by
 design, so these are claimed and worked in a session with worktree isolation
 rather than dispatched.
 
+## Blocked
+
+[NEEDS CLARIFICATION: C7. AC-4 and the test list forbid every `httpx` import repository wide, but UNIT-031 must add one and its declared paths exclude this unit's test file, so the gate cannot pass inside UNIT-031's boundary. Recorded 2026-09-01 from the Codex analysis pass in
+`specs/features/001-autonomous-session/analysis-codex.md`, which found seven
+CRITICAL and five HIGH findings that five earlier passes missed. A fix pass was
+started and stopped before it completed, and its partial edits were discarded
+rather than shipped half applied, so every finding below is open. Do not claim
+this unit until it is resolved and this marker is removed.]
+
 ## Problem
 
 `src/alphaledger/broker/endpoint.py` declares `PaperTransport` and no
