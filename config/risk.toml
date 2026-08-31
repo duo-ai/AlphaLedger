@@ -4,6 +4,9 @@
 # Money and fractions are strings for the same reason as universe.toml.
 
 maximum_loss_fraction_per_new_trade = "0.00375"
+max_snapshot_age_seconds = 30
+daily_loss_stop_fraction = "0.015"
+peak_to_valley_fraction = "0.03"
 maximum_concurrent_positions = 2
 max_contracts_per_structure = 3
 smoke_test_max_contracts = 1
