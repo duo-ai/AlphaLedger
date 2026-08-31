@@ -67,15 +67,31 @@ Out:
 
 ## Contract
 
-`config/risk.toml` gains, as TOML values that survive the money rules already
-in force, so a fraction is a float and never a bare decimal string that
-`money()` would reject on read:
+`config/risk.toml` gains, with the fractions as strings, matching that file's
+own header and every fraction already in it:
 
 ```toml
 max_snapshot_age_seconds = 30
-daily_loss_stop_fraction = 0.015
-peak_to_valley_fraction = 0.03
+daily_loss_stop_fraction = "0.015"
+peak_to_valley_fraction = "0.03"
 ```
+
+The strings are not a style choice and an earlier draft of this contract had
+them the wrong way round, so the reasoning is recorded rather than assumed. A
+bare TOML `0.015` is a binary float, and 0.015 has no exact binary
+representation, so it reaches `Decimal` as
+`0.01499999999999999944488848768742172978818416595458984375`. A kill switch
+declared at 1.5% would then fire at something else, and the committed value
+would no longer be the value the run used, which is the one thing a hashed
+configuration exists to guarantee. D-017 states the rule and
+`config/risk.toml`'s own header repeats it: money and fractions are strings.
+`maximum_loss_fraction_per_new_trade = "0.00375"` is already written that way.
+`money()` rejects a float outright, so a float here fails on read at best and
+silently loses the value at worst.
+
+`max_snapshot_age_seconds` stays a plain integer. It is a count of seconds,
+neither money nor a fraction, and `maximum_concurrent_positions` is already an
+integer in the same file.
 
 `alphaledger.config`'s frozen risk record gains the three fields, and
 `max_snapshot_age_seconds` is exposed to callers as a `timedelta` so a caller
@@ -121,6 +137,12 @@ comparison. This unit does not restate those definitions, which live with
   isolation and observing the suite stay green.
 - AC-5: no merged signature changes. Falsified by any diff to
   `src/alphaledger/risk/` or `src/alphaledger/execution/killswitch.py`.
+- AC-6: both fractions reach a caller as `Decimal` values exactly equal to
+  `Decimal("0.015")` and `Decimal("0.03")`, compared against independently
+  written literals rather than against whatever the loader produced. Falsified
+  by a loaded value that compares unequal to its literal, which is what a TOML
+  float produces and what makes the committed number and the number the run
+  used two different things.
 
 ## Test list
 
