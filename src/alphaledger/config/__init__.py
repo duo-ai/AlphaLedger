@@ -19,7 +19,7 @@ import math
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import time
+from datetime import time, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from types import MappingProxyType
@@ -187,6 +187,9 @@ class RiskConfig:
     """Frozen entry-risk policy loaded from ``risk.toml``."""
 
     maximum_loss_fraction_per_new_trade: Decimal
+    max_snapshot_age: timedelta
+    daily_loss_stop_fraction: Decimal
+    peak_to_valley_fraction: Decimal
     maximum_concurrent_positions: int
     max_contracts_per_structure: int
     smoke_test_max_contracts: int
@@ -196,16 +199,23 @@ class RiskConfig:
     start_at_half_risk: bool
 
     def __post_init__(self) -> None:
-        fraction = _exact_decimal(
-            self.maximum_loss_fraction_per_new_trade,
+        for field in (
             "maximum_loss_fraction_per_new_trade",
-        )
-        if not Decimal(0) < fraction <= Decimal(1):
-            raise ValueError(
-                "maximum_loss_fraction_per_new_trade must be above zero and no greater "
-                f"than one; got {fraction}"
+            "daily_loss_stop_fraction",
+            "peak_to_valley_fraction",
+        ):
+            fraction = _exact_decimal(getattr(self, field), field)
+            if not Decimal(0) < fraction <= Decimal(1):
+                raise ValueError(
+                    f"{field} must be above zero and no greater than one; got {fraction}"
+                )
+            _set(self, field, fraction)
+        if not isinstance(self.max_snapshot_age, timedelta):
+            raise TypeError(
+                f"max_snapshot_age must be a timedelta; got {type(self.max_snapshot_age).__name__}"
             )
-        _set(self, "maximum_loss_fraction_per_new_trade", fraction)
+        if self.max_snapshot_age <= timedelta(0):
+            raise ValueError(f"max_snapshot_age must be above zero; got {self.max_snapshot_age!r}")
         for field in (
             "maximum_concurrent_positions",
             "max_contracts_per_structure",
@@ -298,6 +308,9 @@ _FEATURE_KEYS = frozenset(
 _RISK_KEYS = frozenset(
     {
         "maximum_loss_fraction_per_new_trade",
+        "max_snapshot_age_seconds",
+        "daily_loss_stop_fraction",
+        "peak_to_valley_fraction",
         "maximum_concurrent_positions",
         "max_contracts_per_structure",
         "smoke_test_max_contracts",
@@ -364,6 +377,15 @@ def _load_risk(directory: Path) -> RiskConfig:
         maximum_loss_fraction_per_new_trade=cast(
             Decimal, values["maximum_loss_fraction_per_new_trade"]
         ),
+        max_snapshot_age=timedelta(
+            seconds=_whole_number(
+                values["max_snapshot_age_seconds"],
+                "max_snapshot_age_seconds",
+                minimum=1,
+            )
+        ),
+        daily_loss_stop_fraction=cast(Decimal, values["daily_loss_stop_fraction"]),
+        peak_to_valley_fraction=cast(Decimal, values["peak_to_valley_fraction"]),
         maximum_concurrent_positions=cast(int, values["maximum_concurrent_positions"]),
         max_contracts_per_structure=cast(int, values["max_contracts_per_structure"]),
         smoke_test_max_contracts=cast(int, values["smoke_test_max_contracts"]),
@@ -394,6 +416,10 @@ def _decimal_string(value: Decimal) -> str:
     return rendered.rstrip("0").rstrip(".") if "." in rendered else rendered
 
 
+def _timedelta_microseconds(value: timedelta) -> int:
+    return ((value.days * 86_400) + value.seconds) * 1_000_000 + value.microseconds
+
+
 def _content_hash(
     universe: UniverseConfig,
     feature: FeatureConfig,
@@ -413,11 +439,14 @@ def _content_hash(
             "winsor_upper": feature.winsor_upper,
         },
         "risk": {
+            "daily_loss_stop_fraction": _decimal_string(risk.daily_loss_stop_fraction),
             "max_contracts_per_structure": risk.max_contracts_per_structure,
+            "max_snapshot_age_microseconds": _timedelta_microseconds(risk.max_snapshot_age),
             "maximum_concurrent_positions": risk.maximum_concurrent_positions,
             "maximum_loss_fraction_per_new_trade": _decimal_string(
                 risk.maximum_loss_fraction_per_new_trade
             ),
+            "peak_to_valley_fraction": _decimal_string(risk.peak_to_valley_fraction),
             "require_defined_risk": risk.require_defined_risk,
             "require_human_paper_arm": risk.require_human_paper_arm,
             "require_risk_token": risk.require_risk_token,

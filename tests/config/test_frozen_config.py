@@ -3,11 +3,14 @@ from __future__ import annotations
 import importlib
 import os
 import shutil
+import socket
 import subprocess
 import sys
+import time as clock
 from collections.abc import Mapping
 from dataclasses import FrozenInstanceError
 from dataclasses import fields as dataclass_fields
+from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
@@ -75,6 +78,24 @@ HASH_FIELD_MUTATIONS = (
         'maximum_loss_fraction_per_new_trade = "0.004"',
     ),
     (
+        "max_snapshot_age",
+        "risk.toml",
+        "max_snapshot_age_seconds = 30",
+        "max_snapshot_age_seconds = 31",
+    ),
+    (
+        "daily_loss_stop_fraction",
+        "risk.toml",
+        'daily_loss_stop_fraction = "0.015"',
+        'daily_loss_stop_fraction = "0.016"',
+    ),
+    (
+        "peak_to_valley_fraction",
+        "risk.toml",
+        'peak_to_valley_fraction = "0.03"',
+        'peak_to_valley_fraction = "0.04"',
+    ),
+    (
         "maximum_concurrent_positions",
         "risk.toml",
         "maximum_concurrent_positions = 2",
@@ -139,6 +160,38 @@ INVARIANT_FIELD_MUTATIONS = (
         "require_human_paper_arm = false",
     ),
 )
+NON_POSITIVE_RISK_THRESHOLD_MUTATIONS = (
+    (
+        "max_snapshot_age_seconds",
+        "max_snapshot_age_seconds = 30",
+        "max_snapshot_age_seconds = 0",
+    ),
+    (
+        "max_snapshot_age_seconds",
+        "max_snapshot_age_seconds = 30",
+        "max_snapshot_age_seconds = -1",
+    ),
+    (
+        "daily_loss_stop_fraction",
+        'daily_loss_stop_fraction = "0.015"',
+        'daily_loss_stop_fraction = "0"',
+    ),
+    (
+        "daily_loss_stop_fraction",
+        'daily_loss_stop_fraction = "0.015"',
+        'daily_loss_stop_fraction = "-0.001"',
+    ),
+    (
+        "peak_to_valley_fraction",
+        'peak_to_valley_fraction = "0.03"',
+        'peak_to_valley_fraction = "0"',
+    ),
+    (
+        "peak_to_valley_fraction",
+        'peak_to_valley_fraction = "0.03"',
+        'peak_to_valley_fraction = "-0.001"',
+    ),
+)
 SECTION_FIELDS = (
     ("universe", "min_prior_close"),
     ("universe", "min_median_dollar_volume"),
@@ -153,6 +206,9 @@ SECTION_FIELDS = (
     ("feature", "winsor_upper"),
     ("feature", "sector_by_symbol"),
     ("risk", "maximum_loss_fraction_per_new_trade"),
+    ("risk", "max_snapshot_age"),
+    ("risk", "daily_loss_stop_fraction"),
+    ("risk", "peak_to_valley_fraction"),
     ("risk", "maximum_concurrent_positions"),
     ("risk", "max_contracts_per_structure"),
     ("risk", "smoke_test_max_contracts"),
@@ -192,7 +248,7 @@ def _replace(directory: Path, filename: str, before: str, after: str) -> None:
     path.write_text(changed, encoding="utf-8")
 
 
-def _hash_in_subprocess(directory: Path) -> str:
+def _hash_in_subprocess(directory: Path, *, hash_seed: str | None = None) -> str:
     script = (
         "import sys; from pathlib import Path; "
         "from alphaledger.config import load; "
@@ -202,6 +258,7 @@ def _hash_in_subprocess(directory: Path) -> str:
         [sys.executable, "-c", script, str(directory)],
         check=True,
         capture_output=True,
+        env=None if hash_seed is None else {"PYTHONHASHSEED": hash_seed},
         text=True,
     )
     return completed.stdout.strip()
@@ -245,6 +302,9 @@ def test_full_load_preserves_every_value_and_hashes_content(tmp_path: Path) -> N
     )
     assert (
         loaded.risk.maximum_loss_fraction_per_new_trade,
+        getattr(loaded.risk, "max_snapshot_age", None),
+        getattr(loaded.risk, "daily_loss_stop_fraction", None),
+        getattr(loaded.risk, "peak_to_valley_fraction", None),
         loaded.risk.maximum_concurrent_positions,
         loaded.risk.max_contracts_per_structure,
         loaded.risk.smoke_test_max_contracts,
@@ -254,6 +314,9 @@ def test_full_load_preserves_every_value_and_hashes_content(tmp_path: Path) -> N
         loaded.risk.start_at_half_risk,
     ) == (
         Decimal("0.00375"),
+        timedelta(seconds=30),
+        Decimal("0.015"),
+        Decimal("0.03"),
         2,
         3,
         1,
@@ -281,6 +344,31 @@ def test_full_load_preserves_every_value_and_hashes_content(tmp_path: Path) -> N
     )
     assert len(loaded.frozen_config_hash) == 64
     assert loaded.frozen_config_hash == config_api.config_hash(loaded)
+
+
+def test_committed_risk_thresholds_load_with_documented_exact_values() -> None:
+    config_api = _config_api()
+
+    risk = config_api.load(COMMITTED_CONFIG).risk
+
+    assert (
+        getattr(risk, "max_snapshot_age", None),
+        getattr(risk, "daily_loss_stop_fraction", None),
+        getattr(risk, "peak_to_valley_fraction", None),
+    ) == (
+        timedelta(seconds=30),
+        Decimal("0.015"),
+        Decimal("0.03"),
+    )
+
+
+def test_max_snapshot_age_reaches_callers_as_a_thirty_second_timedelta() -> None:
+    config_api = _config_api()
+
+    max_snapshot_age = getattr(config_api.load(COMMITTED_CONFIG).risk, "max_snapshot_age", None)
+
+    assert isinstance(max_snapshot_age, timedelta)
+    assert max_snapshot_age == timedelta(seconds=30)
 
 
 def test_regression_cases_cover_every_section_field(tmp_path: Path) -> None:
@@ -456,6 +544,24 @@ def test_invariant_only_field_change_fails_closed_and_names_the_field(
         config_api.load(directory)
 
 
+@pytest.mark.parametrize(
+    ("field", "before", "after"),
+    NON_POSITIVE_RISK_THRESHOLD_MUTATIONS,
+    ids=[
+        f"{case[0]}-{case[2].rsplit(' ', 1)[-1]}" for case in NON_POSITIVE_RISK_THRESHOLD_MUTATIONS
+    ],
+)
+def test_non_positive_risk_threshold_is_refused_without_disabling_its_gate(
+    tmp_path: Path, field: str, before: str, after: str
+) -> None:
+    config_api = _config_api()
+    directory = _copy_config(tmp_path)
+    _replace(directory, "risk.toml", before, after)
+
+    with pytest.raises(ValueError, match=field):
+        config_api.load(directory)
+
+
 def test_hash_before_and_after_process_restart_is_identical(tmp_path: Path) -> None:
     _config_api()
     directory = _copy_config(tmp_path)
@@ -464,6 +570,24 @@ def test_hash_before_and_after_process_restart_is_identical(tmp_path: Path) -> N
     after_restart = _hash_in_subprocess(directory)
 
     assert after_restart == before_restart
+
+
+def test_committed_risk_threshold_hash_is_stable_across_python_hash_seeds(
+    tmp_path: Path,
+) -> None:
+    config_api = _config_api()
+    directory = _copy_config(tmp_path)
+    risk_fields = {field.name for field in dataclass_fields(config_api.load(directory).risk)}
+
+    assert {
+        "max_snapshot_age",
+        "daily_loss_stop_fraction",
+        "peak_to_valley_fraction",
+    } <= risk_fields
+    seed_one_hash = _hash_in_subprocess(directory, hash_seed="1")
+    seed_two_hash = _hash_in_subprocess(directory, hash_seed="8675309")
+
+    assert seed_one_hash == seed_two_hash
 
 
 @pytest.mark.parametrize("filename", CONFIG_FILENAMES)
@@ -553,3 +677,33 @@ def test_loading_config_never_reads_the_process_environment(
         loaded = config_api.load(directory)
 
     assert loaded.frozen_config_hash == config_api.config_hash(loaded)
+
+
+def test_risk_thresholds_are_readable_without_broker_clock_or_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = _copy_config(tmp_path)
+
+    def forbidden_dependency(*args: object, **kwargs: object) -> NoReturn:
+        del args, kwargs
+        pytest.fail("configuration touched a broker, clock, or network dependency")
+
+    with monkeypatch.context() as dependency_guard:
+        dependency_guard.setattr(clock, "time", forbidden_dependency)
+        dependency_guard.setattr(clock, "monotonic", forbidden_dependency)
+        dependency_guard.setattr(socket, "socket", forbidden_dependency)
+        dependency_guard.setitem(sys.modules, "alphaledger.broker", None)
+        dependency_guard.delitem(sys.modules, "alphaledger.config", raising=False)
+
+        config_api = importlib.import_module("alphaledger.config")
+        risk = config_api.load(directory).risk
+
+    assert (
+        getattr(risk, "max_snapshot_age", None),
+        getattr(risk, "daily_loss_stop_fraction", None),
+        getattr(risk, "peak_to_valley_fraction", None),
+    ) == (
+        timedelta(seconds=30),
+        Decimal("0.015"),
+        Decimal("0.03"),
+    )
