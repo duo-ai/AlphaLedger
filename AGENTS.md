@@ -119,6 +119,12 @@ Two people and three coding-agent runtimes share this repository. Read
 | `pablo/claude` | Claude Code | execution and shared | intake authoring, review, integration |
 | `mazwy/claude` | Claude Code | research | `src/alphaledger/{data,evidence,forecast}/**`, `research/**` |
 
+Exception recorded on 2026-08-31: feature 001, the autonomous paper trading
+session, is assigned to `mazwy` although its paths are execution lane. That is
+UNIT-006 and UNIT-031 through UNIT-035. The lane globs above still govern who
+may write what for every other unit; this is a delegation of specific units,
+not a lane change, and it is written here so the roster is not silently wrong.
+
 Lanes have disjoint path globs. Never write outside the lane of the unit you
 hold.
 
