@@ -315,8 +315,12 @@ for i in "${!UNITS[@]}"; do
         # corrected instead: the agent is then told to hunt for findings that do
         # not exist, which is the kind of source-of-truth conflict it is right to
         # stop on. Ask the registry whether a review actually happened.
+        # grep -c exits 1 when the count is zero, and this script runs under
+        # set -e, so an unreviewed unit killed the dispatch before it launched
+        # anything. The count is the answer here, not the exit status.
         reviewed=$(bash scripts/hook_python.sh scripts/coord.py show "$unit" \
-            | sed -n 's/^review_log: //p' | tr -d '[] ' | tr ',' '\n' | grep -c .)
+            | sed -n 's/^review_log: //p' | tr -d '[] ' | tr ',' '\n' \
+            | grep -c . || true)
         if [ "$prior" -ne 0 ] && [ "${reviewed:-0}" -eq 0 ]; then
             cat >> "$LOGDIR/$slug.prompt.txt" <<'CORRECTION'
 
