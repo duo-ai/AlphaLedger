@@ -21,6 +21,15 @@ runtime the owner runs, and `scripts/dispatch.sh` refuses a Claude owner by
 design, so these are claimed and worked in a session with worktree isolation
 rather than dispatched.
 
+## Blocked
+
+[NEEDS CLARIFICATION: C3, C6. C3: AC-5 says the maximum arm lifetime is read from committed configuration and no such value exists anywhere. UNIT-005 committed three thresholds and none is an arm lifetime, and this unit does not own the config paths to add one. C6: arming and disarming change session state and no unit owns recording those transitions in the ledger. Recorded 2026-09-01 from the Codex analysis pass in
+`specs/features/001-autonomous-session/analysis-codex.md`, which found seven
+CRITICAL and five HIGH findings that five earlier passes missed. A fix pass was
+started and stopped before it completed, and its partial edits were discarded
+rather than shipped half applied, so every finding below is open. Do not claim
+this unit until it is resolved and this marker is removed.]
+
 ## Problem
 
 `config/risk.toml` commits `require_human_paper_arm` and no code reads it.

@@ -21,6 +21,15 @@ runtime the owner runs, and `scripts/dispatch.sh` refuses a Claude owner by
 design, so these are claimed and worked in a session with worktree isolation
 rather than dispatched.
 
+## Blocked
+
+[NEEDS CLARIFICATION: C1, C2, C5, C6. C1 and C2 reach this unit through UNIT-031, whose contract is impossible as written. C5: AC-7 says this module holds no trading rule of its own and is falsified only by arithmetic or a threshold comparison, so a structure or exit selection added with neither would pass while breaking the invariant it claims. C6: no unit records operator driven arm and disarm transitions. Recorded 2026-09-01 from the Codex analysis pass in
+`specs/features/001-autonomous-session/analysis-codex.md`, which found seven
+CRITICAL and five HIGH findings that five earlier passes missed. A fix pass was
+started and stopped before it completed, and its partial edits were discarded
+rather than shipped half applied, so every finding below is open. Do not claim
+this unit until it is resolved and this marker is removed.]
+
 ## Problem
 
 Every component of a trading decision is merged and nothing calls them in

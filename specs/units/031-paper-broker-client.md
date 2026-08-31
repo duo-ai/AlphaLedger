@@ -21,6 +21,15 @@ runtime the owner runs, and `scripts/dispatch.sh` refuses a Claude owner by
 design, so these are claimed and worked in a session with worktree isolation
 rather than dispatched.
 
+## Blocked
+
+[NEEDS CLARIFICATION: C1, C2, C4, C7. C1 is structural and invalidates this unit's contract: the merged `PaperTransport` takes no HTTP method and `TransportResponse` carries no body, so this unit cannot perform a read or parse a response through it, and the feature spec forbids changing a merged unit. C2: the submission boundary requires an arm and does not require the risk approval, the durable attempt, the payload binding, the derived client order id, or the smoke test cap that `AGENTS.md` says the only order path must enforce. C4: reading the arm before submit is not atomic with disarm. Recorded 2026-09-01 from the Codex analysis pass in
+`specs/features/001-autonomous-session/analysis-codex.md`, which found seven
+CRITICAL and five HIGH findings that five earlier passes missed. A fix pass was
+started and stopped before it completed, and its partial edits were discarded
+rather than shipped half applied, so every finding below is open. Do not claim
+this unit until it is resolved and this marker is removed.]
+
 ## Problem
 
 Four Protocols are declared in merged code and none has an implementation:
