@@ -2,13 +2,14 @@
 id: UNIT-005
 title: Commit the risk thresholds design section 10 requires
 lane: shared
-state: available
-owner: -
-branch: -
+state: claimed
+owner: pablo/codex
+branch: feature/005-committed-risk-thresholds
 reviewer: execution-safety-reviewer
 preferred_runtime: codex
 depends_on: [UNIT-004, UNIT-013, UNIT-017]
 paths: config/risk.toml, src/alphaledger/config/**, tests/test_config.py
+claimed_at: 2026-08-31T18:59:58Z
 ---
 
 ## Problem
