@@ -2,13 +2,14 @@
 id: UNIT-019
 title: Derive the bounded entry rung price sequence from live quotes
 lane: execution
-state: available
-owner: -
-branch: -
+state: claimed
+owner: pablo/codex
+branch: feature/019-entry-rung-prices
 reviewer: execution-safety-reviewer
 preferred_runtime: codex
 depends_on: [UNIT-001, UNIT-014, UNIT-018]
 paths: src/alphaledger/structure/pricing.py, tests/execution/test_pricing.py
+claimed_at: 2026-08-31T18:59:58Z
 ---
 
 ## Problem
