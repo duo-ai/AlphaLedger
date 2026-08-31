@@ -2,7 +2,7 @@
 id: UNIT-005
 title: Commit the risk thresholds design section 10 requires
 lane: shared
-state: claimed
+state: in_review
 owner: pablo/codex
 branch: feature/005-committed-risk-thresholds
 reviewer: execution-safety-reviewer
