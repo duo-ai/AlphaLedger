@@ -2,7 +2,7 @@
 id: UNIT-019
 title: Derive the bounded entry rung price sequence from live quotes
 lane: execution
-state: in_review
+state: merged
 owner: pablo/codex
 branch: feature/019-entry-rung-prices
 reviewer: execution-safety-reviewer
