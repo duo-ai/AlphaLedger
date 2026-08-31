@@ -310,7 +310,27 @@ for i in "${!UNITS[@]}"; do
         # A branch with no non-merge commits was never implemented, so this is a
         # retry after something blocked the first run, not a post-review pass.
         prior=$(git -C "$worktree" log --no-merges --oneline develop..HEAD 2>/dev/null | wc -l)
-        if [ "$prior" -eq 0 ]; then
+        # Three cases, not two. A branch with commits used to imply a review had
+        # run, and the brief said so outright. That is false when the intake was
+        # corrected instead: the agent is then told to hunt for findings that do
+        # not exist, which is the kind of source-of-truth conflict it is right to
+        # stop on. Ask the registry whether a review actually happened.
+        reviewed=$(bash scripts/hook_python.sh scripts/coord.py show "$unit" \
+            | sed -n 's/^review_log: //p' | tr -d '[] ' | tr ',' '\n' | grep -c .)
+        if [ "$prior" -ne 0 ] && [ "${reviewed:-0}" -eq 0 ]; then
+            cat >> "$LOGDIR/$slug.prompt.txt" <<'CORRECTION'
+
+THIS IS A CONTINUATION AFTER A SPECIFICATION CORRECTION, NOT A REVIEW PASS. Your
+earlier work on this unit is on the branch and no review has run against it. The
+intake was corrected because it was wrong, and its Handoff notes say exactly how
+at the end.
+
+So do not go looking for review findings; there are none. Read the intake again
+in full, note what changed, and carry on from the work already committed. If the
+correction invalidates something you already wrote, replace it rather than
+leaving both. You were right to stop; the thing you stopped on is fixed.
+CORRECTION
+        elif [ "$prior" -eq 0 ]; then
             cat >> "$LOGDIR/$slug.prompt.txt" <<'RETRY'
 
 THIS IS A RETRY, NOT A SECOND PASS. An earlier run of this unit stopped before
