@@ -2,7 +2,7 @@
 id: UNIT-029
 title: Label news through a cached LLM adapter
 lane: research
-state: claimed
+state: in_review
 owner: mazwy/claude
 branch: feature/029-news-labeler-adapter
 reviewer: backtest-auditor
