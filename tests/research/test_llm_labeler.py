@@ -412,10 +412,17 @@ def test_extra_reply_keys_never_reach_the_produced_label(tmp_path: Path) -> None
     )
     label = labeler_over(client, cache_at(tmp_path)).label(subject, TICKER, ())
 
-    rendered = repr(label)
-    assert "buy 100 contracts" not in rendered
-    assert "0.97" not in rendered
-    assert not hasattr(label, "trade")
+    # Every declared field, read individually rather than through `repr`, and
+    # deliberately not `hasattr(label, "trade")`: `NewsLabel` is a slotted
+    # frozen dataclass, so an undeclared attribute cannot be set on it under
+    # any implementation and that assertion could never fail. What can fail is
+    # an implementation that parks the whole reply inside a declared field,
+    # which is what this checks.
+    values = [str(getattr(label, name)) for name in NewsLabel.__dataclass_fields__]
+    assert not any("buy 100 contracts" in value for value in values)
+    assert not any("0.97" in value for value in values)
+    assert not any("180.0" in value for value in values)
+    assert label.limitations == ("no consensus figure is quoted",)
 
 
 def test_an_extra_reply_key_never_reaches_the_cached_record(tmp_path: Path) -> None:
@@ -723,3 +730,76 @@ def test_the_system_prompt_constant_matches_prompt_b_verbatim() -> None:
     fenced = section.split("```text", 1)[1].split("```", 1)[0].lstrip("\n")
 
     assert fenced == PROMPT_B_SYSTEM_PROMPT
+
+
+# --- simultaneity, the tie the sort cannot resolve -------------------------
+
+
+def test_two_articles_first_seen_at_the_same_instant_are_both_labelled(
+    tmp_path: Path,
+) -> None:
+    """A timestamp collision is not a mis-assembled panel.
+
+    `label_batch` sorts by `(first_seen_time, article_id)`, but that tiebreak
+    orders the visit, it does not order the clock. Passing a tied article as
+    prior context would make `label` raise `LabelerContractError`, which this
+    function does not catch, so one wire second shared by two stories would
+    abort an entire ticker's run. Found by `backtest-auditor` on round one.
+    """
+    first = article("art-A", headline="Acme Corporation raised its full year guidance, part one")
+    second = article("art-B", headline="Acme Corporation raised its full year guidance, part two")
+    assert first.timestamps.first_seen_time == second.timestamps.first_seen_time
+
+    client = FakeModelClient({"art-A": reply(first), "art-B": reply(second)})
+    result = label_batch(labeler_over(client, cache_at(tmp_path)), TICKER, (first, second))
+
+    assert set(result.labels) == {"art-A", "art-B"}
+    assert dict(result.excluded) == {}
+    # Neither may see the other: they were knowable at the same instant.
+    for _, payload in client.calls:
+        assert payload["prior_story_context"] == []
+
+
+def test_a_tied_article_is_withheld_while_a_strictly_earlier_one_is_shown(
+    tmp_path: Path,
+) -> None:
+    """The filter withholds the tie and nothing more."""
+    earlier = article("art-0", headline="Acme schedules an investor day", offset_hours=-4)
+    tied_a = article("art-A")
+    tied_b = article("art-B")
+    client = FakeModelClient({item.article_id: reply(item) for item in (earlier, tied_a, tied_b)})
+    label_batch(labeler_over(client, cache_at(tmp_path)), TICKER, (tied_b, earlier, tied_a))
+
+    by_article = {payload["article_id"]: payload for _, payload in client.calls}
+    assert by_article["art-0"]["prior_story_context"] == []
+    for article_id in ("art-A", "art-B"):
+        context = by_article[article_id]["prior_story_context"]
+        assert [entry["article_id"] for entry in context] == ["art-0"]
+
+
+def test_an_excluded_article_still_counts_as_prior_context(tmp_path: Path) -> None:
+    """A model failure must not change a later article's question.
+
+    `seen` is appended to outside the `try` on purpose. An article that was
+    published is prior context whether or not a model could label it, so
+    appending only on success would make a later article's cache key depend on
+    a transient provider outage, and replaying the run would miss the cache and
+    ask something different. Raised by `backtest-auditor` on round one as the
+    property a careless fix to the tie bug could silently break.
+    """
+    first = article("art-1", offset_hours=0)
+    second = article("art-2", offset_hours=1)
+    third = article("art-3", offset_hours=2)
+    client = FakeModelClient(
+        {"art-1": reply(first), "art-3": reply(third)},
+        failures=frozenset({"art-2"}),
+    )
+    result = label_batch(labeler_over(client, cache_at(tmp_path)), TICKER, (first, second, third))
+
+    assert set(result.excluded) == {"art-2"}
+    last_payload = client.calls[-1][1]
+    assert last_payload["article_id"] == "art-3"
+    assert [entry["article_id"] for entry in last_payload["prior_story_context"]] == [
+        "art-1",
+        "art-2",
+    ]

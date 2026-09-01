@@ -553,6 +553,15 @@ def _check_spans(label: NewsLabel, subject: Article) -> None:
     because those are the only two article fields in the payload. Checking
     against text the model never saw would let a fabrication pass whenever it
     happened to appear in a field this adapter withheld.
+
+    Prompt B also bounds the list at "zero to three" spans, and that bound is
+    deliberately not enforced. It differs from the fabrication check in what a
+    violation costs: a span that is not in the text is evidence that does not
+    exist, and keeping it would put a fabrication in the record, while a fourth
+    verbatim span is real evidence in excess of a formatting instruction.
+    Excluding on it would drop a label for verbosity, and nothing downstream
+    reads `evidence_spans` at all, so the exclusion would shrink the sample and
+    buy nothing. `news.build` derives every feature from the enumerated fields.
     """
     sent = (subject.headline, subject.summary)
     for span in label.evidence_spans:
@@ -608,10 +617,29 @@ def label_batch(
     excluded: dict[str, str] = {}
     seen: list[Article] = []
     for item in ordered:
-        context = tuple(seen[-max_prior_context:]) if max_prior_context else ()
+        # Strictly earlier, not merely sorted before. The sort breaks a tie by
+        # `article_id` to make the order a function of the data, but a tiebreak
+        # is not a time ordering: two wire stories published in the same second
+        # are simultaneous, and showing one to the other would label an article
+        # with information it could not have had. `label` refuses that, so
+        # passing a tied article here would raise `LabelerContractError` out of
+        # this whole function and abort the ticker's run over a timestamp
+        # collision, which is exactly what this entry point exists to prevent.
+        earlier = [
+            prior
+            for prior in seen
+            if prior.timestamps.first_seen_time < item.timestamps.first_seen_time
+        ]
+        context = tuple(earlier[-max_prior_context:]) if max_prior_context else ()
         try:
             labels[item.article_id] = labeler.label(item, asked, context)
         except UnusableLabelError as exc:
             excluded[item.article_id] = str(exc)
+        # Unconditionally, outside the `try`. An article that was published is
+        # prior context for a later one whether or not a model could label it,
+        # so appending only on success would make a later article's context,
+        # and therefore its cache key, depend on a transient model failure.
+        # Replaying the same run after a provider outage would then ask a
+        # different question and miss the cache.
         seen.append(item)
     return LabelBatchResult(labels=MappingProxyType(labels), excluded=MappingProxyType(excluded))
