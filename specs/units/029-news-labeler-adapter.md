@@ -64,8 +64,8 @@ In:
 - the one Prompt B consistency rule enforceable without semantic judgment:
   `entity_match=not_matched` forcing `relevance=incidental` and
   `ambiguity=high`;
-- rejecting a fabricated evidence span and any reply key outside the nine-field
-  schema;
+- rejecting a fabricated evidence span and any reply key outside the eleven-
+  field schema;
 - caching by a key over exactly what was sent to the model plus the model and
   prompt version, backed by the existing append-only store, so a frozen run
   replays labels rather than re-asking a model;
@@ -119,11 +119,25 @@ Out:
 - The payload sent to the model, and the only fields the cache key covers:
   `article_id`, `ticker`, `company_name`, `source_name`, `source_domain`,
   `source_time`, `first_seen_time`, `headline`, `summary`, and
-  `prior_story_context`, an ordered list of `source_time`/`source_domain`/
-  `headline` for each article in `prior_context`, oldest first. `source_name`
+  `prior_story_context`, an ordered list of `article_id`/`source_time`/
+  `source_domain`/`headline` for each article in `prior_context`, oldest
+  first. This line said three fields and omitted `article_id` until round
+  one of review; the code always sent four. The key cannot drift from the
+  payload whatever this prose says, because `cache_key` hashes the return
+  value of the same `model_payload` the call site sends, but a contract that
+  understates what reaches a model is wrong on the point it exists to fix. `source_name`
   is presently set from the subject's `source_domain` a second time; see
-  Scope, Out, on why. `summary` is the empty string; see the clarification
-  below.
+  Scope, Out, on why. `summary` is `subject.summary`, the field UNIT-030 added
+  to `Article` and merged on 2026-08-30.
+
+  This line read "`summary` is the empty string; see the clarification below"
+  until 2026-08-30, which contradicted the clarification it pointed at: that
+  section had already been resolved by D-025 on 2026-08-29, and the contract
+  was never updated to match. Corrected by the pre-implementation read D-026
+  requires, against the now-merged `Article`. An implementer following the
+  contract literally would have sent an empty summary to the labeler and
+  produced exactly the headline-only family D-025 exists to prevent, while
+  every test passed and the intake read as settled.
 - `cache_key(subject, ticker, company_name, prior_context, model_version,
   prompt_version) -> str`: the sha256 hex digest of the canonical JSON
   (`sort_keys=True`, `separators=(",", ":")`) of exactly the payload above,
@@ -172,7 +186,7 @@ a safety property and not a nicety:
    `NewsLabel` always come from `subject.timestamps` and from this adapter's
    own `model_version`/`prompt_version`, never from the reply, even if the
    reply carries keys of those names.
-3. Only the nine Prompt-B-schema fields (`article_id`, `ticker`,
+3. Only the eleven Prompt-B-schema fields (`article_id`, `ticker`,
    `entity_match`, `direction`, `category`, `novelty`, `relevance`,
    `surprise`, `ambiguity`, `evidence_spans`, `limitations`) are read from the
    reply mapping. Any other key is ignored and never reaches `NewsLabel` or
@@ -276,7 +290,7 @@ label definition.
 - AC-6: an `evidence_spans` entry absent, verbatim, from the article text
   actually sent raises `UnusableLabelError`. Falsified by a reply whose span
   does not appear in the subject's headline.
-- AC-7: a reply key outside the nine Prompt-B-schema fields, for example
+- AC-7: a reply key outside the eleven Prompt-B-schema fields, for example
   `"trade"` or `"confidence"`, never appears on the produced label or
   anywhere else observable. Falsified by inspecting the label produced from
   such a reply.
@@ -367,3 +381,63 @@ uv run mypy src
 ```
 
 ## Handoff notes
+
+### Round one, 2026-09-01, `backtest-auditor`, verdict `conditional`
+
+One HIGH finding, and it was demonstrated on constructed input rather than
+argued from reading, which is the standard this project's reviews have held to
+since UNIT-027.
+
+`label_batch` aborted an entire ticker's run on two articles sharing one
+`first_seen_time`. The function sorts by `(first_seen_time, article_id)` and
+its own docstring presented that tiebreak as the thing that resolves
+simultaneity. It does not: a tiebreak orders the visit, not the clock. So the
+second of two tied articles was handed the first as prior context, `_check_panel`
+correctly refused it as information the subject could not have had, and the
+resulting `LabelerContractError` fell straight through a `try` that catches only
+`UnusableLabelError`. Every other article in the batch died with it, which is
+precisely the failure this entry point exists to prevent and which
+`labels_by_article` already has.
+
+The fix filters the context to articles strictly earlier than the subject
+rather than widening what the `except` catches. Widening it was the tempting
+repair and it is wrong: it would collapse "this panel was mis-assembled", which
+must abort the batch, into "this one article is excluded", which must not. Two
+tests pin the corrected behaviour, one that both tied articles are labelled with
+empty context and one that a tie is withheld while a strictly earlier article is
+still shown.
+
+The reviewer also flagged, as a landmine rather than a defect, that nothing
+pinned `seen.append(item)` sitting outside the `try`. It has to: an article that
+was published is prior context whether or not a model could label it, so
+appending only on success would make a later article's cache key depend on a
+transient provider outage, and a replay after that outage would ask a different
+question and miss the cache. A careless fix for the finding above would have
+reintroduced that with every test still green. It is now pinned by
+`test_an_excluded_article_still_counts_as_prior_context`.
+
+Two things were fixed in the same round that the review did not raise.
+
+`test_extra_reply_keys_never_reach_the_produced_label` asserted
+`not hasattr(label, "trade")`. `NewsLabel` is a slotted frozen dataclass, so no
+implementation can set an undeclared attribute on it and that assertion could
+never fail, which is the UNIT-010 defect class exactly. It now reads every
+declared field individually and catches an implementation that parks reply
+content inside a declared field. That is not hypothetical: it was verified by
+mutation, and the old form did not catch the mutation the new form does.
+
+Prompt B bounds `evidence_spans` at "zero to three" and this adapter does not
+enforce the count. That is deliberate and is now stated in `_check_spans`
+itself. It differs from the fabrication check in what a violation costs: a span
+absent from the text is evidence that does not exist and keeping it would put a
+fabrication in the record, while a fourth verbatim span is real evidence in
+excess of a formatting instruction. Excluding on it would drop a label for
+verbosity and shrink the sample, and nothing downstream reads `evidence_spans`
+at all, verified against `evidence/news.py`, which derives every feature from
+the enumerated fields.
+
+Seven mutations were injected and reverted, and each turned a test red: the
+`_check_panel` tie boundary, `_check_spans` dropping the summary, `LabelCache.put`
+losing its idempotency guard, `_check_not_matched`'s `or` becoming `and`,
+`label_batch` reverting to the pre-fix context slice, `seen.append` moving inside
+the `try`, and the whole reply mapping being parked in `limitations`.
