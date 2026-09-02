@@ -111,8 +111,26 @@ LEGAL_TRANSITIONS: Final[MappingProxyType[tuple[SessionState, SessionEvent], Ses
             (SessionState.OPEN, SessionEvent.EXITING): SessionState.EXITING,
             (SessionState.EXITING, SessionEvent.CLOSED): SessionState.CLOSED,
             (SessionState.CLOSED, SessionEvent.READY): SessionState.READY,
-            # Halt, from every state that can still be holding or placing risk.
-            # The fourth is the addition the diagram omits.
+            # Halt. Three the diagram draws, from ready, working, and open,
+            # plus the fourth it omits, from exiting.
+            #
+            # There is deliberately no edge from `closed`, and the omission is
+            # recorded rather than reasoned away. `execution-safety-reviewer`
+            # raised it on round one: the reasoning that authorised
+            # `Exiting -> Halted` is not specific to exiting, so a kill switch
+            # firing while a session sits in `closed` has nowhere to go but a
+            # refusal. The counter-argument, which is why the edge is not here,
+            # is that `closed` holds no position and no working order, so
+            # declining to move on to `ready` is already the fail-closed
+            # response bullet 4 asks for, and halting is not the only safe one.
+            # Adding it anyway would be a third deviation from a cited design
+            # source, and the intake authorises exactly two. `AGENTS.md` says
+            # to surface a conflict rather than resolve it, so it is surfaced
+            # here and in the intake, and it belongs to whoever owns the
+            # feature 001 spec. Note for UNIT-034: until it is settled, do not
+            # route a halt through `closed -> ready -> halted`, because
+            # `permits_new_entry` is true in the state that path passes
+            # through.
             (SessionState.READY, SessionEvent.HALTED): SessionState.HALTED,
             (SessionState.WORKING, SessionEvent.HALTED): SessionState.HALTED,
             (SessionState.OPEN, SessionEvent.HALTED): SessionState.HALTED,

@@ -178,14 +178,24 @@ def test_every_transition_outside_the_table_is_refused(
     The message must name both states and the event, because a refusal that
     named only the event would leave an operator reading a log unable to say
     what the session was actually doing when it refused.
+
+    Asserted as the whole message rather than as three membership checks. The
+    first version checked that each of the three names appeared somewhere, and
+    that was weaker than it read: `SessionEvent` and `SessionState` share string
+    values by construction, so the target's name and the event's name are always
+    the same string, and dropping the target from the message entirely would
+    still have satisfied all three checks in all thirty-two cases. Found by
+    `execution-safety-reviewer` on round one, from the enum definitions rather
+    than from a failing run.
     """
     with pytest.raises(ValueError) as caught:
         transition(state, event)
 
-    message = str(caught.value)
-    assert state.value in message
-    assert SessionState(event.value).value in message
-    assert event.value in message
+    target = SessionState(event.value)
+    assert str(caught.value) == (
+        f"illegal session transition from '{state.value}' to '{target.value}' "
+        f"on event '{event.value}'"
+    )
 
 
 @pytest.mark.parametrize(
@@ -254,9 +264,26 @@ def imported_modules() -> set[str]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             found.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            found.add(node.module)
+        elif isinstance(node, ast.ImportFrom):
+            # `node.module` is None for a relative import, `from . import time`,
+            # and skipping that shape would have left the imported name
+            # unrecorded entirely. Found by `execution-safety-reviewer` on round
+            # one, reading the node shapes rather than trusting the happy case.
+            if node.module:
+                found.add(node.module)
+            found.update(alias.name for alias in node.names)
     return found
+
+
+def imports_anything_under(imported: set[str], root: str) -> bool:
+    """Whether `root` itself, or any submodule of it, is imported.
+
+    `ast.Import` records a dotted name whole, so `import datetime.timezone` is
+    the single string `"datetime.timezone"` and an equality test against
+    `"datetime"` would miss it. The prefix has to be tested, not the exact
+    string. Also found on round one.
+    """
+    return any(module == root or module.startswith(f"{root}.") for module in imported)
 
 
 def test_the_module_holds_no_per_order_state() -> None:
@@ -277,9 +304,8 @@ def test_the_module_holds_no_per_order_state() -> None:
 def test_the_module_reads_no_clock_and_performs_no_io() -> None:
     """AC-7. A machine that read a clock could not be replayed from a ledger."""
     imported = imported_modules()
-    for forbidden in ("datetime", "time", "os", "pathlib", "random"):
-        assert forbidden not in imported, forbidden
-    assert not any(module.startswith("alphaledger.broker") for module in imported)
+    for forbidden in ("datetime", "time", "os", "pathlib", "random", "alphaledger.broker"):
+        assert not imports_anything_under(imported, forbidden), forbidden
 
     # `open` and friends are builtins, so no import would reveal them.
     tree = ast.parse(MODULE.read_text(encoding="utf-8"))
@@ -314,3 +340,32 @@ def test_the_same_state_and_event_give_the_same_answer_in_a_fresh_process() -> N
         cwd=MODULE.parents[3],
     )
     assert result.stdout.split() == ["open", "halted"]
+
+
+def test_no_module_level_name_binds_a_mutable_view_of_the_table() -> None:
+    """`MappingProxyType` is a view, not a copy, so the literal must stay inline.
+
+    `test_the_transition_table_cannot_be_mutated_by_a_caller` proves writes
+    through the proxy raise, and that is all it proves. Hoist the dict literal
+    to a named module-level variable for any refactor reason and that test keeps
+    passing while `session._TABLE[...] = ...` mutates the machine at run time,
+    including adding an edge out of `halted`. Raised by
+    `execution-safety-reviewer` on round one as a defect the next edit would
+    introduce rather than one present today.
+    """
+    tree = ast.parse(MODULE.read_text(encoding="utf-8"))
+    for node in tree.body:
+        targets: list[ast.expr] = []
+        if isinstance(node, ast.Assign):
+            targets = list(node.targets)
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        else:
+            continue
+        if not isinstance(node.value, ast.Dict | ast.DictComp):
+            continue
+        names = [t.id for t in targets if isinstance(t, ast.Name)]
+        raise AssertionError(
+            f"{names} binds a bare dict at module level. Wrap the literal inline in "
+            "MappingProxyType so no mutable handle to the table exists"
+        )
