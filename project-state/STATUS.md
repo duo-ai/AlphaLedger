@@ -1,22 +1,64 @@
 # AlphaLedger project status
 
-Last updated: 2026-08-30
+Last updated: 2026-09-02
 
 ## Current phase
 
 Released as v0.1.0, and `develop` is well past it. This checkpoint was verified
-against `develop` at `556bebd` on 2026-08-30 by running the commands it cites,
-not by carrying the previous checkpoint forward.
+against `develop` at `2ddf1b8` on 2026-09-02 by running the commands it cites,
+not by carrying the previous checkpoint forward. Three counts it used to carry
+were wrong when checked rather than copied, and are corrected below: the unit
+total, which had grown from twenty-six to thirty-two, the test count, and
+`verify_harness.sh`, which is at 36 checks and not the 43 this file claimed.
 
-Twenty-one of twenty-six units are merged, code and registry both: UNIT-001
-through UNIT-004, UNIT-010 through UNIT-018, UNIT-020 through UNIT-025,
-UNIT-027, and UNIT-030. The quality gate passes end to end on that ref:
-`uv sync --frozen`, `ruff check`, `ruff format --check`, `mypy src` under
-strict across 32 source files, 707 tests, and `scripts/verify_harness.sh`.
+Twenty-four of thirty-two units are merged, code and registry both: UNIT-001
+through UNIT-005, UNIT-010 through UNIT-025, UNIT-027, UNIT-029, and UNIT-030.
+The quality gate passes end to end on that ref: `uv sync --frozen`,
+`ruff check`, `ruff format --check`, `mypy src` under strict across 34 source
+files, 774 tests, and `scripts/verify_harness.sh` at 36 checks.
 
-Four units are available and genuinely claimable, meaning every dependency is
-merged and `coord.py check` passes for each: UNIT-005, UNIT-019, UNIT-026, and
-UNIT-028. One is claimed and in progress, UNIT-029, by `mazwy/claude`.
+Eight units are available. Three are genuinely claimable, meaning every
+dependency is merged and `coord.py check` passes with no output, confirmed by
+running it for each rather than by reading dependency lists: UNIT-026,
+UNIT-028, and UNIT-033. The other five are not, and the distinction matters
+because the registry prints all eight the same way. UNIT-034 and UNIT-035 have
+unmerged dependencies. UNIT-006, UNIT-031, and UNIT-032 carry
+`[NEEDS CLARIFICATION]` markers, which `coord.py claim` refuses, recorded on
+2026-09-01 from the Codex analysis pass over feature 001. Nothing is claimed
+or in progress.
+
+Feature 001, the autonomous paper trading session, arrived on 2026-08-31 and
+added six units, UNIT-006 and UNIT-031 through UNIT-035. Its findings are open,
+not resolved: a Codex pass was started to fix them and stopped before it
+finished, and its partial edits were discarded deliberately, so
+`specs/features/001-autonomous-session/analysis-codex.md` is the complete
+record and nothing in the spec or the intakes has been corrected yet. The
+central one, C1, is that the merged `PaperTransport` takes no HTTP method and
+`TransportResponse` carries no body, so it can send something and learn only
+whether it was redirected. Five earlier analysis passes read that file and none
+noticed. UNIT-036, the unit that would widen the transport contract, is named
+in the handoff and does not exist as a file, so it is an intake still to be
+authored rather than a unit anyone can claim.
+
+UNIT-029 merged on 2026-09-02, and it is the last piece of the news family.
+Nothing had ever labelled an article by anything but a hand-written fixture.
+It took two rounds. Round one returned `conditional` on one HIGH finding the
+reviewer demonstrated on constructed input: `label_batch` aborted an entire
+ticker's run when two articles shared one `first_seen_time`. The function sorts
+by `(first_seen_time, article_id)` and its own docstring presented that
+tiebreak as resolving simultaneity, which it does not, so the second tied
+article was handed the first as prior context, `_check_panel` correctly refused
+it, and the resulting `LabelerContractError` fell through a `try` catching only
+`UnusableLabelError`. The fix filters the context to strictly earlier articles
+rather than widening the `except`, because widening it would collapse "this
+panel is mis-assembled", which must abort the batch, into "this one article is
+excluded", which must not. Two further defects were found by the implementer
+rather than the reviewer: an AC-7 assertion reading
+`not hasattr(label, "trade")`, which no implementation could fail because
+`NewsLabel` is a slotted frozen dataclass, and an unstated decision not to
+enforce Prompt B's "zero to three" span count. Seven mutations were injected
+and each turned a test red; round two re-injected the two that mattered rather
+than accepting the claim, and cleared.
 
 Three units merged on 2026-08-30, all in the research lane.
 
@@ -84,32 +126,37 @@ environment.
 
 ## Verified artifacts
 
-- `specs/`: the SDD intake, the unit template, and twenty-six unit intakes.
-  Twenty-one units are merged, code and registry both. UNIT-029 is `claimed` by
-  `mazwy/claude`. UNIT-005, UNIT-019, UNIT-026, and UNIT-028 are `available`
-  and each is genuinely claimable, confirmed by running `coord.py check` for
-  all four rather than by reading their dependency lists. Every row in
-  `specs/000-INTAKE.md` has an intake file; that file's prose named four units
-  as intake-less backlog rows until 2026-08-30 and was corrected in the same
-  change that wrote the last two intakes.
+- `specs/`: the SDD intake, the unit template, thirty-two unit intakes, and
+  one feature directory, `specs/features/001-autonomous-session/`, holding the
+  spec, the plan, and the analysis record. Twenty-four units are merged, code
+  and registry both, and nothing is claimed. UNIT-026, UNIT-028, and UNIT-033
+  are `available` and genuinely claimable, confirmed by running `coord.py check`
+  for each rather than by reading their dependency lists; five further units
+  print as `available` and are not claimable, per Current phase. Every row in
+  `specs/000-INTAKE.md` has an intake file. The one intake named anywhere and
+  missing is UNIT-036, the transport widening the feature 001 handoff names,
+  which has to be authored before UNIT-031 can be unblocked.
   The price ladder design section 11 step 4 requires is owned by UNIT-018,
   entry side only, and the function that turns a structure's quotes into the
-  ordered candidate rung prices it consumes is now owned by UNIT-019, written
-  on 2026-08-30. That was the longest-standing decomposition gap in the
-  execution lane: the ladder and the chain enumeration both merged with the
-  function between them owned by nobody. UNIT-018 remains claimable and
-  testable without it, exactly as UNIT-013 and UNIT-017 were each written and
-  merged before their real callers existed.
+  ordered candidate rung prices it consumes merged as UNIT-019 on 2026-08-31.
+  That was the longest-standing decomposition gap in the execution lane: the
+  ladder and the chain enumeration both merged with the function between them
+  owned by nobody. UNIT-018 was claimable and testable without it, exactly as
+  UNIT-013 and UNIT-017 were each written and merged before their real callers
+  existed.
 - `src/alphaledger/domain/`: the five records from design section 14 plus
   `ObservationTimestamps`. Money is `Decimal`, not the `float` the design
   sketched; the conflict and its resolution are recorded in the UNIT-001
   intake.
 - Quality gate passes end to end on 3.14: `uv sync --frozen`, `ruff check`,
-  `ruff format --check`, `mypy src` under strict across 29 source files, and
-  590 tests, verified against `develop` at `e8932b9`. The gate now runs inside
+  `ruff format --check`, `mypy src` under strict across 34 source files, and
+  774 tests, verified against `develop` at `2ddf1b8`. The gate now runs inside
   `verify_harness.sh` too, so the script cannot be green while the repository
-  gate is red. `verify_harness.sh` is at 43 checks, all passing; that count is
+  gate is red. `verify_harness.sh` is at 36 checks, all passing; that count is
   unaffected by which units are merged, since it tests tooling, not unit code.
+  This file claimed 43 until 2026-09-02, when the number was counted rather
+  than carried forward. Nothing was removed from the script; the count was
+  simply wrong.
 - `src/alphaledger/data/recorder.py` and `storage.py`, UNIT-020. Six
   timestamps and a feed on every record, an `as_of` read with no wall-clock
   alternative, five orderings enforced feed by feed under the obligation D-014
@@ -263,11 +310,12 @@ environment.
   reasoning for not adding an untested lock is in the UNIT-024 intake.
 - No model consumes a fold and no result is ever recorded, so the registry is
   proven to refuse what it should and never proven against a real research run.
-- The function that turns a structure's quotes into the ordered candidate rung
-  price sequence UNIT-018 consumes is now owned by UNIT-019, written on
-  2026-08-30 and available. It is specified, not implemented, so the gap in the
-  code is unchanged; what changed is that a row owns it. UNIT-018 remains
-  merged and tested against fixture sequences, as it was written to be.
+- Closed on 2026-08-31: the function that turns a structure's quotes into the
+  ordered candidate rung price sequence UNIT-018 consumes is merged as
+  UNIT-019. This entry is kept rather than deleted because it was the
+  longest-standing decomposition gap in the execution lane, a function sitting
+  between two merged units with no row owning it, and the shape of that gap is
+  worth remembering. UNIT-018 remains tested against fixture sequences.
 - Three thresholds design section 10 requires are still not committed
   anywhere, verified against `config/risk.toml` on 2026-08-30 rather than
   carried forward: it has no `max_snapshot_age`, so UNIT-013's `approve` takes
@@ -277,10 +325,11 @@ environment.
   threshold is meant to be the exception, not the steady state, for exactly the
   values that most need freezing before an autonomous session, and a limit
   passed as a bare argument is not in `risk_config_hash`, so a session that
-  halted on one cannot prove which one. UNIT-005 now owns closing this and is
-  available; the values are still uncommitted until it merges. Section 10
-  supplies two of the three numbers and none for the staleness bound, which
-  that intake records rather than hides.
+  halted on one cannot prove which one. Closed on 2026-08-31 by UNIT-005, which
+  merged and committed all three to `config/risk.toml`. Section 10 supplied two
+  of the three numbers and none for the staleness bound, which that intake
+  records rather than hides, so `max_snapshot_age` is a declared value like the
+  research-lane thresholds and is not selected on anything.
 - Model code now exists on `develop`: UNIT-025 merged a ridge magnitude model,
   a logistic direction model, and the section 6 eligibility gates. It has never
   been fitted on real data. Every number comes from a fixture with a known
@@ -288,10 +337,12 @@ environment.
   exporting `UNEVALUATED_GATES` so a caller cannot read `eligible` as "cleared
   section 6": gate 5 is a property of the held-out evaluation across all
   candidates and gate 6 is execution-lane state. News features exist per
-  UNIT-023, but nothing labels an article: the LLM client, its caching, and its
-  output validation are deliberately out of that unit and belong to UNIT-029,
-  which has an intake and is claimed by `mazwy/claude` as of 2026-08-30 but is
-  not merged, so the news family still cannot run on real data at all. The order lifecycle, risk
+  UNIT-023, and UNIT-029 merged on 2026-09-02 with the labeler, its caching,
+  and its output validation, so the family now has an implementation and not
+  only a protocol. It still cannot run on real data, for a narrower reason than
+  before: UNIT-029 excludes the concrete network-calling model client by
+  design, so the only implementation of its `ModelClient` protocol is an
+  in-memory fake, and UNIT-028 has not fetched an article for it to read. The order lifecycle, risk
   approval, chain enumeration, broker reconciliation, the kill switch, and now
   the ledger are all on `develop`, and a durable store behind
   `RecordedSubmissionAttempt` exists in `src/alphaledger/ledger/decisions.py`,
@@ -327,20 +378,41 @@ environment.
    merge on 2026-08-30. This is the comparison the whole research lane exists
    to make, price-only against news-only against combined against
    random, and until it runs the project has a forecast and no evidence that
-   the forecast is worth anything. It is Claude-preferred.
+   the forecast is worth anything. It is Claude-preferred. UNIT-029's merge on
+   2026-09-02 removed the last structural reason it could not run: the news
+   family now has a labeler and not only a protocol. It still cannot run on
+   real labels, because the concrete model client is out of UNIT-029's scope
+   and UNIT-028 has not fetched an article, so what UNIT-026 can compare today
+   is fixtures against fixtures.
 
-Also available and unclaimed, both written on 2026-08-30 to close gaps the
-decomposition had left open, and neither on the critical path: UNIT-005 commits
-the three section 10 risk thresholds `config/risk.toml` does not carry, and
-UNIT-019 owns the rung price sequence UNIT-018 consumes. Both are
-execution-lane and Codex-preferred.
+Also claimable and unclaimed: UNIT-033, the session and arm state machine from
+feature 001. It is pure, seven states and a fixed edge set with no clock and no
+I/O, it is the one unit in that feature no Codex finding touched, and the
+2026-09-01 handoff in `RESEARCH-LANE.md` names it as the place to start. It is
+execution-lane paths held by `mazwy` under the delegation `AGENTS.md` records,
+and it is Claude-preferred, so it is claimed and worked in a session with
+worktree isolation rather than dispatched: `scripts/dispatch.sh` refuses a
+Claude owner by design.
 
-UNIT-029 is claimed by `mazwy/claude` and in progress.
+The rest of feature 001 is not claimable and will not become so by waiting.
+UNIT-006, UNIT-031, and UNIT-032 carry `[NEEDS CLARIFICATION]` markers naming
+real findings, and UNIT-034 and UNIT-035 sit downstream of those. Unblocking
+them is specification work, not implementation work: resolve the findings in
+`specs/features/001-autonomous-session/analysis-codex.md` and author UNIT-036,
+which the handoff names and which does not exist as a file. Do not remove a
+marker to unblock a claim; the finding it names is real, and C1 invalidated the
+centre of the plan.
 
-Every intake exists. `specs/000-INTAKE.md` has no backlog row without a file,
-so the next unit of work is a claim rather than an authoring step. What is
-worth saying instead is the shape of what remains: nothing in this project has
-ever fetched a real bar, labelled a real article, submitted a real order, or
-compared the news family against anything. Twenty-one merged units are twenty-
-one units of proven internal consistency, and that is a different claim from a
-working system.
+Every intake exists for every row in `specs/000-INTAKE.md`, so work in the
+research lane is a claim rather than an authoring step. Feature 001 is the
+exception and is described above.
+
+What is worth saying instead is the shape of what remains, and it has changed
+in exactly one respect since the last checkpoint. Nothing in this project has
+ever fetched a real bar, submitted a real order, or compared the news family
+against anything. An article can now be labelled by a model rather than by a
+fixture, but only through an injected protocol whose only implementation is an
+in-memory fake: UNIT-029 deliberately excludes the concrete network-calling
+client, so no real article has been labelled either. Twenty-four merged units
+are twenty-four units of proven internal consistency, and that is a different
+claim from a working system.
