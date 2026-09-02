@@ -137,3 +137,46 @@ uv run mypy src
 ```
 
 ## Handoff notes
+
+### Implementation, 2026-09-02
+
+The table has seventeen edges: the ten design section 11 draws, `Exiting ->
+Halted`, and six disarm edges, one from every state that is not `Disarmed`
+itself. Forty-nine (state, event) pairs exist and thirty-two are refused, and
+the test sweeps all of them rather than sampling, so an edge added by accident
+fails a test rather than being discovered by an orchestrator.
+
+`SessionEvent` names each event for the state it attempts to enter, following
+UNIT-012. That is what lets a refusal name both sides of a move, which AC-2
+requires: with no target in the event there would be nothing to name but the
+current state. The cost is real and is accepted rather than hidden. Four
+distinct causes share the `HALTED` event, a health breach, a risk breach, a
+kill switch, and a flatten that did not complete, because the machine's only
+question is whether the move is legal and all four make the same move. Which
+cause fired is a fact for the ledger, and UNIT-034 owns recording it. AC-3 is
+tested by a case named for the flatten failure it stands for, so the
+distinction is visible in the test suite even though it is absent from the
+enumeration.
+
+`permits_new_entry` is derived from the table rather than written as a second
+list, `(state, SessionEvent.WORKING) in LEGAL_TRANSITIONS`. The intake allows
+either, saying halted and disarmed must not permit entry and the rest are
+decided by the table. A separate list could drift from the transitions, and the
+direction it would drift in is the dangerous one: a stale list saying a halted
+session may trade. A test pins the property rather than the current answer, so
+if a later unit adds an edge into `working` the predicate follows it instead of
+being a stale copy.
+
+AC-6 and AC-7 are checked against the module's syntax tree, not by grepping its
+text. The first attempt grepped, and it failed on this module's own docstring
+explaining why the per-order machine is a different scope. That is not a near
+miss worth ignoring: the same weakness runs the other way, since a grep would
+also pass on an import smuggled in under an alias. The tree sees imports,
+names, and calls, and nothing else.
+
+Five mutations were injected and reverted, and each turned a test red, in every
+case including the test named for that behaviour: dropping the `Exiting ->
+Halted` edge, dropping the only edge out of `Halted`, adding a `Halted ->
+Ready` edge that would let a halted session resume with no human, replacing the
+derived entry predicate with a hand-written state list, and adding an eighth
+state.
