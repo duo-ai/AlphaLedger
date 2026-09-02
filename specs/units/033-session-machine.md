@@ -2,13 +2,14 @@
 id: UNIT-033
 title: Model the session and arm state machine
 lane: execution
-state: available
-owner: -
-branch: -
+state: claimed
+owner: mazwy/claude
+branch: feature/033-session-machine
 reviewer: execution-safety-reviewer
 preferred_runtime: claude
 depends_on: [UNIT-001, UNIT-012]
 paths: src/alphaledger/execution/session.py, tests/execution/test_session.py
+claimed_at: 2026-09-02T13:23:42Z
 ---
 
 ## Delegated to mazwy
