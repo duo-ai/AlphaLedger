@@ -2,13 +2,14 @@
 id: UNIT-032
 title: Hold the durable time limited arm record
 lane: execution
-state: available
-owner: -
-branch: -
+state: claimed
+owner: mazwy/claude
+branch: feature/032-arm-record
 reviewer: execution-safety-reviewer
 preferred_runtime: claude
 depends_on: [UNIT-004, UNIT-005, UNIT-016]
 paths: src/alphaledger/execution/arm.py, tests/execution/test_arm.py, config/risk.toml, src/alphaledger/config/__init__.py, tests/config/test_config.py
+claimed_at: 2026-09-04T13:04:38Z
 ---
 
 ## Delegated to mazwy
