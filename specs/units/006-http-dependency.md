@@ -21,14 +21,27 @@ runtime the owner runs, and `scripts/dispatch.sh` refuses a Claude owner by
 design, so these are claimed and worked in a session with worktree isolation
 rather than dispatched.
 
-## Blocked
+## C7, resolved 2026-09-04
 
-[NEEDS CLARIFICATION: C7. AC-4 and the test list forbid every `httpx` import repository wide, but UNIT-031 must add one and its declared paths exclude this unit's test file, so the gate cannot pass inside UNIT-031's boundary. Recorded 2026-09-01 from the Codex analysis pass in
-`specs/features/001-autonomous-session/analysis-codex.md`, which found seven
-CRITICAL and five HIGH findings that five earlier passes missed. A fix pass was
-started and stopped before it completed, and its partial edits were discarded
-rather than shipped half applied, so every finding below is open. Do not claim
-this unit until it is resolved and this marker is removed.]
+The marker that stood here said AC-4 and the test list forbade every `httpx`
+import repository wide, while UNIT-031 must add one and cannot edit this unit's
+test file, so the gate could not pass inside UNIT-031's boundary. That was
+correct, and the defect was in the criterion rather than in either unit: an
+acceptance criterion designed to expire when the next unit lands is not a
+durable regression test, and a merged test does not move by prose.
+
+Resolved by changing what the test asserts rather than by deleting it. The
+prohibition becomes a boundary: `httpx` may be imported only from an
+allowlisted set of modules, and the allowlist is written now to name the
+modules that will legitimately hold it. UNIT-031 then adds its import and the
+test keeps passing without any later unit editing this file, which is what
+D-010 requires and what the expiring version could not give.
+
+The allowlist is the point of the test, not an escape from it. A `httpx` import
+anywhere else still fails the suite, so the property that actually matters, one
+HTTP client reachable from one place rather than scattered call sites beside
+the asserted order path, is enforced from this unit onward instead of being
+asserted once and abandoned.
 
 ## Problem
 
@@ -85,9 +98,14 @@ the resolved version in the handoff notes with the command that produced it.
 - AC-3: `httpx` imports on cp314 in this environment. Falsified by an import
   error, which is the thing D-012 checks for every dependency before anything
   relies on it.
-- AC-4: no source file imports `httpx`. Falsified by any import outside
-  `pyproject.toml` and `uv.lock`, because this unit is the dependency and not
-  its first use.
+- AC-4: `httpx` is imported only from an allowlisted set of modules. The
+  allowlist is `src/alphaledger/broker/http.py` and
+  `src/alphaledger/data/http.py`, neither of which exists yet, so today the
+  effective assertion is that nothing imports it, and tomorrow it is that only
+  the two designated adapters do. Falsified by an import from any other module,
+  including a test helper. Stated as an allowlist rather than a prohibition
+  because a prohibition would have to be edited by the unit that breaks it, and
+  that unit cannot reach this file. See C7 above.
 - AC-5: the repository quality gate passes unchanged. Falsified by any test,
   lint, or type failure introduced by the dependency being present.
 
