@@ -1,6 +1,6 @@
 ---
 name: ast-import-gate-testing
-description: how to adversarially test an AST-based import allowlist or prohibition test, and the one class of import it structurally cannot see
+description: how to adversarially test an AST-based import allowlist or prohibition test; each fix round has left a further plain-literal shape live
 metadata:
   type: feedback
 ---
@@ -35,3 +35,39 @@ The fix is cheap: also walk for `ast.Call` nodes whose `func` resolves to
 argument equal to the package name or a dotted prefix of it. That still will
 not catch a fully computed/obfuscated string; state that residual limit in
 the test's own docstring rather than leaving it implied.
+
+**Round two shapes, once the `ast.Call` walk above exists (UNIT-006 round
+two):** a bare `Name` call target from `from importlib import import_module;
+import_module("y")`, invisible if the walk only matches `ast.Attribute` with
+`.attr == "import_module"`; and the keyword form `import_module(name="y")`,
+invisible if the walk only inspects `node.args[0]`. Both are plain literals in
+ordinary, idiomatic Python, not contrived. Fix by matching `ast.Name` with
+`id in {"import_module", "__import__"}` too, and by scanning
+`node.args + [kw.value for kw in node.keywords if kw.arg in {"name", None}]`
+(the `None` arg name is the `**kwargs` splat; its `keyword.value` is a `Name`
+or `Dict`, not a `Constant`, so it is filtered out for free and cannot crash
+or false-positive the literal check).
+
+**Round three shapes, once round two's fix exists (UNIT-006 round three):**
+two more plain-literal evasions, neither "computed" in any sense the
+concatenation/rebound-alias residual limit already named. `import_module(f"y")`,
+an f-string with zero placeholders, parses as `JoinedStr(values=[Constant(...)])`
+rather than `ast.Constant`, so a check that only accepts `ast.Constant` misses
+it even though the value is fixed at parse time; this is the stronger,
+headline-worthy one, since nothing about it reads as "run time." Weaker but
+still real: a literal assigned to a variable first and passed by name,
+`_pkg = "y"; import_module(_pkg)`, or the same shape reached through a `for`
+loop over a literal tuple, `[import_module(m) for m in ("y",)]`; both need a
+one-hop constant-propagation the AST walk does not do. Report the `JoinedStr`
+case as the primary finding when both are present, since a reviewer given only
+the variable-indirection case can argue it about whether a name lookup counts
+as "computed," and that argument has no purchase against a zero-placeholder
+f-string. The fix for `JoinedStr` is symmetric with the round-two fix: extend
+the same shared "is this argument a literal `y`" predicate to accept
+`ast.Constant` with a `str` value OR `ast.JoinedStr` whose `values` is exactly
+one such `Constant`, applied to both `node.args` and the keyword scan so
+`import_module(name=f"y")` cannot reopen the positional/keyword split that
+caused round two. Each round's docstring claimed its residual limit was now
+accurate and each time a further plain-literal shape was still live; treat
+that claim as unverified until you have personally tried an f-string and a
+variable-indirected literal, not just the shapes the previous round named.
