@@ -21,14 +21,32 @@ runtime the owner runs, and `scripts/dispatch.sh` refuses a Claude owner by
 design, so these are claimed and worked in a session with worktree isolation
 rather than dispatched.
 
-## Blocked
+## C1, C2, C5 and C6, resolved 2026-09-04
 
-[NEEDS CLARIFICATION: C1, C2, C5, C6. C1 and C2 reach this unit through UNIT-031, whose contract is impossible as written. C5: AC-7 says this module holds no trading rule of its own and is falsified only by arithmetic or a threshold comparison, so a structure or exit selection added with neither would pass while breaking the invariant it claims. C6: no unit records operator driven arm and disarm transitions. Recorded 2026-09-01 from the Codex analysis pass in
-`specs/features/001-autonomous-session/analysis-codex.md`, which found seven
-CRITICAL and five HIGH findings that five earlier passes missed. A fix pass was
-started and stopped before it completed, and its partial edits were discarded
-rather than shipped half applied, so every finding below is open. Do not claim
-this unit until it is resolved and this marker is removed.]
+C1 and C2 reached this unit through UNIT-031, whose contract was impossible as
+written. Both are closed there: UNIT-036 widened the transport, and UNIT-031
+now exposes one submit capability that takes the risk approval, the durable
+attempt, the derived client order id, and the held arm lease rather than an arm
+value and arbitrary bytes. This unit calls that capability and adds no order
+path of its own.
+
+C6 is closed by UNIT-032, which now owns writing operator arm and disarm
+transitions to the ledger alongside the arm store change, ledger first. The
+earlier plan assigned every transition write here, which left an operator's arm
+unrecorded whenever no scheduled scan followed it. This unit still records the
+transitions of the scans it runs.
+
+C5 was the sharpest finding and is closed by replacing the criterion rather
+than by arguing it. AC-7 said this module holds no trading rule of its own and
+named its falsifier as arithmetic or a threshold comparison. That is not a
+falsifier: a structure choice or an exit choice can be added with no arithmetic
+and no comparison at all, so the criterion could pass while the invariant it
+claims was false. The rewritten AC-7 is below and is mechanical: every decision
+this module emits must be the return value of an injected collaborator, and the
+module's own syntax tree must contain no comparison against a numeric constant
+and no conditional that selects between structures or exits. An AST check
+falsifies it, which is the same technique UNIT-033 used after a grep-based
+version of the same idea proved both too weak and too strong.
 
 ## Problem
 

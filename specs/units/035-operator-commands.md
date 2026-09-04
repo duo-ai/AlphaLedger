@@ -21,14 +21,24 @@ runtime the owner runs, and `scripts/dispatch.sh` refuses a Claude owner by
 design, so these are claimed and worked in a session with worktree isolation
 rather than dispatched.
 
-## Blocked
+## C1 and C6, resolved 2026-09-04
 
-[NEEDS CLARIFICATION: C1, C6. C1 reaches this unit through UNIT-034 and UNIT-031. C6: this unit performs arming and disarming and no unit owns writing those transitions to the ledger, so the audit trail has a hole exactly where a human took responsibility. Recorded 2026-09-01 from the Codex analysis pass in
-`specs/features/001-autonomous-session/analysis-codex.md`, which found seven
-CRITICAL and five HIGH findings that five earlier passes missed. A fix pass was
-started and stopped before it completed, and its partial edits were discarded
-rather than shipped half applied, so every finding below is open. Do not claim
-this unit until it is resolved and this marker is removed.]
+C1 reached this unit through UNIT-034 and UNIT-031 and is closed at the source
+by UNIT-036 and UNIT-031.
+
+C6 said this unit performs arming and disarming while no unit owned writing
+those transitions to the ledger, leaving a hole in the audit trail exactly
+where a human took responsibility. It is closed by assignment rather than by
+adding a second writer here: UNIT-032 now appends the ledger transition and
+changes the arm store in one operation, ledger first, so an operator command
+that reaches UNIT-032 at all is recorded whether or not a scan follows it. This
+unit calls UNIT-032 and inherits that guarantee, and it must not write the
+transition itself, because two writers for one fact is how two durable truths
+come to disagree.
+
+The obligation this leaves here is narrower and is now AC-8: every command this
+unit exposes must reach its durable effect through UNIT-032 or UNIT-034, and
+none may change trading state directly.
 
 ## Problem
 
