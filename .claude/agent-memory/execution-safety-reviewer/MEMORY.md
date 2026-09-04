@@ -1,2 +1,3 @@
 - [Session-machine review patterns](session-machine-patterns.md) — closed-table state machine review: check every state for a symmetric halt edge, and distrust an immutability test that only proves the proxy is read-only.
 - [Tooling constraints](tooling-constraints.md) — this role sometimes runs with no Bash tool available; verify the tool list before promising to run commands.
+- [Transport boundary patterns](transport-boundary-patterns.md) — reviewing `base_url+path` transports: trace RFC3986 authority parsing by hand before flagging `?`/`#`/`@` as injection; grep-based "no live host" tests share the AST-import blind spot; verify an intake's "this breaks a merged caller" claim by grepping the tree; check "under every verb" test-list promises bullet by bullet.

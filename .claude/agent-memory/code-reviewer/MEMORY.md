@@ -1,0 +1,2 @@
+- [AST import-gate testing](ast-import-gate-testing.md): attack any allowlist/prohibition test built on `ast.walk` with `importlib.import_module("pkg")`, invisible to `Import`/`ImportFrom` node checks.
+- [UNIT-006 httpx allowlist](unit-006-httpx-allowlist.md): `tests/test_dependencies.py` allowlists `broker/http.py` and `data/http.py` before either exists, re-check when UNIT-031 and UNIT-028 land.
