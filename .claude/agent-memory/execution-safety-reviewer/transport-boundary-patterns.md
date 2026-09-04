@@ -155,3 +155,38 @@ what each index now refers to. A same-type positional shift (str at index 0
 before, str at index 0 after, different meaning) is invisible to the type
 checker and invisible to a diff review that only checks "did the call site
 get updated," so it has to be checked by re-deriving the tuple shape by hand.
+
+## `object.__new__(FrozenType)` plus `object.__setattr__` to synthesize an invalid frozen dataclass is legitimate for a defense-in-depth test, not theatre, when `__init__` forbids any other direct construction
+
+UNIT-036 round two added `test_a_corrupted_base_url_is_refused_under_every_verb`,
+building `EndpointConfiguration` by skipping `__init__` entirely
+(`object.__new__(EndpointConfiguration)` then `object.__setattr__(corrupted,
+"base_url", "https://broker.invalid")`) rather than by constructing through
+`from_resolver` and mutating afterward, which is what the pre-existing
+corruption test does. Checked whether this models a state "the real factory
+cannot produce": it does not, and neither construction technique models
+anything reachable by legitimate calling code, because `EndpointConfiguration.
+__init__` unconditionally raises `TypeError` and `from_resolver` cannot return
+a non-paper `base_url` (it always returns the paper URL or raises). Both
+techniques exist purely to reach into the object's private construction
+machinery, and both produce a functionally identical object as far as
+`send_paper_request` is concerned, since the boundary function only ever reads
+`configuration.base_url` at call time with no cached/validated flag to bypass.
+Conclusion: this is not "theatre" merely because production code cannot reach
+the state through the public API. It is a standard defense-in-depth technique
+proving the boundary function re-derives its check from the field's current
+value on every call rather than trusting the type. Graded as legitimate and as
+genuinely closing the round-one gap (AC-3 was POST-only; the new test
+parametrizes across all four verbs).
+
+**How to apply:** when a test constructs a frozen/validated domain object via
+`object.__new__` or similar construction bypass, don't grade it as theatre
+just because "the real factory can't produce this." Ask instead: (1) does the
+function under test actually re-check the invariant from the object's current
+field values, with no cached "already validated" shortcut it could be
+exploiting, and (2) is the bypass technique the *only* way to construct that
+invalid state at all (i.e., does `__init__` forbid every other direct path)?
+If both hold, the test is legitimate defense-in-depth, not a fabricated
+scenario. Distinguish this from a case where the bypass produces a state a
+real caller *could* reach some other way that the test doesn't cover, which
+would actually be theatre for hiding the real gap.
