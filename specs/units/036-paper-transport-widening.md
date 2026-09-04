@@ -154,8 +154,22 @@ uv run mypy src
 uv run pytest
 ```
 
-The full suite matters more than usual here. This unit changes a merged
-signature that UNIT-011 and UNIT-012 call, so a green narrow run proves very
-little on its own.
+The full suite matters here, though not for the reason this section first
+gave. It said UNIT-011 and UNIT-012 call the changed signature. They do not: a
+tree wide grep for `send_paper_request`, `PaperTransport`, and
+`TransportResponse` returns nothing outside this unit's two files, and
+`src/alphaledger/broker/` holds only `endpoint.py` and `__init__.py`. That is
+consistent with `STATUS.md`, which records that no transport submits anything.
+Corrected on round one by `execution-safety-reviewer`. A false claim that a
+change is risky is safer than the reverse, but it is still false, and a later
+reader would infer coupling that does not exist.
+
+The declared paths were also narrowed on round one, from
+`src/alphaledger/broker/**` to the single file this unit actually changes. The
+wide glob was not harmless: `coord.py` refuses a claim overlapping an
+in-flight unit, so it reserved the whole broker package and would have blocked
+UNIT-031, whose own file sits beside this one. It also turned a
+`verify_harness.sh` probe red, because that probe makes merged UNIT-010
+claimable and UNIT-010 declares exactly the files this unit had swallowed.
 
 ## Handoff notes
