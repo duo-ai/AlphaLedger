@@ -7,7 +7,7 @@ owner: -
 branch: -
 reviewer: execution-safety-reviewer
 preferred_runtime: claude
-depends_on: [UNIT-006, UNIT-032, UNIT-010, UNIT-011, UNIT-012, UNIT-015, UNIT-017]
+depends_on: [UNIT-006, UNIT-032, UNIT-010, UNIT-011, UNIT-012, UNIT-015, UNIT-017, UNIT-036]
 paths: src/alphaledger/broker/client.py, tests/execution/test_client.py
 ---
 
@@ -21,14 +21,40 @@ runtime the owner runs, and `scripts/dispatch.sh` refuses a Claude owner by
 design, so these are claimed and worked in a session with worktree isolation
 rather than dispatched.
 
-## Blocked
+## C1, C2, C4 and C7, resolved 2026-09-04
 
-[NEEDS CLARIFICATION: C1, C2, C4, C7. C1 is structural and invalidates this unit's contract: the merged `PaperTransport` takes no HTTP method and `TransportResponse` carries no body, so this unit cannot perform a read or parse a response through it, and the feature spec forbids changing a merged unit. C2: the submission boundary requires an arm and does not require the risk approval, the durable attempt, the payload binding, the derived client order id, or the smoke test cap that `AGENTS.md` says the only order path must enforce. C4: reading the arm before submit is not atomic with disarm. Recorded 2026-09-01 from the Codex analysis pass in
-`specs/features/001-autonomous-session/analysis-codex.md`, which found seven
-CRITICAL and five HIGH findings that five earlier passes missed. A fix pass was
-started and stopped before it completed, and its partial edits were discarded
-rather than shipped half applied, so every finding below is open. Do not claim
-this unit until it is resolved and this marker is removed.]
+C1 is closed by UNIT-036, which widened `PaperTransport` to carry an HTTP verb
+and `TransportResponse` to carry a body, in its own unit, because the two
+alternatives were a side channel that skips UNIT-010's endpoint assertion and a
+write outside this unit's globs. This unit now has a contract it can implement.
+It depends on UNIT-036 and must not reintroduce a second path.
+
+C7 is closed by UNIT-006, whose `httpx` prohibition became an allowlist naming
+`alphaledger/broker/http.py`. This unit adds exactly that module, and the
+dependency test keeps passing without being edited. An import of `httpx` from
+any other module still fails the suite, which is what keeps the order path
+single.
+
+C2 is closed by narrowing what this unit exposes rather than by adding prose.
+The finding was that an arm value was the only structural requirement, so a
+caller could reach the submit surface with an arm and arbitrary bytes, while
+`AGENTS.md` requires the only order path to enforce the paper endpoint, the arm
+state, the risk approval, an idempotent client order id, broker reconciliation,
+and the one-contract smoke-test cap. The resolution is that this module exposes
+exactly one way to place an order and it takes the evidence rather than the
+bytes. See the Contract, and AC-8 through AC-13, which test each missing,
+expired, mismatched, and mutated input through every public entry point.
+
+C4 is closed by moving the arm from a value that is read to a lease that is
+held, and the lease belongs to UNIT-032 rather than here. Reading an arm
+immediately before the send is not atomic with disarm: a submit that pauses
+after the read and before the transport call still sends after disarm returned
+success. This unit therefore never reads an arm. It requires an
+`ArmLease` that the caller is already holding, and UNIT-032 guarantees that
+disarm does not return until every outstanding lease is released or
+conservatively reconciled. The controlled-barrier test for that window lives
+with UNIT-032, which owns both sides of it; this unit's obligation is only that
+no public entry point accepts a bare arm value.
 
 ## Problem
 

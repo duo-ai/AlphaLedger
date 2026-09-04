@@ -8,7 +8,7 @@ branch: -
 reviewer: execution-safety-reviewer
 preferred_runtime: claude
 depends_on: [UNIT-004, UNIT-005, UNIT-016]
-paths: src/alphaledger/execution/arm.py, tests/execution/test_arm.py
+paths: src/alphaledger/execution/arm.py, tests/execution/test_arm.py, config/risk.toml, src/alphaledger/config/__init__.py, tests/config/test_config.py
 ---
 
 ## Delegated to mazwy
@@ -21,14 +21,52 @@ runtime the owner runs, and `scripts/dispatch.sh` refuses a Claude owner by
 design, so these are claimed and worked in a session with worktree isolation
 rather than dispatched.
 
-## Blocked
+## C3, C4 and C6, resolved 2026-09-04
 
-[NEEDS CLARIFICATION: C3, C6. C3: AC-5 says the maximum arm lifetime is read from committed configuration and no such value exists anywhere. UNIT-005 committed three thresholds and none is an arm lifetime, and this unit does not own the config paths to add one. C6: arming and disarming change session state and no unit owns recording those transitions in the ledger. Recorded 2026-09-01 from the Codex analysis pass in
-`specs/features/001-autonomous-session/analysis-codex.md`, which found seven
-CRITICAL and five HIGH findings that five earlier passes missed. A fix pass was
-started and stopped before it completed, and its partial edits were discarded
-rather than shipped half applied, so every finding below is open. Do not claim
-this unit until it is resolved and this marker is removed.]
+C3 was correct and the intake was wrong: it asserted UNIT-005 had committed a
+maximum arm lifetime. UNIT-005 committed three values, `max_snapshot_age`,
+`daily_loss_stop_fraction`, and `peak_to_valley_fraction`, and none is an arm
+lifetime. No such key exists in `config/risk.toml` or in `RiskConfig`, verified
+rather than assumed.
+
+Resolved by this unit committing it, which required widening its declared path
+globs onto `config/risk.toml`, `src/alphaledger/config/__init__.py`, and the
+config test. That bends D-010, and the bend is recorded here rather than taken
+quietly. It is safe only under the condition D-027 named for the same bend:
+this must be the only in-flight unit holding those paths, and `coord.py` refuses
+a claim that overlaps, so the condition is enforced mechanically rather than
+remembered. The alternative considered and rejected was a seventh prerequisite
+unit owning one config key, which is real ceremony for a single frozen number
+that nothing else can sensibly own.
+
+The value is a declared default, not a selected one, exactly like the three
+UNIT-005 committed. It is committed so it enters `risk_config_hash`, because
+D-017's whole point is that a limit passed as a bare argument cannot be proven
+after the fact, and an arm that expired cannot be audited if nothing records
+how long it was meant to last.
+
+C4 is closed by making the arm a lease rather than a value, and this unit owns
+both sides of the window. The finding showed a real race that "read immediately
+before the send" cannot close: a submit that pauses after the read and before
+the transport call still sends after disarm returned success. So this unit
+exposes an `ArmLease` acquired for the duration of a submit critical section,
+and `disarm` does not return until every outstanding lease is released or
+conservatively reconciled. Emergency halt and flatten take a separate path that
+the lease cannot starve, because a halt that had to wait for an in-flight
+submit would be a halt that does not halt. The controlled-barrier test that
+pauses between the acquire and the send lives here, since a test that disarms
+between two completed submissions cannot exercise the window at all.
+
+C6 is closed by giving the ledger write to this unit rather than to UNIT-034.
+The finding was that an operator can arm or disarm with no scheduled scan
+following, so the durable arm store changes while the append-only ledger holds
+no corresponding transition, and the two durable truths disagree. Both writes
+happen here, and the ordering is fixed and load bearing: the ledger entry is
+appended first, then the arm store changes. A crash between them leaves a
+ledger saying a session armed and an arm store saying it did not, which is the
+fail-closed direction, because no arm means nothing can be submitted. The
+opposite ordering would leave a live arm no audit trail explains, which is the
+one outcome this project cannot accept.
 
 ## Problem
 
