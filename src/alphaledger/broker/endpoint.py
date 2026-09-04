@@ -6,6 +6,12 @@ from typing import Literal, Protocol
 from urllib.parse import urlsplit
 
 PAPER_BASE_URL = "https://paper-api.alpaca.markets"
+
+# The four verbs the order path needs, and no others. Submit is POST, order and
+# account reads are GET, replace is PATCH, cancel is DELETE. Declared as a
+# Literal rather than a str so an unexpressible verb is a type error and not a
+# runtime surprise, and deliberately without PUT, which nothing here uses.
+HttpMethod = Literal["GET", "POST", "PATCH", "DELETE"]
 _BASE_URL_ENVIRONMENT_VARIABLES = (
     "APCA_API_BASE_URL",
     "ALPACA_API_BASE_URL",
@@ -59,10 +65,19 @@ class EndpointConfiguration:
 
 @dataclass(frozen=True)
 class TransportResponse:
-    """Response metadata required to reject redirect replay."""
+    """Response metadata required to reject redirect replay, plus the payload.
+
+    `body` carries raw bytes and is never decoded here. Deciding what a payload
+    means belongs to the schema adapter; this boundary's job is to prove where
+    the bytes came from, not to interpret them. It defaults to empty so a
+    transport with nothing to return stays constructible, and it is `repr=False`
+    for the same reason `location` is: a broker payload in a traceback is a
+    disclosure risk.
+    """
 
     status_code: int
     location: str | None = field(default=None, repr=False)
+    body: bytes = field(default=b"", repr=False)
 
 
 class PaperTransport(Protocol):
@@ -70,6 +85,7 @@ class PaperTransport(Protocol):
 
     def request(
         self,
+        method: HttpMethod,
         url: str,
         body: bytes,
         *,
@@ -101,11 +117,20 @@ def validate_process_start(recorder: EndpointRecorder) -> str:
 
 def send_paper_request(
     configuration: EndpointConfiguration,
+    method: HttpMethod,
     path: str,
     body: bytes,
     transport: PaperTransport,
     recorder: EndpointRecorder,
 ) -> TransportResponse:
+    """Send one request through the single asserted paper path.
+
+    `method` is required and positional. A default would let a PATCH be sent as
+    whatever the default was, and making it keyword-only would let every
+    existing call site keep compiling while sending the wrong verb. The point of
+    widening this contract in its own unit was that the compiler, not a reader,
+    finds the call sites.
+    """
     base_url = configuration.base_url
     assert_paper_endpoint(base_url, recorder)
     if not path.startswith("/") or path.startswith("//"):
@@ -113,6 +138,7 @@ def send_paper_request(
         raise LiveEndpointError("broker request path must be relative")
 
     response = transport.request(
+        method,
         f"{base_url}{path}",
         body,
         follow_redirects=False,

@@ -3,13 +3,15 @@ import subprocess
 import sys
 import traceback
 from dataclasses import FrozenInstanceError
-from typing import Literal, get_type_hints
+from pathlib import Path
+from typing import Literal, get_args, get_type_hints
 
 import pytest
 
 from alphaledger.broker.endpoint import (
     PAPER_BASE_URL,
     EndpointConfiguration,
+    HttpMethod,
     IndeterminateResponseError,
     LiveEndpointError,
     PaperTransport,
@@ -36,16 +38,17 @@ class RecordingEndpointEvents:
 class RecordingTransport:
     def __init__(self, response: TransportResponse | None = None) -> None:
         self.response = response or TransportResponse(status_code=200)
-        self.requests: list[tuple[str, bytes, bool]] = []
+        self.requests: list[tuple[str, str, bytes, bool]] = []
 
     def request(
         self,
+        method: str,
         url: str,
         body: bytes,
         *,
         follow_redirects: Literal[False],
     ) -> TransportResponse:
-        self.requests.append((url, body, follow_redirects))
+        self.requests.append((method, url, body, follow_redirects))
         return self.response
 
 
@@ -66,11 +69,11 @@ def test_paper_pre_submit_assertion_allows_body_send() -> None:
     transport = RecordingTransport()
 
     response = send_paper_request(
-        configuration(recorder), "/orders", b"payload", transport, recorder
+        configuration(recorder), "POST", "/orders", b"payload", transport, recorder
     )
 
     assert response.status_code == 200
-    assert transport.requests == [(f"{PAPER_BASE_URL}/orders", b"payload", False)]
+    assert transport.requests == [("POST", f"{PAPER_BASE_URL}/orders", b"payload", False)]
     assert recorder.no_trade_reasons == []
 
 
@@ -101,11 +104,13 @@ def test_redirect_contract_disables_following_and_rejects_replay() -> None:
     transport = RecordingTransport(TransportResponse(status_code=302, location=redirect_target))
 
     with pytest.raises(LiveEndpointError):
-        send_paper_request(configuration(recorder), "/orders", b"payload", transport, recorder)
+        send_paper_request(
+            configuration(recorder), "POST", "/orders", b"payload", transport, recorder
+        )
 
     request_hints = get_type_hints(PaperTransport.request)
     assert request_hints["follow_redirects"] == Literal[False]
-    assert transport.requests == [(f"{PAPER_BASE_URL}/orders", b"payload", False)]
+    assert transport.requests == [("POST", f"{PAPER_BASE_URL}/orders", b"payload", False)]
     assert all(not request[0].startswith(redirect_target) for request in transport.requests)
 
 
@@ -117,7 +122,9 @@ def test_corruption_after_start_is_rejected_by_pre_submit_assertion() -> None:
     transport = RecordingTransport()
 
     with pytest.raises(LiveEndpointError):
-        send_paper_request(endpoint_configuration, "/orders", b"payload", transport, recorder)
+        send_paper_request(
+            endpoint_configuration, "POST", "/orders", b"payload", transport, recorder
+        )
 
     assert transport.requests == []
     assert recorder.no_trade_reasons == ["endpoint_not_paper"]
@@ -192,6 +199,7 @@ def test_rejection_causes_record_distinct_reason_codes(
     with pytest.raises(LiveEndpointError):
         send_paper_request(
             configuration(recorder),
+            "POST",
             path,
             b"payload",
             RecordingTransport(response),
@@ -222,7 +230,9 @@ def test_malformed_redirect_is_redacted_and_sends_no_replay(location: str) -> No
     transport = RecordingTransport(TransportResponse(status_code=307, location=location))
 
     with pytest.raises(LiveEndpointError, match="redirect target rejected") as error:
-        send_paper_request(configuration(recorder), "/orders", b"payload", transport, recorder)
+        send_paper_request(
+            configuration(recorder), "POST", "/orders", b"payload", transport, recorder
+        )
 
     formatted_error = "".join(traceback.format_exception(error.value))
     assert location not in formatted_error
@@ -254,7 +264,7 @@ def test_no_redirect_is_ever_treated_as_success(
     transport = RecordingTransport(TransportResponse(status_code=status, location=location))
     configuration = EndpointConfiguration.from_resolver(events)
     with pytest.raises(expected):
-        send_paper_request(configuration, "/v2/orders", b"payload", transport, events)
+        send_paper_request(configuration, "POST", "/v2/orders", b"payload", transport, events)
     assert events.no_trade_reasons, "an indeterminate outcome must reach the ledger"
     assert len(transport.requests) == 1, "no replay is permitted"
 
@@ -266,7 +276,7 @@ def test_a_same_origin_redirect_records_its_own_reason() -> None:
     )
     configuration = EndpointConfiguration.from_resolver(events)
     with pytest.raises(IndeterminateResponseError):
-        send_paper_request(configuration, "/v2/orders", b"payload", transport, events)
+        send_paper_request(configuration, "POST", "/v2/orders", b"payload", transport, events)
     assert events.no_trade_reasons[-1] not in {
         "endpoint_not_paper",
         "request_path_invalid",
@@ -282,3 +292,118 @@ def test_resolver_rejects_a_live_host_set_after_a_first_clean_call(
     monkeypatch.setenv("APCA_API_BASE_URL", "https://" + "api.alpaca.markets")
     with pytest.raises(LiveEndpointError):
         resolve_paper_base_url(events)
+
+
+# --- UNIT-036: the verb and the response body -----------------------------
+
+VERBS = ("GET", "POST", "PATCH", "DELETE")
+
+
+@pytest.mark.parametrize("method", VERBS)
+def test_every_verb_reaches_the_transport_unchanged(method: str) -> None:
+    """AC-1. Submit is POST, reads are GET, replace is PATCH, cancel is DELETE."""
+    recorder = RecordingEndpointEvents()
+    transport = RecordingTransport()
+
+    send_paper_request(configuration(recorder), method, "/v2/orders", b"", transport, recorder)
+
+    assert transport.requests == [(method, f"{PAPER_BASE_URL}/v2/orders", b"", False)]
+
+
+def test_a_read_returns_its_body_byte_for_byte() -> None:
+    """AC-2. Nothing decodes on the way through, so nothing can mangle a payload.
+
+    The payload is deliberately not valid UTF-8. A boundary that decoded would
+    raise here rather than pass the bytes along, and the caller that has to
+    parse a broker response is the one entitled to decide the encoding.
+    """
+    recorder = RecordingEndpointEvents()
+    payload = b'{"id":"abc","status":"filled"}\xff\xfe'
+    transport = RecordingTransport(TransportResponse(status_code=200, body=payload))
+
+    response = send_paper_request(
+        configuration(recorder), "GET", "/v2/orders/abc", b"", transport, recorder
+    )
+
+    assert response.body == payload
+    assert isinstance(response.body, bytes)
+
+
+def test_a_response_body_defaults_to_empty() -> None:
+    """A transport with nothing to return stays constructible."""
+    assert TransportResponse(status_code=204).body == b""
+
+
+def test_a_body_is_absent_from_the_repr() -> None:
+    """A broker payload in a traceback is a disclosure risk, like `location`."""
+    rendered = repr(TransportResponse(status_code=200, body=b"account-secret"))
+    assert "account-secret" not in rendered
+
+
+@pytest.mark.parametrize("method", VERBS)
+def test_a_query_string_is_accepted_and_forwarded_intact(method: str) -> None:
+    """AC-5. Every GET the order path needs carries one."""
+    recorder = RecordingEndpointEvents()
+    transport = RecordingTransport()
+    path = "/v2/orders?status=open&limit=20"
+
+    send_paper_request(configuration(recorder), method, path, b"", transport, recorder)
+
+    assert transport.requests == [(method, f"{PAPER_BASE_URL}{path}", b"", False)]
+
+
+@pytest.mark.parametrize("method", VERBS)
+def test_a_redirect_is_indeterminate_under_every_verb(method: str) -> None:
+    """AC-4. The original test covered one verb; a GET must not slip through."""
+    recorder = RecordingEndpointEvents()
+    transport = RecordingTransport(
+        TransportResponse(status_code=307, location=f"{PAPER_BASE_URL}/v2/orders/")
+    )
+
+    with pytest.raises(IndeterminateResponseError):
+        send_paper_request(configuration(recorder), method, "/v2/orders", b"", transport, recorder)
+
+    assert "response_indeterminate" in recorder.no_trade_reasons
+
+
+@pytest.mark.parametrize("method", VERBS)
+@pytest.mark.parametrize("path", ["https://paper-api.alpaca.markets/v2/orders", "//evil.example"])
+def test_a_non_relative_path_is_refused_under_every_verb(method: str, path: str) -> None:
+    """AC-5's other half. Widening the verb must not widen the path rule."""
+    recorder = RecordingEndpointEvents()
+    transport = RecordingTransport()
+
+    with pytest.raises(LiveEndpointError):
+        send_paper_request(configuration(recorder), method, path, b"", transport, recorder)
+
+    assert transport.requests == []
+    assert "request_path_invalid" in recorder.no_trade_reasons
+
+
+def test_the_module_still_admits_no_mode_switch_or_live_host() -> None:
+    """AC-6. UNIT-010's own criterion, restated by the unit that could break it.
+
+    A boolean can be set to `False`, which is why UNIT-010 refused to have one.
+    Widening the transport is exactly the change that could have reintroduced a
+    `paper=` parameter or a second host, so it is checked here rather than
+    assumed to have survived.
+    """
+    source = (
+        Path(__file__).resolve().parents[2] / "src" / "alphaledger" / "broker" / "endpoint.py"
+    ).read_text(encoding="utf-8")
+
+    assert "paper: bool" not in source
+    assert "paper=" not in source
+    # Deliberately not a search for the word "live": `LiveEndpointError` is the
+    # class that exists to reject it, so the word belongs here and its absence
+    # would be the defect. What must not appear is a second host. Asserted as
+    # "exactly one broker host, and it is the paper one" rather than by
+    # spelling the forbidden host, which the repository guard refuses to let
+    # any file or command contain.
+    assert source.count("alpaca.markets") == 1
+    assert PAPER_BASE_URL in source
+
+
+def test_the_verb_type_admits_exactly_four_values() -> None:
+    """AC-1's other half. PUT and an arbitrary string are both unexpressible."""
+    assert set(get_args(HttpMethod)) == {"GET", "POST", "PATCH", "DELETE"}
