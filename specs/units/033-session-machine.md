@@ -141,3 +141,110 @@ uv run mypy src
 ```
 
 ## Handoff notes
+
+### Implementation, 2026-09-02
+
+The table has seventeen edges: the ten design section 11 draws, `Exiting ->
+Halted`, and six disarm edges, one from every state that is not `Disarmed`
+itself. Forty-nine (state, event) pairs exist and thirty-two are refused, and
+the test sweeps all of them rather than sampling, so an edge added by accident
+fails a test rather than being discovered by an orchestrator.
+
+`SessionEvent` names each event for the state it attempts to enter, following
+UNIT-012. That is what lets a refusal name both sides of a move, which AC-2
+requires: with no target in the event there would be nothing to name but the
+current state. The cost is real and is accepted rather than hidden. Four
+distinct causes share the `HALTED` event, a health breach, a risk breach, a
+kill switch, and a flatten that did not complete, because the machine's only
+question is whether the move is legal and all four make the same move. Which
+cause fired is a fact for the ledger, and UNIT-034 owns recording it. AC-3 is
+tested by a case named for the flatten failure it stands for, so the
+distinction is visible in the test suite even though it is absent from the
+enumeration.
+
+`permits_new_entry` is derived from the table rather than written as a second
+list, `(state, SessionEvent.WORKING) in LEGAL_TRANSITIONS`. The intake allows
+either, saying halted and disarmed must not permit entry and the rest are
+decided by the table. A separate list could drift from the transitions, and the
+direction it would drift in is the dangerous one: a stale list saying a halted
+session may trade. A test pins the property rather than the current answer, so
+if a later unit adds an edge into `working` the predicate follows it instead of
+being a stale copy.
+
+AC-6 and AC-7 are checked against the module's syntax tree, not by grepping its
+text. The first attempt grepped, and it failed on this module's own docstring
+explaining why the per-order machine is a different scope. That is not a near
+miss worth ignoring: the same weakness runs the other way, since a grep would
+also pass on an import smuggled in under an alias. The tree sees imports,
+names, and calls, and nothing else.
+
+Five mutations were injected and reverted, and each turned a test red, in every
+case including the test named for that behaviour: dropping the `Exiting ->
+Halted` edge, dropping the only edge out of `Halted`, adding a `Halted ->
+Ready` edge that would let a halted session resume with no human, replacing the
+derived entry predicate with a hand-written state list, and adding an eighth
+state.
+
+### Round one, 2026-09-02, `execution-safety-reviewer`, verdict `conditional`
+
+Four findings. Three were test-soundness defects, all real, all fixed. The
+fourth is a specification question and is surfaced rather than answered here.
+
+Two of the three fixed findings are holes in the AST checks that replaced the
+first, grep-based versions of the AC-6 and AC-7 tests. `ast.Import` records a
+dotted name whole, so `import datetime.timezone` is the single string
+`"datetime.timezone"` and an equality test against `"datetime"` misses it;
+`ast.ImportFrom` carries `module is None` for a relative import, so
+`from . import time` was skipped entirely and neither the module nor the name
+was recorded. The checks now test the prefix and record `alias.name` in both
+node shapes. Neither hole was exploited by the four-line import block in this
+module, so both are test-soundness rather than live violations, but the second
+version of a test being weaker than it reads is exactly the pattern the first
+version was rewritten to escape.
+
+The third: the thirty-two case illegal-pair sweep asserted that each of three
+names appeared in the refusal message, and that was weaker than it read.
+`SessionEvent` and `SessionState` share string values by construction, so the
+target's name and the event's name are always the same string, and a
+`transition` that dropped `to '{target}'` from its message entirely would have
+satisfied all three membership checks in all thirty-two cases. Only the single
+hard-coded message test would have caught it, so AC-2 was pinned by one example
+while appearing to be pinned by thirty-two. The sweep now asserts the whole
+message.
+
+A fourth, `MappingProxyType` is a view rather than a copy, so the dict literal
+has to stay inline. Nothing binds a mutable handle today, and the existing
+immutability test would keep passing if a later refactor hoisted the literal to
+a named variable, while `session._TABLE[...] = ...` mutated the machine at run
+time, including adding an edge out of `halted`. A new test walks the module's
+top-level statements and fails on any module-level name bound to a bare dict.
+
+The finding not fixed, `Closed -> Halted`. The reviewer graded it HIGH: the
+reasoning that authorised `Exiting -> Halted` is not specific to exiting, so a
+kill switch firing while a session sits in `closed` has nowhere to go but a
+refusal, and `closed` is two events from permitting an entry. The
+counter-argument is that `closed` holds no position and no working order, so
+declining to move on to `ready` is already the fail-closed response
+`.claude/rules/01-safety.md` bullet 4 asks for, and a halt is not the only safe
+answer there. Both readings are defensible, which is precisely why this unit
+does not choose between them: adding the edge would be a third deviation from a
+cited design source where this intake's Scope authorises exactly two, and
+`AGENTS.md` requires surfacing a conflict rather than resolving it, and
+specifically rather than resolving it silently. The decision belongs to whoever
+owns `specs/features/001-autonomous-session/spec.md`, which is where the first
+two deviations are recorded and where a third would have to be.
+
+The reviewer also showed the code comment above the halt edges was false as
+written: it said "every state that can still be holding or placing risk", and
+`ready` has a halt edge while holding nothing. That is fixed, and the comment
+now records the `closed` question and warns UNIT-034 not to route a halt
+through `closed -> ready -> halted`, because `permits_new_entry` is true in the
+state that path passes through.
+
+Recorded because it bears on how much this round's verdict is worth:
+`execution-safety-reviewer` has no Bash tool, so it ran no command. It said so
+plainly instead of implying otherwise, and it hand-counted the parametrised
+cases to 59 against the claimed 59. Its four findings were all derived
+statically and three were confirmed real. The implementer ran the gate and the
+mutations; the reviewer verified neither, and no reviewer under this agent
+definition can.
