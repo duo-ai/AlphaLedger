@@ -2,13 +2,14 @@
 id: UNIT-006
 title: Add the pinned HTTP client the order path needs
 lane: shared
-state: available
-owner: -
-branch: -
+state: claimed
+owner: mazwy/claude
+branch: feature/006-http-dependency
 reviewer: code-reviewer
 preferred_runtime: claude
 depends_on: []
 paths: pyproject.toml, uv.lock, tests/test_dependencies.py
+claimed_at: 2026-09-04T12:53:35Z
 ---
 
 ## Delegated to mazwy

@@ -2,13 +2,14 @@
 id: UNIT-036
 title: Widen the paper transport to carry a verb and a response body
 lane: execution
-state: available
-owner: -
-branch: -
+state: claimed
+owner: mazwy/claude
+branch: feature/036-paper-transport-widening
 reviewer: execution-safety-reviewer
 preferred_runtime: claude
 depends_on: [UNIT-001, UNIT-010]
 paths: src/alphaledger/broker/endpoint.py, tests/execution/test_endpoint.py
+claimed_at: 2026-09-04T12:53:35Z
 ---
 
 ## Problem
