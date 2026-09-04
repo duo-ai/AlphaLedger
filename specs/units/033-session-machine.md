@@ -2,7 +2,7 @@
 id: UNIT-033
 title: Model the session and arm state machine
 lane: execution
-state: in_review
+state: merged
 owner: mazwy/claude
 branch: feature/033-session-machine
 reviewer: execution-safety-reviewer
