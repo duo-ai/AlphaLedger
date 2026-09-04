@@ -1,0 +1,2 @@
+- [Session-machine review patterns](session-machine-patterns.md) — closed-table state machine review: check every state for a symmetric halt edge, and distrust an immutability test that only proves the proxy is read-only.
+- [Tooling constraints](tooling-constraints.md) — this role sometimes runs with no Bash tool available; verify the tool list before promising to run commands.
