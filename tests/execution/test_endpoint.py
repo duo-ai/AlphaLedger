@@ -111,7 +111,14 @@ def test_redirect_contract_disables_following_and_rejects_replay() -> None:
     request_hints = get_type_hints(PaperTransport.request)
     assert request_hints["follow_redirects"] == Literal[False]
     assert transport.requests == [("POST", f"{PAPER_BASE_URL}/orders", b"payload", False)]
-    assert all(not request[0].startswith(redirect_target) for request in transport.requests)
+    # `request[1]`, the URL, not `request[0]`. UNIT-036 widened the recorded
+    # tuple from (url, body, follow_redirects) to (method, url, body,
+    # follow_redirects), and this assertion kept indexing position zero, which
+    # became the verb. It then read `not "POST".startswith(redirect_target)`,
+    # vacuously true for every method and every target, and mypy could not see
+    # it because both positions are `str`. Found by `execution-safety-reviewer`
+    # on round one by diffing against the merged version.
+    assert all(not request[1].startswith(redirect_target) for request in transport.requests)
 
 
 def test_corruption_after_start_is_rejected_by_pre_submit_assertion() -> None:
@@ -398,10 +405,55 @@ def test_the_module_still_admits_no_mode_switch_or_live_host() -> None:
     # class that exists to reject it, so the word belongs here and its absence
     # would be the defect. What must not appear is a second host. Asserted as
     # "exactly one broker host, and it is the paper one" rather than by
-    # spelling the forbidden host, which the repository guard refuses to let
-    # any file or command contain.
+    # spelling the forbidden host, which the repository guard refuses to let a
+    # Bash command contain.
+    #
+    # The reach of that guard, corrected on round one after reading
+    # `.claude/hooks/guard.py` rather than assuming: the live-host pattern is
+    # checked only against Bash command text. For `Read`, `Edit`, and `Write`
+    # it inspects the file path and never the content, so a live host written
+    # straight into this module by an editing tool is not blocked at all. This
+    # test is therefore the last line of defence on that path, not a backstop
+    # behind one, and it catches the literal rather than a concatenation.
     assert source.count("alpaca.markets") == 1
     assert PAPER_BASE_URL in source
+
+
+@pytest.mark.parametrize("method", VERBS)
+def test_a_corrupted_base_url_is_refused_under_every_verb(method: str) -> None:
+    """AC-3, which the test list promised per verb and the first round gave POST.
+
+    The assertion is structurally verb-agnostic, since `assert_paper_endpoint`
+    runs before `method` is read at all, so this cannot fail while the code is
+    correct. It is written anyway because the test list said it would be, and a
+    criterion whose promised observation is never made is the D-021 gap this
+    project has now hit three times.
+    """
+    recorder = RecordingEndpointEvents()
+    transport = RecordingTransport()
+    corrupted = object.__new__(EndpointConfiguration)
+    object.__setattr__(corrupted, "base_url", "https://broker.invalid")
+
+    with pytest.raises(LiveEndpointError):
+        send_paper_request(corrupted, method, "/v2/orders", b"", transport, recorder)
+
+    assert transport.requests == []
+    assert "endpoint_not_paper" in recorder.no_trade_reasons
+
+
+def test_a_get_may_carry_an_empty_body() -> None:
+    """AC-7, on its own rather than as a side effect of the verb sweep.
+
+    It was only covered because the sweep happened to pass `b""`. Changing that
+    sweep to a realistic payload would have removed AC-7's only coverage with
+    nothing failing.
+    """
+    recorder = RecordingEndpointEvents()
+    transport = RecordingTransport()
+
+    send_paper_request(configuration(recorder), "GET", "/v2/account", b"", transport, recorder)
+
+    assert transport.requests == [("GET", f"{PAPER_BASE_URL}/v2/account", b"", False)]
 
 
 def test_the_verb_type_admits_exactly_four_values() -> None:
