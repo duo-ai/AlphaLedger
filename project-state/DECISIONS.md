@@ -781,3 +781,88 @@ when the news adapter is built.
   unit needs to change the lockfile while UNIT-025 is open. The second is the
   real risk and the answer to it is the separate unit rejected above, not a
   second widening.
+
+## D-028: G0 answered against the live paper account, and the summary field is not what the reference promised
+
+- Date: 2026-09-04
+- Status: these are OBSERVATIONS of a live credentialed payload, not readings of
+  the published reference. D-024 and D-025 were explicit that they were the
+  latter and that an observation, when one existed, should be preferred. This is
+  that observation, and where the two disagree the observation wins.
+- Method: a read-only probe, GET requests only, against the paper trading host
+  and the market data host. No write of any kind was attempted. The credentials
+  were seeded into the process environment from the gitignored dotfile without
+  being read, printed, or logged, per D-017.
+
+### What G0 was blocked on, and what the account actually is
+
+The gate has been open since 2026-08-27 and blocked on access rather than
+effort since 2026-08-29, when the one credentialed call returned 401. It now
+answers:
+
+- The paper account is `ACTIVE`, created 2026-08-28, with 100000 USD cash and
+  portfolio value, 400000 buying power, and 100000 options buying power.
+- `options_trading_level` is 3, and `options_approved_level` is 3. This is the
+  fact the whole design depended on and nobody had checked: a defined-risk
+  multi-leg options strategy is permitted on this account. Had it come back 0
+  or 1, design section 8 and every execution unit built for it would have been
+  aimed at something the account cannot do.
+- `trading_blocked` and `account_blocked` are both false, `suspend_trade` is
+  false, and there are zero open positions and zero open orders, so the account
+  is a clean slate and nothing needs reconciling before a first session.
+- Options contracts are readable through the trading host, returning real
+  OCC symbols, expiries, strikes, and `style: american`.
+
+### The equity feed is `sip`, not `iex`
+
+Both feeds answer 200. On the same daily bar for AAPL, `iex` reports volume
+1073989 and `sip` reports 34646756. That difference is the whole consolidated
+tape against one venue, so this account carries full market data rather than
+the IEX subset. D-024 recorded that without real-time entitlement both bars and
+news default to a fifteen minute delay; the entitlement question is now settled
+in the direction that makes the research lane worth running.
+
+A trap worth recording because it cost a wrong conclusion for several minutes:
+a bars request with no `start` and `end` returned HTTP 200 and zero bars while
+the market was closed. That reads exactly like an entitlement failure and is
+not one. An adapter must supply an explicit range and must treat an empty
+result as a question about the range rather than as evidence about access.
+
+### The finding that changes merged code: `summary` is frequently empty
+
+D-025 decided the news family carries the article summary, and it decided so on
+the strength of the published reference, which lists `summary` as a REQUIRED
+field on every article. Its revisit condition was written for exactly this case:
+"a live payload shows `summary` absent or empty in practice, which would
+contradict the reference. Record the observation first and prefer it."
+
+Observed: across fifteen articles for AAPL, MSFT, TSLA, and NVDA, three carried
+an empty `summary`. Twenty percent, from a single originator, `benzinga`. The
+field is present and it is the empty string.
+
+This is not a documentation nit. `Article.__post_init__`, merged by UNIT-030,
+raises `ValueError` on an empty summary, and its message says the feed lists it
+as required so an absent one is a contract violation rather than a thin
+article. Against the real feed that sentence is false, and the consequence is
+that a market data adapter feeding real news into the merged record would raise
+on roughly one article in five.
+
+The correction is that an empty summary is ordinary input and must be accepted,
+not refused. It must NOT be corrected by dropping those articles: D-025 already
+records that selecting a research sample on a content property correlated with
+the outcome is a selection effect rather than a cleaning step, and it names
+`exclude_contentless` as the thing not to reach for. Refusing the article at
+construction is the same mistake wearing a validator's clothes, which is
+precisely the reasoning UNIT-030 used to justify NOT copying `headline`'s
+canonicalisation refusal onto `summary`. That reasoning was right and stopped
+one step short.
+
+The labeler is unaffected in contract but affected in practice: UNIT-029 sends
+`subject.summary` to the model and its own evidence-span check compares against
+the headline and the summary, so an empty summary simply contributes nothing.
+That already behaves correctly and needs no change.
+
+- Revisit only if: a later payload shows the field populated on every article,
+  which would mean this sample was unrepresentative. Even then the acceptance
+  should stand, because a record that refuses a legal payload is a liability
+  whether or not the payload is common.
