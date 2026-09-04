@@ -2,7 +2,7 @@
 id: UNIT-006
 title: Add the pinned HTTP client the order path needs
 lane: shared
-state: claimed
+state: in_review
 owner: mazwy/claude
 branch: feature/006-http-dependency
 reviewer: code-reviewer

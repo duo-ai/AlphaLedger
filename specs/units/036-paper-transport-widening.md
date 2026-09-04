@@ -2,7 +2,7 @@
 id: UNIT-036
 title: Widen the paper transport to carry a verb and a response body
 lane: execution
-state: claimed
+state: in_review
 owner: mazwy/claude
 branch: feature/036-paper-transport-widening
 reviewer: execution-safety-reviewer
